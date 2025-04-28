@@ -1,0 +1,6 @@
+@SnowShotApi_HostAddress = http://localhost:5101
+
+GET {{SnowShotApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
