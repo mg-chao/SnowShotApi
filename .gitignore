@@ -116,3 +116,8 @@ src/.vs/config/applicationhost.config
 
 # JetBrains Rider's auto generated files
 .idea/
+
+# .env files
+.env
+.env.local
+.env.*.local
