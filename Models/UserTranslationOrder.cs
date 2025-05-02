@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.EntityFrameworkCore;
@@ -26,10 +27,22 @@ public class UserTranslationOrder
     public required UserTranslationType Type { get; set; }
 
     [Required]
-    public required int ContentLength { get; set; }
+    [DefaultValue("")]
+    [MaxLength(16)]
+    public required string From { get; set; }
 
     [Required]
-    public required int ContentByteCount { get; set; }
+    [DefaultValue("")]
+    [MaxLength(16)]
+    public required string To { get; set; }
+
+    [Required]
+    [DefaultValue("")]
+    [MaxLength(16)]
+    public required string Domain { get; set; }
+
+    [Required]
+    public required int ContentLength { get; set; }
 
     [Required]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

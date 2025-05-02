@@ -48,13 +48,11 @@ public class TranslationOrderStatsService(ApplicationDbContext context) : ITrans
                 Date = currentDate,
                 Type = translationOrder.Type,
                 ContentLengthSum = 0,
-                ContentByteCountSum = 0,
             };
             await _context.UserTranslationUserOrderStats.AddAsync(stats);
         }
 
         stats.ContentLengthSum += translationOrder.ContentLength;
-        stats.ContentByteCountSum += translationOrder.ContentByteCount;
         stats.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();

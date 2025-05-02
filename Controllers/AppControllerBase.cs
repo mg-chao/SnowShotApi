@@ -11,9 +11,6 @@ public class AppResponse(int code = 0, string message = "", object? data = null)
     [JsonPropertyName("code")]
     public int Code { get; set; } = code;
 
-    [JsonPropertyName("success")]
-    public bool Success { get; set; } = code == 0;
-
     [JsonPropertyName("message")]
     public string Message { get; set; } = message;
 

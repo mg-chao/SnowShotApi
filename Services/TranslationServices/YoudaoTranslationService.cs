@@ -18,9 +18,9 @@ public class YoudaoTranslationService
 TranslationService(context, httpClient, userOrderService, translationOrderStatsService), IYoudaoTranslationService
 {
     private readonly YoudaoApiEnv _youdaoApiEnv = new();
-    public async Task<string?> TranslateAsync(long userId, string content, string from, string to, string domain)
+    public async Task<TranslateResult?> TranslateAsync(long userId, string content, string from, string to, string domain)
     {
-        await CreateTranslationOrderAsync(userId, UserTranslationType.Youdao, content);
+        var translationOrder = await CreateTranslationOrderAsync(userId, UserTranslationType.Youdao, content, from, to, domain);
 
         var salt = Guid.NewGuid().ToString();
         var curtime = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
@@ -46,12 +46,20 @@ TranslationService(context, httpClient, userOrderService, translationOrderStatsS
 
         var translationResponse = JsonSerializer.Deserialize<YoudaoTranslationResponse>(result);
 
-        if (translationResponse?.ErrorCode != "0")
+        if (translationResponse == null || translationResponse.ErrorCode != "0")
         {
             return null;
         }
 
-        return translationResponse.Translation?.FirstOrDefault();
+        var translationFromTo = translationResponse.FromJoinTo.Split('2');
+        var translationFrom = translationFromTo[0];
+        var translationTo = translationFromTo[1];
+
+        var res = new TranslateResult(translationResponse.Translation?.FirstOrDefault() ?? string.Empty, translationFrom, translationTo);
+
+        await UpdateTranslationOrderAsync(translationOrder.Id, translationFrom, translationTo);
+
+        return res;
     }
 
     private string GenerateSign(string content, string salt, string curtime)
@@ -69,4 +77,7 @@ public class YoudaoTranslationResponse
 
     [JsonPropertyName("translation")]
     public List<string>? Translation { get; set; } = [];
+
+    [JsonPropertyName("l")]
+    public string FromJoinTo { get; set; } = string.Empty;
 }

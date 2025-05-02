@@ -29,9 +29,6 @@ public class UserTranslationUserOrderStats
     public required int ContentLengthSum { get; set; }
 
     [Required]
-    public required int ContentByteCountSum { get; set; }
-
-    [Required]
     public DateTime UpdatedAt { get; set; }
 
     [Required]
