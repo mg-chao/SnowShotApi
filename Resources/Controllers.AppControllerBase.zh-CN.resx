@@ -137,4 +137,28 @@
     <value>已达到用户翻译限制</value>
     <comment/>
   </data>
+  <data name="Request for Chat API failed" xml:space="preserve">
+    <value>请求 Chat API 失败</value>
+    <comment/>
+  </data>
+  <data name="Chat API interface exception" xml:space="preserve">
+    <value>Chat API 接口异常</value>
+    <comment/>
+  </data>
+  <data name="Chat API response is empty" xml:space="preserve">
+    <value>Chat API 响应为空</value>
+    <comment/>
+  </data>
+  <data name="User chat limit reached" xml:space="preserve">
+    <value>已达到用户 Chat 限制</value>
+    <comment/>
+  </data>
+  <data name="Invalid model" xml:space="preserve">
+    <value>无效的模型</value>
+    <comment/>
+  </data>
+  <data name="Failed to read Tokens" xml:space="preserve">
+    <value>读取 Tokens 失败</value>
+    <comment/>
+  </data>
 </root>

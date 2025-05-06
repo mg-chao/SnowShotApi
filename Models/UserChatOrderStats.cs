@@ -4,12 +4,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace SnowShotApi.Models;
 
-
 [PrimaryKey(nameof(Id))]
 [Index(nameof(UserId))]
-[Index(nameof(Date), nameof(Type), IsUnique = true)]
+[Index(nameof(Date), nameof(Model), IsUnique = true)]
 [Index(nameof(CreatedAt))]
-public class UserTranslationOrderStats
+public class UserChatOrderStats
 {
     [Key]
     [Required]
@@ -23,10 +22,13 @@ public class UserTranslationOrderStats
     public required int Date { get; set; }
 
     [Required]
-    public required UserTranslationType Type { get; set; }
+    public required string Model { get; set; }
 
     [Required]
-    public required int ContentLengthSum { get; set; }
+    public required int PromptTokensSum { get; set; }
+
+    [Required]
+    public required int CompletionTokensSum { get; set; }
 
     [Required]
     public DateTime UpdatedAt { get; set; }

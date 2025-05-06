@@ -1,22 +1,33 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.EntityFrameworkCore;
 
 namespace SnowShotApi.Models;
 
-public enum UserOrderType
+public enum UserChatOrderStatus
 {
     /// <summary>
-    /// 翻译
+    /// 已创建
     /// </summary>
-    Translation,
+    Created,
+
+    /// <summary>
+    /// 已完成
+    /// </summary>
+    Completed,
+
+    /// <summary>
+    /// 失败
+    /// </summary>
+    Failed,
 }
 
 [PrimaryKey(nameof(Id))]
 [Index(nameof(UserId))]
-[Index(nameof(Type), nameof(AssoId), IsUnique = true)]
+[Index(nameof(Model))]
 [Index(nameof(CreatedAt))]
-public class UserOrder
+public class UserChatOrder
 {
     [Key]
     [Required]
@@ -27,12 +38,20 @@ public class UserOrder
     public required long UserId { get; set; }
 
     [Required]
-    public required UserOrderType Type { get; set; }
+    public required string Model { get; set; }
 
     [Required]
-    public required long AssoId { get; set; }
+    public required UserChatOrderStatus Status { get; set; }
+
+    [Required]
+    [DefaultValue(0)]
+    public required int PromptTokens { get; set; }
+
+    [Required]
+    [DefaultValue(0)]
+    public required int CompletionTokens { get; set; }
 
     [Required]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public DateTime CreatedAt { get; set; }
-} 
+}

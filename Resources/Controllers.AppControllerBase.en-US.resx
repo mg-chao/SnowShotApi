@@ -137,4 +137,28 @@
     <value>User translation limit reached</value>
     <comment/>
   </data>
+  <data name="Request for Chat API failed" xml:space="preserve">
+    <value>Request for Chat API failed</value>
+    <comment/>
+  </data>
+  <data name="Chat API interface exception" xml:space="preserve">
+    <value>Chat API interface exception</value>
+    <comment/>
+  </data>
+  <data name="Chat API response is empty" xml:space="preserve">
+    <value>Chat API response is empty</value>
+    <comment/>
+  </data>
+  <data name="User chat limit reached" xml:space="preserve">
+    <value>User chat limit reached</value>
+    <comment/>
+  </data>
+  <data name="Invalid model" xml:space="preserve">
+    <value>Invalid model</value>
+    <comment/>
+  </data>
+  <data name="Failed to read Tokens" xml:space="preserve">
+    <value>Chat usage is null</value>
+    <comment/>
+  </data>
 </root>

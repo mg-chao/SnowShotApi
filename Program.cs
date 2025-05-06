@@ -7,6 +7,8 @@ using System.Globalization;
 using SnowShotApi.Services.TranslationServices;
 using SnowShotApi.Services.UserServices;
 using SnowShotApi.Middleware;
+using SnowShotApi.Services.OrderServices;
+using SnowShotApi.Services.ChatServices;
 
 Env.Load();
 
@@ -31,10 +33,14 @@ builder.Services.AddMvc()
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IIpUserService, IpUserService>();
 builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IUserOrderService, UserOrderService>();
+builder.Services.AddScoped<ITranslationOrderService, TranslationOrderService>();
+builder.Services.AddScoped<ITranslationService, TranslationService>();
 builder.Services.AddScoped<IYoudaoTranslationService, YoudaoTranslationService>();
 builder.Services.AddScoped<ITranslationOrderStatsService, TranslationOrderStatsService>();
-
+builder.Services.AddScoped<IChatOrderStatsService, ChatOrderStatsService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IChatOrderService, ChatOrderService>();
+builder.Services.AddScoped<IDeepseekService, DeepseekService>();
 var app = builder.Build();
 
 // 添加异常处理中间件

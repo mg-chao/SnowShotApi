@@ -32,4 +32,17 @@ public class TranslationDomainAttribute : ValidationAttribute
 
         return ValidationResult.Success;
     }
+
+    public static string ConvertToText(string domain)
+    {
+        return domain switch
+        {
+            "general" => "General",
+            "computers" => "Computers",
+            "medicine" => "Medicine",
+            "finance" => "Finance",
+            "game" => "Game",
+            _ => "General",
+        };
+    }
 }

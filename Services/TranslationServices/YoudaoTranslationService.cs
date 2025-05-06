@@ -1,11 +1,12 @@
-using System.Text;
 using SnowShotApi.Data;
 using SnowShotApi.Models;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SnowShotApi.AppEnvs;
 using SnowShotApi.Utiles;
+using SnowShotApi.Services.OrderServices;
+using SnowShotApi.Controllers.TranslationControllers;
+using System.Net.Http;
 
 namespace SnowShotApi.Services.TranslationServices;
 
@@ -13,53 +14,63 @@ public interface IYoudaoTranslationService : ITranslationService
 {
 }
 
-public class YoudaoTranslationService
-(ApplicationDbContext context, HttpClient httpClient, IUserOrderService userOrderService, ITranslationOrderStatsService translationOrderStatsService) :
-TranslationService(context, httpClient, userOrderService, translationOrderStatsService), IYoudaoTranslationService
+public class YoudaoTranslationService(HttpClient httpClient) : IYoudaoTranslationService
 {
     private readonly YoudaoApiEnv _youdaoApiEnv = new();
-    public async Task<TranslateResult?> TranslateAsync(long userId, string content, string from, string to, string domain)
-    {
-        var translationOrder = await CreateTranslationOrderAsync(userId, UserTranslationType.Youdao, content, from, to, domain);
+    private readonly HttpClient _httpClient = httpClient;
 
+    public async Task<TranslateResult?> TranslateAsync(TranslationRequest request, long userId)
+    {
         var salt = Guid.NewGuid().ToString();
         var curtime = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        var sign = GenerateSign(content, salt, curtime);
+        var sign = GenerateSign(request.Content, salt, curtime);
 
         var parameters = new Dictionary<string, string>
         {
-            { "q", content },
-            { "from", from },
-            { "to", to },
+            { "q", request.Content },
+            { "from", request.From },
+            { "to", request.To },
             { "appKey", _youdaoApiEnv.AppId },
             { "salt", salt },
             { "sign", sign },
             { "signType", "v3" },
             { "curtime", curtime },
-            { "domain", domain }
+            { "domain", request.Domain }
         };
 
-        var response = await _httpClient.PostAsync("https://openapi.youdao.com/api", new FormUrlEncodedContent(parameters));
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            // 设置超时取消令牌
+            using var cts = new CancellationTokenSource(TranslationService.DefaultTimeout);
+            
+            var response = await _httpClient.PostAsync(
+                $"{_youdaoApiEnv.BaseUrl}api", 
+                new FormUrlEncodedContent(parameters),
+                cts.Token
+            );
+            
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadAsStringAsync(cts.Token);
 
-        var result = await response.Content.ReadAsStringAsync();
+            var translationResponse = JsonSerializer.Deserialize<YoudaoTranslationResponse>(result);
 
-        var translationResponse = JsonSerializer.Deserialize<YoudaoTranslationResponse>(result);
+            if (translationResponse == null || translationResponse.ErrorCode != "0")
+            {
+                return null;
+            }
 
-        if (translationResponse == null || translationResponse.ErrorCode != "0")
+            var translationFromTo = translationResponse.FromJoinTo.Split('2');
+            var translationFrom = translationFromTo[0];
+            var translationTo = translationFromTo[1];
+
+            var res = new TranslateResult(translationResponse.Translation?.FirstOrDefault() ?? string.Empty, translationFrom, translationTo);
+
+            return res;
+        }
+        catch (OperationCanceledException)
         {
             return null;
         }
-
-        var translationFromTo = translationResponse.FromJoinTo.Split('2');
-        var translationFrom = translationFromTo[0];
-        var translationTo = translationFromTo[1];
-
-        var res = new TranslateResult(translationResponse.Translation?.FirstOrDefault() ?? string.Empty, translationFrom, translationTo);
-
-        await UpdateTranslationOrderAsync(translationOrder.Id, translationFrom, translationTo);
-
-        return res;
     }
 
     private string GenerateSign(string content, string salt, string curtime)

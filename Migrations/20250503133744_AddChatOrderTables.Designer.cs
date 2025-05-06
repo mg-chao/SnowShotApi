@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SnowShotApi.Data;
@@ -11,9 +12,11 @@ using SnowShotApi.Data;
 namespace SnowShotApi.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250503133744_AddChatOrderTables")]
+    partial class AddChatOrderTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -69,7 +72,7 @@ namespace SnowShotApi.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("SnowShotApi.Models.UserChatOrder", b =>
+            modelBuilder.Entity("SnowShotApi.Models.UserOrder", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -77,66 +80,16 @@ namespace SnowShotApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("CompletionTokens")
-                        .HasColumnType("integer");
+                    b.Property<long>("AssoId")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
-                    b.Property<string>("Model")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("PromptTokens")
+                    b.Property<int>("Type")
                         .HasColumnType("integer");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("Model");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("UserChatOrders");
-                });
-
-            modelBuilder.Entity("SnowShotApi.Models.UserChatOrderStats", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("CompletionTokensSum")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
-
-                    b.Property<int>("Date")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Model")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("PromptTokensSum")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<long>("UserId")
                         .HasColumnType("bigint");
@@ -147,10 +100,10 @@ namespace SnowShotApi.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("Date", "Model")
+                    b.HasIndex("Type", "AssoId")
                         .IsUnique();
 
-                    b.ToTable("UserChatOrderStats");
+                    b.ToTable("UserOrders");
                 });
 
             modelBuilder.Entity("SnowShotApi.Models.UserTranslationOrder", b =>
@@ -160,9 +113,6 @@ namespace SnowShotApi.Migrations
                         .HasColumnType("bigint");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("CompletionTokens")
-                        .HasColumnType("integer");
 
                     b.Property<int>("ContentLength")
                         .HasColumnType("integer");
@@ -182,12 +132,6 @@ namespace SnowShotApi.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
-                    b.Property<int>("PromptTokens")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.Property<string>("To")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -196,21 +140,16 @@ namespace SnowShotApi.Migrations
                     b.Property<int>("Type")
                         .HasColumnType("integer");
 
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("Type");
 
-                    b.HasIndex("UserId");
-
                     b.ToTable("UserTranslationOrders");
                 });
 
-            modelBuilder.Entity("SnowShotApi.Models.UserTranslationOrderStats", b =>
+            modelBuilder.Entity("SnowShotApi.Models.UserTranslationUserOrderStats", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -247,7 +186,7 @@ namespace SnowShotApi.Migrations
                     b.HasIndex("Date", "Type")
                         .IsUnique();
 
-                    b.ToTable("UserTranslationOrderStats");
+                    b.ToTable("UserTranslationUserOrderStats");
                 });
 #pragma warning restore 612, 618
         }

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SnowShotApi.Data;
@@ -11,9 +12,11 @@ using SnowShotApi.Data;
 namespace SnowShotApi.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250503140713_UpdateChatOrderField")]
+    partial class UpdateChatOrderField
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -92,19 +95,11 @@ namespace SnowShotApi.Migrations
                     b.Property<int>("PromptTokens")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("Model");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("UserChatOrders");
                 });
@@ -145,12 +140,44 @@ namespace SnowShotApi.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("UserId");
-
                     b.HasIndex("Date", "Model")
                         .IsUnique();
 
                     b.ToTable("UserChatOrderStats");
+                });
+
+            modelBuilder.Entity("SnowShotApi.Models.UserOrder", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AssoId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("Type", "AssoId")
+                        .IsUnique();
+
+                    b.ToTable("UserOrders");
                 });
 
             modelBuilder.Entity("SnowShotApi.Models.UserTranslationOrder", b =>
@@ -160,9 +187,6 @@ namespace SnowShotApi.Migrations
                         .HasColumnType("bigint");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("CompletionTokens")
-                        .HasColumnType("integer");
 
                     b.Property<int>("ContentLength")
                         .HasColumnType("integer");
@@ -182,12 +206,6 @@ namespace SnowShotApi.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
-                    b.Property<int>("PromptTokens")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.Property<string>("To")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -196,16 +214,11 @@ namespace SnowShotApi.Migrations
                     b.Property<int>("Type")
                         .HasColumnType("integer");
 
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("Type");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("UserTranslationOrders");
                 });

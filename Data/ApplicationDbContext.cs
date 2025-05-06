@@ -7,9 +7,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 {
     public DbSet<IpUser> IpUsers { get; set; }
     public DbSet<User> Users { get; set; }
-    public DbSet<UserOrder> UserOrders { get; set; }
     public DbSet<UserTranslationOrder> UserTranslationOrders { get; set; }
-    public DbSet<UserTranslationUserOrderStats> UserTranslationUserOrderStats { get; set; }
+    public DbSet<UserTranslationOrderStats> UserTranslationOrderStats { get; set; }
+    public DbSet<UserChatOrder> UserChatOrders { get; set; }
+    public DbSet<UserChatOrderStats> UserChatOrderStats { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,15 +23,19 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             .Property(u => u.CreatedAt)
             .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
-        modelBuilder.Entity<UserOrder>()
-            .Property(u => u.CreatedAt)
-            .HasDefaultValueSql("CURRENT_TIMESTAMP");
-
         modelBuilder.Entity<UserTranslationOrder>()
             .Property(u => u.CreatedAt)
             .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
-        modelBuilder.Entity<UserTranslationUserOrderStats>()
+        modelBuilder.Entity<UserTranslationOrderStats>()
+            .Property(u => u.CreatedAt)
+            .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        modelBuilder.Entity<UserChatOrder>()
+            .Property(u => u.CreatedAt)
+            .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        modelBuilder.Entity<UserChatOrderStats>()
             .Property(u => u.CreatedAt)
             .HasDefaultValueSql("CURRENT_TIMESTAMP");
     }

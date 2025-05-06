@@ -46,4 +46,25 @@ public class TranslationLanguageCodeAttribute(bool SupportAuto = false) : Valida
 
         return ValidationResult.Success;
     }
+
+    public static string ConvertToText(string languageCode)
+    {
+        return languageCode switch
+        {
+            "en" => "English",
+            "zh-CHS" => "Chinese Simplified",
+            "zh-CHT" => "Chinese Traditional",
+            "es" => "Spanish",
+            "fr" => "French",
+            "ar" => "Arabic",
+            "de" => "German",
+            "it" => "Italian",
+            "ja" => "Japanese",
+            "pt" => "Portuguese",
+            "ru" => "Russian",
+            "tr" => "Turkish",
+            "auto" => "Auto",
+            _ => "Auto"
+        };
+    }
 }

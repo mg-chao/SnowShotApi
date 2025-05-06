@@ -5,15 +5,21 @@ using SnowShotApi.Services.UserServices;
 using SnowShotApi.Services.TranslationServices;
 using System.Text.Json.Serialization;
 using SnowShotApi.Models;
-using SnowShotApi.AppEnvs;
 using System.ComponentModel.DataAnnotations;
 using SnowShotApi.RequestValidations;
+using SnowShotApi.Services.OrderServices;
 
 namespace SnowShotApi.Controllers.TranslationControllers;
 
 public class TranslationRequest()
 {
+
     [Required]
+    [JsonPropertyName("type")]
+    public UserTranslationType Type { get; set; } = UserTranslationType.Youdao;
+
+    [Required]
+    [MaxLength(10000)]
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
 
@@ -50,11 +56,9 @@ public class TranslationController(
     ApplicationDbContext context,
     IStringLocalizer<AppControllerBase> localizer,
     IIpUserService ipUserService,
-    IYoudaoTranslationService youdaoTranslationService,
-    ITranslationOrderStatsService translationOrderStatsService) : AppControllerBase(context, localizer)
+    ITranslationOrderStatsService translationOrderStatsService,
+    ITranslationService translationService) : AppControllerBase(context, localizer)
 {
-    private readonly YoudaoApiEnv _youdaoApiEnv = new();
-
     [HttpPost("translate")]
     public async Task<IActionResult> TranslateAsync([FromBody] TranslationRequest request)
     {
@@ -65,13 +69,12 @@ public class TranslationController(
         }
 
         // 判断用户是否达到限额
-        var stats = await translationOrderStatsService.GetUserTranslationUserOrderStatsAsync(user.Id, UserTranslationType.Youdao);
-        if (stats != null && stats.ContentLengthSum >= _youdaoApiEnv.ContentLengthLimit)
+        if (await translationOrderStatsService.IsLimitIpUserAsync(user.Id, UserTranslationType.Youdao))
         {
             return Error(20001, _localizer["User translation limit reached"]);
         }
 
-        var result = await youdaoTranslationService.TranslateAsync(user.Id, request.Content, request.From, request.To, request.Domain);
+        var result = await translationService.TranslateAsync(request, user.Id);
 
         if (result == null)
         {
