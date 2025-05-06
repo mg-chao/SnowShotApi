@@ -19,7 +19,7 @@ public class TranslationRequest()
     public UserTranslationType Type { get; set; } = UserTranslationType.Youdao;
 
     [Required]
-    [MaxLength(10000)]
+    [MaxLength(5000)]
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
 
