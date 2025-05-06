@@ -93,7 +93,7 @@ public class ChatController(
 
         // 判断用户是否达到限额
         var stats = await chatOrderStatsService.GetAsync(user.Id, chatRequest.Model);
-        if (stats != null && stats.PromptTokensSum >= _deepseekApiEnv.TokensLimit)
+        if (stats != null && stats.PromptTokensSum + stats.CompletionTokensSum >= _deepseekApiEnv.TokensLimit)
         {
             await ChatService.ChatError(Response, HttpStatusCode.TooManyRequests, new ChatError
             {
