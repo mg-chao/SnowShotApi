@@ -81,11 +81,17 @@ public class ChatService(
 
     private static IChatService? GetInstance(ChatRequest chatRequest, HttpClient httpClient, IStringLocalizer<AppControllerBase> localizer)
     {
-        return chatRequest.Model switch
+        if (chatRequest.Model.StartsWith("deepseek"))
         {
-            "deepseek-chat" or "deepseek-reasoner" => new DeepseekService(httpClient, localizer),
-            _ => null,
-        };
+            return new DeepseekService(httpClient, localizer);
+        }
+
+        if (chatRequest.Model.StartsWith("claude"))
+        {
+            return new ClaudeService(httpClient, localizer);
+        }
+
+        return null;
     }
 
     public async Task<ChatResult?> StreamChatCompletion(ChatRequest chatRequest, HttpResponse response, long userId)

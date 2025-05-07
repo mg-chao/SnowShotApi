@@ -41,6 +41,7 @@ builder.Services.AddScoped<IChatOrderStatsService, ChatOrderStatsService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IChatOrderService, ChatOrderService>();
 builder.Services.AddScoped<IDeepseekService, DeepseekService>();
+builder.Services.AddScoped<IClaudeService, ClaudeService>();
 var app = builder.Build();
 
 // 添加异常处理中间件

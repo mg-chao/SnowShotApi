@@ -45,7 +45,7 @@ Deliver only the final translation without any surrounding explanation, commenta
 
         var userMessage = $"{request.Content}";
 
-        ChatClient client = new(model: "deepseek-chat", new ApiKeyCredential(_deepseekApiEnv.Key), new()
+        ChatClient client = new(model: "deepseek-chat", new ApiKeyCredential(_deepseekApiEnv.ApiKey), new()
         {
             Endpoint = new Uri(_deepseekApiEnv.BaseUrl)
         });

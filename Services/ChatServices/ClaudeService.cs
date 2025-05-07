@@ -8,36 +8,67 @@ using SnowShotApi.Controllers.ChatControllers;
 
 namespace SnowShotApi.Services.ChatServices;
 
-public interface IDeepseekService : IChatService
+public interface IClaudeService : IChatService
 {
 }
 
-public class DeepseekService(
+public class ClaudeService(
     HttpClient httpClient,
-    IStringLocalizer<AppControllerBase> localizer) : BaseChatService(httpClient, localizer), IDeepseekService
+    IStringLocalizer<AppControllerBase> localizer) : BaseChatService(httpClient, localizer), IClaudeService
 {
-    private readonly DeepseekApiEnv _deepseekApiEnv = new();
+    private readonly ClaudeApiEnv _claudeApiEnv = new();
 
     protected override string GetApiUrl()
     {
-        return $"{_deepseekApiEnv.BaseUrl}chat/completions";
+        return $"{_claudeApiEnv.BaseUrl}v1/messages";
     }
 
     protected override void SetRequestHeaders()
     {
-        HttpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_deepseekApiEnv.ApiKey}");
+        HttpClient.DefaultRequestHeaders.Add("x-api-key", _claudeApiEnv.ApiKey);
+        HttpClient.DefaultRequestHeaders.Add("anthropic-version", _claudeApiEnv.ApiVersion);
     }
 
     protected override StringContent CreateRequestContent(ChatRequest chatRequest)
     {
+        var enableThinking = chatRequest.Model.EndsWith("_thinking");
+
+        var model = chatRequest.Model;
+        if (enableThinking)
+        {
+            model = model[..^9];
+        }
+
+        var maxTokens = chatRequest.MaxTokens;
+        if (enableThinking)
+        {
+            maxTokens = Math.Max(maxTokens + 1024, chatRequest.ThinkingBudgetTokens);
+        }
+
+        object thinkingParams = enableThinking ? new
+        {
+            type = "enabled",
+            budget_tokens = chatRequest.ThinkingBudgetTokens
+        } : new
+        {
+            type = "disabled"
+        };
+
+        var temperature = Math.Max(Math.Min(chatRequest.Temperature / 2, 1), 0);
+        if (enableThinking)
+        {
+            temperature = 1;
+        }
+
         return new StringContent(
             JsonSerializer.Serialize(new
             {
-                model = chatRequest.Model,
+                model,
                 messages = chatRequest.Messages,
-                temperature = Math.Min(chatRequest.Temperature / 2, 1),
-                max_tokens = chatRequest.MaxTokens,
-                stream = true,
+                max_tokens = maxTokens,
+                temperature,
+                thinking = thinkingParams,
+                stream = true
             }),
             Encoding.UTF8,
             "application/json"

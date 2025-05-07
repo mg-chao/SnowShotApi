@@ -4,12 +4,11 @@ using Microsoft.Extensions.Localization;
 using SnowShotApi.AppEnvs;
 using SnowShotApi.Data;
 using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
 using System.Net;
-using System.Text;
 using SnowShotApi.Services.ChatServices;
 using SnowShotApi.Services.OrderServices;
 using SnowShotApi.Services.UserServices;
+using SnowShotApi.RequestValidations;
 
 namespace SnowShotApi.Controllers.ChatControllers;
 
@@ -38,13 +37,18 @@ public class ChatRequest
     public double Temperature { get; set; } = 1;
 
     [JsonPropertyName("max_tokens")]
-    [Range(1, 8192)]
+    [Range(512, 8192)]
     public int MaxTokens { get; set; } = 4096;
+
+    [JsonPropertyName("thinking_budget_tokens")]
+    [Range(1024, 8192)]
+    public int ThinkingBudgetTokens { get; set; } = 4096;
 }
 
 public class ChatModel
 {
     [JsonPropertyName("model")]
+    [ChatModel]
     public string Model { get; set; } = "";
 
     [JsonPropertyName("name")]
@@ -63,18 +67,21 @@ public class ChatController(
     IChatOrderStatsService chatOrderStatsService) : AppControllerBase(context, localizer)
 {
     private readonly DeepseekApiEnv _deepseekApiEnv = new();
-    private readonly List<ChatModel> _models = [
-        new() {
-            Model = "deepseek-chat",
-            Name = "DeepSeek-V3",
-            Thinking = false,
-        },
-        new() {
-            Model = "deepseek-reasoner",
-            Name = "DeepSeek-R1",
-            Thinking = true,
-        },
-    ];
+    private readonly ClaudeApiEnv _claudeApiEnv = new();
+    private readonly List<ChatModel> _models = [.. ChatModelAttribute.ValidModels.Select(model => {
+        var thinking = false;
+        if (model == "deepseek-reasoner" || model.EndsWith("_thinking"))
+        {
+            thinking = true;
+        }
+
+        return new ChatModel
+        {
+            Model = model,
+            Name = ChatModelAttribute.ConvertToText(model),
+            Thinking = thinking,
+        };
+    })];
 
     [HttpPost("chat/completions")]
     public async Task ChatCompletions([FromBody] ChatRequest chatRequest)
@@ -93,7 +100,20 @@ public class ChatController(
 
         // 判断用户是否达到限额
         var stats = await chatOrderStatsService.GetAsync(user.Id, chatRequest.Model);
-        if (stats != null && stats.PromptTokensSum + stats.CompletionTokensSum >= _deepseekApiEnv.TokensLimit)
+        int tokenLimit = chatRequest.Model.StartsWith("claude")
+            ? _claudeApiEnv.TokensLimit
+            : _deepseekApiEnv.TokensLimit;
+
+        if (chatRequest.Model.StartsWith("claude-3-5-haiku"))
+        {
+            tokenLimit = _claudeApiEnv.HaikuTokensLimit;
+        }
+        else if (chatRequest.Model.StartsWith("claude-3-7-sonnet"))
+        {
+            tokenLimit = _claudeApiEnv.SonnetTokensLimit;
+        }
+
+        if (stats != null && stats.PromptTokensSum + stats.CompletionTokensSum >= tokenLimit)
         {
             await ChatService.ChatError(Response, HttpStatusCode.TooManyRequests, new ChatError
             {
