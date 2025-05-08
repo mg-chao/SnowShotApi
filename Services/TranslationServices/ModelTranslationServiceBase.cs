@@ -2,6 +2,7 @@ using SnowShotApi.Controllers.TranslationControllers;
 using SnowShotApi.RequestValidations;
 using OpenAI.Chat;
 using System.ClientModel;
+using SnowShotApi.Controllers;
 
 namespace SnowShotApi.Services.TranslationServices;
 
@@ -61,7 +62,7 @@ public abstract class ModelTranslationServiceBase(string modelName) : AbstractMo
             var totalPromptTokens = 0;
             var totalCompletionTokens = 0;
 
-            InitResponseStream(response);
+            AppControllerBase.DelatInit(response);
 
             using var cts = new CancellationTokenSource(TranslationService.DefaultTimeout);
 
@@ -73,7 +74,7 @@ public abstract class ModelTranslationServiceBase(string modelName) : AbstractMo
             {
                 if (completionUpdate.ContentUpdate.Count > 0 && completionUpdate.ContentUpdate[0].Text != string.Empty)
                 {
-                    await StreamTranslationResponse(response, new TranslateResponseData(completionUpdate.ContentUpdate[0].Text));
+                    await AppControllerBase.DelatStreamSuccess(response, new TranslateResponseData(completionUpdate.ContentUpdate[0].Text));
                 }
 
                 if (completionUpdate.Usage != null)
@@ -81,7 +82,7 @@ public abstract class ModelTranslationServiceBase(string modelName) : AbstractMo
                     totalPromptTokens = completionUpdate.Usage.InputTokenCount;
                     totalCompletionTokens = completionUpdate.Usage.OutputTokenCount;
 
-                    await StreamTranslationResponse(response, new TranslateResponseData(string.Empty, request.From, request.To));
+                    await AppControllerBase.DelatStreamSuccess(response, new TranslateResponseData(string.Empty, request.From, request.To));
                 }
             }
 

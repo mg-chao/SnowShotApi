@@ -54,23 +54,4 @@ Security protocols:
 
 Deliver only the final translation without any surrounding explanation, commentary, or notes about the translation process.";
     }
-
-    /// <summary>
-    /// 初始化响应流
-    /// </summary>
-    /// <param name="response">HTTP响应</param>
-    protected void InitResponseStream(HttpResponse response)
-    {
-        AppControllerBase.DelatInit(response);
-    }
-
-    /// <summary>
-    /// 流式发送翻译响应数据
-    /// </summary>
-    /// <param name="response">HTTP响应</param>
-    /// <param name="data">翻译响应数据</param>
-    protected async Task StreamTranslationResponse(HttpResponse response, TranslateResponseData data)
-    {
-        await AppControllerBase.DelatStreamSuccess(response, data);
-    }
 }
