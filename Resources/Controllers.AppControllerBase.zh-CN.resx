@@ -161,4 +161,16 @@
     <value>读取 Tokens 失败</value>
     <comment/>
   </data>
+  <data name="Qwen" xml:space="preserve">
+    <value>通义千问</value>
+    <comment/>
+  </data>
+  <data name="DeepSeek" xml:space="preserve">
+    <value>DeepSeek</value>
+    <comment/>
+  </data>
+  <data name="Youdao" xml:space="preserve">
+    <value>有道翻译</value>
+    <comment/>
+  </data>
 </root>

@@ -38,16 +38,25 @@ public class TranslationRequest()
     public string Domain { get; set; } = string.Empty;
 }
 
-public class TranslateResponseData(string content, string from, string to)
+public class TranslateResponseData(string deltaContent, string? from = null, string? to = null)
 {
-    [JsonPropertyName("content")]
-    public string Content { get; set; } = content;
+    [JsonPropertyName("delta_content")]
+    public string DeltaContent { get; set; } = deltaContent;
 
     [JsonPropertyName("from")]
-    public string From { get; set; } = from;
+    public string? From { get; set; } = from;
 
     [JsonPropertyName("to")]
-    public string To { get; set; } = to;
+    public string? To { get; set; } = to;
+}
+
+public class TranslationTypeOption
+{
+    [JsonPropertyName("type")]
+    public UserTranslationType Type { get; set; } = UserTranslationType.Youdao;
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
 }
 
 [ApiController]
@@ -60,27 +69,44 @@ public class TranslationController(
     ITranslationService translationService) : AppControllerBase(context, localizer)
 {
     [HttpPost("translate")]
-    public async Task<IActionResult> TranslateAsync([FromBody] TranslationRequest request)
+    public async Task TranslateAsync([FromBody] TranslationRequest request)
     {
         var user = await ipUserService.GetUserAsync(HttpContext);
         if (user == null)
         {
-            return Error(10001, _localizer["Cannot get client IP address"]);
+            await DelatError(Response, 10001, _localizer["Cannot get client IP address"]);
+            return;
         }
 
         // 判断用户是否达到限额
         if (await translationOrderStatsService.IsLimitIpUserAsync(user.Id, UserTranslationType.Youdao))
         {
-            return Error(20001, _localizer["User translation limit reached"]);
+            await DelatError(Response, 20001, _localizer["User translation limit reached"]);
+            return;
         }
 
-        var result = await translationService.TranslateAsync(request, user.Id);
+
+        var result = await translationService.TranslateAsync(request, Response, user.Id);
 
         if (result == null)
         {
-            return Error(30001, _localizer["Failed to translate"]);
+            await DelatError(Response, 30001, _localizer["Failed to translate"]);
+            return;
         }
+    }
 
-        return Success(new TranslateResponseData(result.Content, result.From, result.To));
+    [HttpGet("types")]
+    public IActionResult GetTranslationTypes()
+    {
+        var translationTypes = new List<TranslationTypeOption>
+        {
+            new() { Type = UserTranslationType.Youdao, Name = _localizer["Youdao"] },
+            new() { Type = UserTranslationType.Deepseek, Name = _localizer["Deepseek"] },
+            new() { Type = UserTranslationType.QwenTurbo, Name = $"{_localizer["Qwen"]} Turbo" },
+            new() { Type = UserTranslationType.QwenPlus, Name = $"{_localizer["Qwen"]} Plus" },
+            new() { Type = UserTranslationType.QwenMax, Name = $"{_localizer["Qwen"]} Max" }
+        };
+
+        return Success(translationTypes);
     }
 }

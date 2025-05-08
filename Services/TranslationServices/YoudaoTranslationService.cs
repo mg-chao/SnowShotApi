@@ -7,6 +7,7 @@ using SnowShotApi.Utiles;
 using SnowShotApi.Services.OrderServices;
 using SnowShotApi.Controllers.TranslationControllers;
 using System.Net.Http;
+using SnowShotApi.Controllers;
 
 namespace SnowShotApi.Services.TranslationServices;
 
@@ -19,7 +20,7 @@ public class YoudaoTranslationService(HttpClient httpClient) : IYoudaoTranslatio
     private readonly YoudaoApiEnv _youdaoApiEnv = new();
     private readonly HttpClient _httpClient = httpClient;
 
-    public async Task<TranslateResult?> TranslateAsync(TranslationRequest request, long userId)
+    public async Task<TranslateResult?> TranslateAsync(TranslationRequest request, HttpResponse response, long userId)
     {
         var salt = Guid.NewGuid().ToString();
         var curtime = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
@@ -42,15 +43,15 @@ public class YoudaoTranslationService(HttpClient httpClient) : IYoudaoTranslatio
         {
             // 设置超时取消令牌
             using var cts = new CancellationTokenSource(TranslationService.DefaultTimeout);
-            
-            var response = await _httpClient.PostAsync(
-                $"{_youdaoApiEnv.BaseUrl}api", 
+
+            var clientResponse = await _httpClient.PostAsync(
+                $"{_youdaoApiEnv.BaseUrl}api",
                 new FormUrlEncodedContent(parameters),
                 cts.Token
             );
-            
-            response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadAsStringAsync(cts.Token);
+
+            clientResponse.EnsureSuccessStatusCode();
+            var result = await clientResponse.Content.ReadAsStringAsync(cts.Token);
 
             var translationResponse = JsonSerializer.Deserialize<YoudaoTranslationResponse>(result);
 
@@ -63,9 +64,17 @@ public class YoudaoTranslationService(HttpClient httpClient) : IYoudaoTranslatio
             var translationFrom = translationFromTo[0];
             var translationTo = translationFromTo[1];
 
-            var res = new TranslateResult(translationResponse.Translation?.FirstOrDefault() ?? string.Empty, translationFrom, translationTo);
+            var translationContent = translationResponse.Translation?.FirstOrDefault() ?? string.Empty;
+            var res = new TranslateResult(translationFrom, translationTo);
+
+            AppControllerBase.DelatInit(response);
+            await AppControllerBase.DelatStreamSuccess(response, new TranslateResponseData(translationContent, res.From, res.To));
 
             return res;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
         }
         catch (OperationCanceledException)
         {

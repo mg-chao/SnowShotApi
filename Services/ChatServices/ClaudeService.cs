@@ -74,35 +74,4 @@ public class ClaudeService(
             "application/json"
         );
     }
-
-    protected override async Task<ChatResult?> ProcessResponseStream(StreamReader reader, HttpResponse response)
-    {
-        var lastValidLine = string.Empty;
-        while (!reader.EndOfStream)
-        {
-            var line = await reader.ReadLineAsync();
-            if (string.IsNullOrEmpty(line)) continue;
-
-            await response.WriteAsync($"{line}\n\n");
-            if (!line.StartsWith("data: [DONE]"))
-            {
-                lastValidLine = line;
-            }
-            await response.Body.FlushAsync();
-        }
-
-        if (string.IsNullOrEmpty(lastValidLine))
-        {
-            await ChatService.ChatError(response, HttpStatusCode.InternalServerError, new ChatError
-            {
-                Message = Localizer["Failed to read Tokens"],
-                Type = "internal_error",
-                Code = "internal_error"
-            });
-            return null;
-        }
-
-        var result = JsonSerializer.Deserialize<ChatResult>(lastValidLine[6..]);
-        return result;
-    }
 }

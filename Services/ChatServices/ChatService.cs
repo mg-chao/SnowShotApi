@@ -91,6 +91,11 @@ public class ChatService(
             return new ClaudeService(httpClient, localizer);
         }
 
+        if (chatRequest.Model.StartsWith("qwen"))
+        {
+            return new QwenService(httpClient, localizer);
+        }
+
         return null;
     }
 

@@ -161,4 +161,16 @@
     <value>Chat usage is null</value>
     <comment/>
   </data>
+  <data name="Qwen" xml:space="preserve">
+    <value>Qwen</value>
+    <comment/>
+  </data>
+  <data name="DeepSeek" xml:space="preserve">
+    <value>DeepSeek</value>
+    <comment/>
+  </data>
+  <data name="Youdao" xml:space="preserve">
+    <value>Youdao</value>
+    <comment/>
+  </data>
 </root>

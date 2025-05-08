@@ -78,7 +78,7 @@ public class ChatController(
         return new ChatModel
         {
             Model = model,
-            Name = ChatModelAttribute.ConvertToText(model),
+            Name = ChatModelAttribute.ConvertToText(model, localizer),
             Thinking = thinking,
         };
     })];

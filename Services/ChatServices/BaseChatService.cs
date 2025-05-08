@@ -15,7 +15,6 @@ public abstract class BaseChatService(HttpClient httpClient, IStringLocalizer<Ap
     protected abstract string GetApiUrl();
     protected abstract void SetRequestHeaders();
     protected abstract StringContent CreateRequestContent(ChatRequest chatRequest);
-    protected abstract Task<ChatResult?> ProcessResponseStream(StreamReader reader, HttpResponse response);
 
     public async Task<ChatResult?> StreamChatCompletion(ChatRequest chatRequest, HttpResponse response, long userId)
     {
@@ -46,12 +45,6 @@ public abstract class BaseChatService(HttpClient httpClient, IStringLocalizer<Ap
                     return null;
                 }
 
-                response.ContentType = "text/event-stream";
-                response.Headers.CacheControl = "no-cache";
-                response.Headers.Connection = "keep-alive";
-
-                response.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()?.DisableBuffering();
-
                 using var stream = await responseMessage.Content.ReadAsStreamAsync(timeoutCts.Token);
                 using var reader = new StreamReader(stream);
 
@@ -80,5 +73,38 @@ public abstract class BaseChatService(HttpClient httpClient, IStringLocalizer<Ap
             });
             return null;
         }
+    }
+
+    protected virtual async Task<ChatResult?> ProcessResponseStream(StreamReader reader, HttpResponse response)
+    {
+        AppControllerBase.DelatInit(response);
+
+        var lastValidLine = string.Empty;
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync();
+            if (string.IsNullOrEmpty(line)) continue;
+
+            if (!line.StartsWith("data: [DONE]"))
+            {
+                lastValidLine = line;
+            }
+
+            await AppControllerBase.DelatStream(response, line[6..]);
+        }
+
+        if (string.IsNullOrEmpty(lastValidLine))
+        {
+            await ChatService.ChatError(response, HttpStatusCode.InternalServerError, new ChatError
+            {
+                Message = Localizer["Failed to read Tokens"],
+                Type = "internal_error",
+                Code = "internal_error"
+            });
+            return null;
+        }
+
+        var result = JsonSerializer.Deserialize<ChatResult>(lastValidLine[6..]);
+        return result;
     }
 }

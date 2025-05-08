@@ -16,6 +16,21 @@ public enum UserTranslationType
     /// Deepseek 翻译
     /// </summary>
     Deepseek,
+
+    /// <summary>
+    /// Qwen 翻译
+    /// </summary>
+    QwenTurbo,
+
+    /// <summary>
+    /// Qwen Plus 翻译
+    /// </summary>
+    QwenPlus,
+
+    /// <summary>
+    /// Qwen Max 翻译
+    /// </summary>
+    QwenMax,
 }
 
 public enum UserTranslationOrderStatus
