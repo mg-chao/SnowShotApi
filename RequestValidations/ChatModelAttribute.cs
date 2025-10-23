@@ -3,22 +3,31 @@ using Microsoft.Extensions.Localization;
 using SnowShotApi.Controllers;
 
 namespace SnowShotApi.RequestValidations;
+
+public class ChatModelInfo(string modelName, bool supportThinking, decimal inputPrice, decimal outputPrice)
+{
+    public string ModelName { get; set; } = modelName;
+    public bool SupportThinking { get; set; } = supportThinking;
+    /// <summary>
+    /// 输入价格, (元/1K tokens)
+    /// </summary>
+    /// <value></value>
+    public decimal PromptTokenPrice { get; set; } = inputPrice;
+    /// <summary>
+    /// 输出价格, (元/1K tokens)
+    /// </summary>
+    /// <value></value>
+    public decimal CompletionTokenPrice { get; set; } = outputPrice;
+}
+
+
 public class ChatModelAttribute : ValidationAttribute
 {
-    public static readonly HashSet<string> ValidModels =
-    [
-        "deepseek-chat",
-        "deepseek-reasoner",
-        "qwen-turbo-latest",
-        "qwen-plus-latest",
-        "qwen-max-latest",
-        "qwen-turbo-latest_thinking",
-        "qwen-plus-latest_thinking",
-        // "qwen-max-latest_thinking",
-        // "claude-3-5-haiku-latest",
-        // "claude-3-7-sonnet-latest",
-        // "claude-3-7-sonnet-latest_thinking",
-    ];
+    public static readonly Dictionary<string, ChatModelInfo> ValidModels =
+    new()
+    {
+        { "qwen-plus-latest", new ChatModelInfo("qwen-plus-latest", true, 0.0024M, 0.024M) }
+    };
 
     protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
@@ -33,7 +42,7 @@ public class ChatModelAttribute : ValidationAttribute
             return new ValidationResult("Model cannot be empty");
         }
 
-        if (!ValidModels.Contains(model))
+        if (!ValidModels.ContainsKey(model))
         {
             return new ValidationResult($"Unsupported model: {model}");
         }
@@ -45,18 +54,8 @@ public class ChatModelAttribute : ValidationAttribute
     {
         return model switch
         {
-            "deepseek-chat" => "DeepSeek V3",
-            "deepseek-reasoner" => "DeepSeek R1",
-            "qwen-max-latest" => $"{localizer["Qwen"]} Max",
             "qwen-plus-latest" => $"{localizer["Qwen"]} Plus",
-            "qwen-turbo-latest" => $"{localizer["Qwen"]} Turbo",
-            "qwen-max-latest_thinking" => $"{localizer["Qwen"]} Max",
-            "qwen-plus-latest_thinking" => $"{localizer["Qwen"]} Plus",
-            "qwen-turbo-latest_thinking" => $"{localizer["Qwen"]} Turbo",
-            "claude-3-5-haiku-latest" => "Claude 3.5 Haiku",
-            "claude-3-7-sonnet-latest" => "Claude 3.7 Sonnet",
-            "claude-3-7-sonnet-latest_thinking" => "Claude 3.7 Sonnet",
-            _ => "DeepSeek Chat",
+            _ => "Unknown",
         };
     }
 }

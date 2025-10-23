@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SnowShotApi.AppEnvs;
 using SnowShotApi.Data;
 using SnowShotApi.Models;
+using SnowShotApi.RequestValidations;
 
 namespace SnowShotApi.Services.OrderServices;
 
@@ -25,7 +26,7 @@ public interface IChatOrderStatsService
     /// <returns>用户订单统计</returns>
     Task<UserChatOrderStats?> GetAsync(long userId, string model);
 
-    
+
     /// <summary>
     /// 判断用户是否达到限额
     /// </summary>
@@ -80,7 +81,18 @@ public class ChatOrderStatsService(ApplicationDbContext context) : IChatOrderSta
 
     public async Task<bool> IsLimitIpUserAsync(long userId, string model)
     {
+        var modelInfo = ChatModelAttribute.ValidModels[model];
+        if (modelInfo == null)
+        {
+            return true;
+        }
+
         var stats = await GetAsync(userId, model);
-        return stats != null && stats.PromptTokensSum >= _chatApiEnv.TokensLimit;
+        if (stats == null)
+        {
+            return false;
+        }
+
+        return (stats.PromptTokensSum / 1000M * modelInfo.PromptTokenPrice + stats.CompletionTokensSum / 1000M * modelInfo.CompletionTokenPrice) >= _chatApiEnv.UserCostLimit;
     }
 }

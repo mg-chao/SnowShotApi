@@ -9,7 +9,7 @@ public class QwenApiEnv : ChatApiEnv
 
     public QwenApiEnv()
     {
-        BaseUrl = Env.GetString("QWEN_API_BASE_URL", "");
+        BaseUrl = Env.GetString("QWEN_API_BASE_URL", "https://dashscope.aliyuncs.com/");
         ApiKey = Env.GetString("QWEN_API_KEY", "");
     }
 }

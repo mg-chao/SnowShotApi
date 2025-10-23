@@ -4,7 +4,6 @@ using DotNetEnv;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Localization;
 using System.Globalization;
-using SnowShotApi.Services.TranslationServices;
 using SnowShotApi.Services.UserServices;
 using SnowShotApi.Middleware;
 using SnowShotApi.Services.OrderServices;
@@ -33,15 +32,9 @@ builder.Services.AddMvc()
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IIpUserService, IpUserService>();
 builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<ITranslationOrderService, TranslationOrderService>();
-builder.Services.AddScoped<ITranslationService, TranslationService>();
-builder.Services.AddScoped<IYoudaoTranslationService, YoudaoTranslationService>();
-builder.Services.AddScoped<ITranslationOrderStatsService, TranslationOrderStatsService>();
 builder.Services.AddScoped<IChatOrderStatsService, ChatOrderStatsService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IChatOrderService, ChatOrderService>();
-builder.Services.AddScoped<IDeepseekService, DeepseekService>();
-builder.Services.AddScoped<IClaudeService, ClaudeService>();
 var app = builder.Build();
 
 // 添加异常处理中间件
