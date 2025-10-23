@@ -66,24 +66,22 @@ public class ChatController(
     IChatService chatService,
     IChatOrderStatsService chatOrderStatsService) : AppControllerBase(context, localizer)
 {
-    private readonly DeepseekApiEnv _deepseekApiEnv = new();
-    private readonly ClaudeApiEnv _claudeApiEnv = new();
     private readonly List<ChatModel> _models = [.. ChatModelAttribute.ValidModels.Select(model => {
         var thinking = false;
-        if (model == "deepseek-reasoner" || model.EndsWith("_thinking"))
+        if (model.Value.SupportThinking)
         {
             thinking = true;
         }
 
         return new ChatModel
         {
-            Model = model,
-            Name = ChatModelAttribute.ConvertToText(model, localizer),
+            Model = model.Key,
+            Name = ChatModelAttribute.ConvertToText(model.Key, localizer),
             Thinking = thinking,
         };
     })];
 
-    [HttpPost("chat/completions")]
+    [HttpPost("completions")]
     public async Task ChatCompletions([FromBody] ChatRequest chatRequest)
     {
         var user = await ipUserService.GetUserAsync(HttpContext);
@@ -98,22 +96,20 @@ public class ChatController(
             return;
         }
 
+        if (!ChatModelAttribute.ValidModels.TryGetValue(chatRequest.Model, out var modelInfo) || modelInfo == null)
+        {
+            await ChatService.ChatError(Response, HttpStatusCode.BadRequest, new ChatError
+            {
+                Message = $"The model `{chatRequest.Model}` does not exist or you do not have access to it.",
+                Type = "invalid_request_error",
+                Code = "model_not_found",
+                Param = "model"
+            });
+            return;
+        }
+
         // 判断用户是否达到限额
-        var stats = await chatOrderStatsService.GetAsync(user.Id, chatRequest.Model);
-        int tokenLimit = chatRequest.Model.StartsWith("claude")
-            ? _claudeApiEnv.TokensLimit
-            : _deepseekApiEnv.TokensLimit;
-
-        if (chatRequest.Model.StartsWith("claude-3-5-haiku"))
-        {
-            tokenLimit = _claudeApiEnv.HaikuTokensLimit;
-        }
-        else if (chatRequest.Model.StartsWith("claude-3-7-sonnet"))
-        {
-            tokenLimit = _claudeApiEnv.SonnetTokensLimit;
-        }
-
-        if (stats != null && stats.PromptTokensSum + stats.CompletionTokensSum >= tokenLimit)
+        if (await chatOrderStatsService.IsLimitIpUserAsync(user.Id, chatRequest.Model))
         {
             await ChatService.ChatError(Response, HttpStatusCode.TooManyRequests, new ChatError
             {

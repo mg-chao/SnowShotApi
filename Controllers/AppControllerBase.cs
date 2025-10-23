@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Localization;
 using SnowShotApi.Data;
 using System.Text.Json.Serialization;
-using SnowShotApi.Resources;
 using System.Net;
 using System.Text.Json;
 

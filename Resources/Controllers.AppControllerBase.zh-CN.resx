@@ -173,4 +173,8 @@
     <value>有道翻译</value>
     <comment/>
   </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>未知</value>
+    <comment/>
+  </data>
 </root>

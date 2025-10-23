@@ -81,16 +81,6 @@ public class ChatService(
 
     private static IChatService? GetInstance(ChatRequest chatRequest, HttpClient httpClient, IStringLocalizer<AppControllerBase> localizer)
     {
-        if (chatRequest.Model.StartsWith("deepseek"))
-        {
-            return new DeepseekService(httpClient, localizer);
-        }
-
-        if (chatRequest.Model.StartsWith("claude"))
-        {
-            return new ClaudeService(httpClient, localizer);
-        }
-
         if (chatRequest.Model.StartsWith("qwen"))
         {
             return new QwenService(httpClient, localizer);
