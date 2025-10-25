@@ -32,6 +32,9 @@ public class ChatRequest
     [MaxLength(20)]
     public List<ChatRequestMessage> Messages { get; set; } = [];
 
+    [JsonPropertyName("enable_thinking")]
+    public bool EnableThinking { get; set; } = false;
+
     [JsonPropertyName("temperature")]
     [Range(0, 2)]
     public double Temperature { get; set; } = 1;
@@ -80,6 +83,18 @@ public class ChatController(
             Thinking = thinking,
         };
     })];
+
+    [HttpPost("chat/completions")]
+    public async Task OldChatCompletions([FromBody] ChatRequest chatRequest)
+    {
+        await ChatService.ChatError(Response, HttpStatusCode.BadRequest, new ChatError
+        {
+            Message = _localizer["Upgrade tip"],
+            Type = "upgrade",
+            Code = "upgrade"
+        });
+        return;
+    }
 
     [HttpPost("completions")]
     public async Task ChatCompletions([FromBody] ChatRequest chatRequest)

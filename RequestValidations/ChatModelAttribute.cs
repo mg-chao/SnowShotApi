@@ -26,6 +26,7 @@ public class ChatModelAttribute : ValidationAttribute
     public static readonly Dictionary<string, ChatModelInfo> ValidModels =
     new()
     {
+        { "qwen-flash", new ChatModelInfo("qwen-flash", true, 0.0012M, 0.012M) },
         { "qwen-plus-latest", new ChatModelInfo("qwen-plus-latest", true, 0.0024M, 0.024M) }
     };
 
@@ -54,6 +55,7 @@ public class ChatModelAttribute : ValidationAttribute
     {
         return model switch
         {
+            "qwen-flash" => $"{localizer["Qwen"]} Flash",
             "qwen-plus-latest" => $"{localizer["Qwen"]} Plus",
             _ => "Unknown",
         };
