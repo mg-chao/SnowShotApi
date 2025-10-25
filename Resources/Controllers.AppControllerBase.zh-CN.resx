@@ -177,4 +177,8 @@
     <value>未知</value>
     <comment/>
   </data>
+  <data name="Upgrade tip" xml:space="preserve">
+    <value>当前版本已失效，请更新软件至最新版</value>
+    <comment/>
+  </data>
 </root>

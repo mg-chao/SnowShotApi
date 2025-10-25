@@ -30,14 +30,9 @@ public class QwenService(
 
     protected override StringContent CreateRequestContent(ChatRequest chatRequest)
     {
-        var enableThinking = chatRequest.Model.EndsWith("_thinking");
+        var enableThinking = chatRequest.EnableThinking;
 
         var model = chatRequest.Model;
-        if (enableThinking)
-        {
-            model = model[..^9];
-        }
-
         return new StringContent(
             JsonSerializer.Serialize(new
             {

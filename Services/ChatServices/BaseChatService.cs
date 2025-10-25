@@ -64,7 +64,6 @@ public abstract class BaseChatService(HttpClient httpClient, IStringLocalizer<Ap
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
             await ChatService.ChatError(response, HttpStatusCode.InternalServerError, new ChatError
             {
                 Message = Localizer["Request for Chat API failed"],

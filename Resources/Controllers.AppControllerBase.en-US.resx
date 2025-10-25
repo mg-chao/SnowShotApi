@@ -177,4 +177,8 @@
     <value>Unknown</value>
     <comment/>
   </data>
+  <data name="Upgrade tip" xml:space="preserve">
+    <value>The current version has expired, please update the software to the latest version</value>
+    <comment/>
+  </data>
 </root>
