@@ -62,7 +62,7 @@ public abstract class BaseChatService(HttpClient httpClient, IStringLocalizer<Ap
                 return null;
             }
         }
-        catch (Exception ex)
+        catch
         {
             await ChatService.ChatError(response, HttpStatusCode.InternalServerError, new ChatError
             {

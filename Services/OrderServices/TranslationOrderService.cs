@@ -11,7 +11,7 @@ public interface ITranslationOrderService
     /// <param name="type">翻译类型</param>
     /// <param name="content">需要翻译的内容</param>
     /// <returns>翻译订单</returns>
-    Task<UserTranslationOrder> CreateAsync(long userId, UserTranslationType type, List<string> content, string from, string to, string domain, int promptTokens, int completionTokens);
+    Task<UserTranslationOrder> CreateAsync(long userId, UserTranslationType type, List<string> content, string from, string to, string domain);
 
     /// <summary>
     /// 更新翻译订单的 From To
@@ -31,7 +31,7 @@ public class TranslationOrderService(ApplicationDbContext context, ITranslationO
     protected readonly ApplicationDbContext _context = context;
     protected readonly ITranslationOrderStatsService _translationOrderStatsService = translationOrderStatsService;
 
-    public async Task<UserTranslationOrder> CreateAsync(long userId, UserTranslationType type, List<string> content, string from, string to, string domain, int promptTokens, int completionTokens)
+    public async Task<UserTranslationOrder> CreateAsync(long userId, UserTranslationType type, List<string> content, string from, string to, string domain)
     {
         var contentLength = content.Sum(c => c.Length);
         var userTranslationOrder = new UserTranslationOrder

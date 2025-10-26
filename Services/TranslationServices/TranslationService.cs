@@ -1,11 +1,20 @@
+using System.Text.Json.Serialization;
 using SnowShotApi.Controllers.TranslationControllers;
 using SnowShotApi.Models;
 using SnowShotApi.Services.OrderServices;
 
 namespace SnowShotApi.Services.TranslationServices;
 
-public class TranslateResult(string from, string to)
+public class TranslationContent(string content)
 {
+    [JsonPropertyName("content")]
+    public string Content { get; set; } = content;
+}
+
+
+public class TranslateResult(List<TranslationContent> results, string from, string to)
+{
+    public List<TranslationContent> Results { get; set; } = results;
     public string From { get; set; } = from;
     public string To { get; set; } = to;
 }
@@ -45,7 +54,7 @@ public class TranslationService(
             return null;
         }
 
-        var translationOrder = await translationOrderService.CreateAsync(userId, request.Type, request.Content, request.From, request.To, request.Domain, 0, 0);
+        var translationOrder = await translationOrderService.CreateAsync(userId, request.Type, request.Content, request.From, request.To, request.Domain);
         var res = await service.TranslateAsync(request, response, userId);
 
         if (res == null)

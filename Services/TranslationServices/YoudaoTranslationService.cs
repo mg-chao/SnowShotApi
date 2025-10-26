@@ -59,10 +59,7 @@ public class YoudaoTranslationService(HttpClient httpClient) : IYoudaoTranslatio
 
             var translationResults = translationResponse.TranslateResults.Select(t => new TranslationContent(t.Translation)).ToList();
 
-            AppControllerBase.DelatInit(response);
-            await AppControllerBase.DelatStreamSuccess(response, new TranslateResponseData(translationResults, request.From, request.To));
-
-            return new TranslateResult(request.From, request.To);
+            return new TranslateResult(translationResults, request.From, request.To);
         }
         catch (HttpRequestException)
         {

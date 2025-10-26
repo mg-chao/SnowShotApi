@@ -7,7 +7,7 @@ namespace SnowShotApi.Models;
 
 [PrimaryKey(nameof(Id))]
 [Index(nameof(UserId))]
-[Index(nameof(Date), nameof(Type), IsUnique = true)]
+[Index(nameof(UserId), nameof(Date), nameof(Type), IsUnique = true)]
 [Index(nameof(CreatedAt))]
 public class UserTranslationOrderStats
 {
