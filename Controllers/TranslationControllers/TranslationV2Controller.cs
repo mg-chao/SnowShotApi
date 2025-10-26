@@ -11,13 +11,6 @@ using SnowShotApi.Services.TranslationServices;
 
 namespace SnowShotApi.Controllers.TranslationControllers;
 
-
-public class TranslationContent(string content)
-{
-    [JsonPropertyName("content")]
-    public string Content { get; set; } = content;
-}
-
 public class TranslateResponseData(List<TranslationContent> content, string? from = null, string? to = null)
 {
     [JsonPropertyName("results")]
@@ -78,29 +71,28 @@ public class TranslationV2Controller(
     ITranslationService translationService) : AppControllerBase(context, localizer)
 {
     [HttpPost("translate")]
-    public async Task TranslateAsync([FromBody] TranslationRequest request)
+    public async Task<IActionResult> TranslateAsync([FromBody] TranslationRequest request)
     {
         var user = await ipUserService.GetUserAsync(HttpContext);
         if (user == null)
         {
-            await DelatError(Response, 10001, _localizer["Cannot get client IP address"]);
-            return;
+            return Error(10001, _localizer["Cannot get client IP address"]);
         }
 
         // 判断用户是否达到限额
         if (await translationOrderStatsService.IsLimitIpUserAsync(user.Id, request.Type))
         {
-            await DelatError(Response, 20001, _localizer["User translation limit reached"]);
-            return;
+            return Error(20001, _localizer["User translation limit reached"]);
         }
 
         var result = await translationService.TranslateAsync(request, Response, user.Id);
 
         if (result == null)
         {
-            await DelatError(Response, 30001, _localizer["Failed to translate"]);
-            return;
+            return Error(30001, _localizer["Failed to translate"]);
         }
+
+        return Success(new TranslateResponseData(result.Results, result.From, result.To));
     }
 
     [HttpGet("types")]
