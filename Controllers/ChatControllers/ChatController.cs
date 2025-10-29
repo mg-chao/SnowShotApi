@@ -9,8 +9,28 @@ using SnowShotApi.Services.ChatServices;
 using SnowShotApi.Services.OrderServices;
 using SnowShotApi.Services.UserServices;
 using SnowShotApi.RequestValidations;
+using System.Text.Json;
 
 namespace SnowShotApi.Controllers.ChatControllers;
+
+// 支持多模态内容的类
+public class ChatContentImageUrl
+{
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = "";
+}
+
+public class ChatContentPart
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+
+    [JsonPropertyName("image_url")]
+    public ChatContentImageUrl? ImageUrl { get; set; }
+}
 
 public class ChatRequestMessage
 {
@@ -20,7 +40,7 @@ public class ChatRequestMessage
 
     [Required]
     [JsonPropertyName("content")]
-    public string Content { get; set; } = "";
+    public JsonElement Content { get; set; }
 }
 public class ChatRequest
 {
@@ -59,6 +79,9 @@ public class ChatModel
 
     [JsonPropertyName("thinking")]
     public bool Thinking { get; set; } = false;
+
+    [JsonPropertyName("support_vision")]
+    public bool SupportVision { get; set; } = false;
 }
 [ApiController]
 [Route("api/v1/[controller]")]
@@ -70,17 +93,12 @@ public class ChatController(
     IChatOrderStatsService chatOrderStatsService) : AppControllerBase(context, localizer)
 {
     private readonly List<ChatModel> _models = [.. ChatModelAttribute.ValidModels.Select(model => {
-        var thinking = false;
-        if (model.Value.SupportThinking)
-        {
-            thinking = true;
-        }
-
         return new ChatModel
         {
             Model = model.Key,
             Name = ChatModelAttribute.ConvertToText(model.Key, localizer),
-            Thinking = thinking,
+            Thinking = model.Value.SupportThinking,
+            SupportVision = model.Value.SupportVision,
         };
     })];
 
@@ -99,6 +117,7 @@ public class ChatController(
     [HttpPost("completions")]
     public async Task ChatCompletions([FromBody] ChatRequest chatRequest)
     {
+
         var user = await ipUserService.GetUserAsync(HttpContext);
         if (user == null)
         {
@@ -134,6 +153,9 @@ public class ChatController(
             });
             return;
         }
+
+        Console.WriteLine(modelInfo);
+        Console.WriteLine(chatRequest);
 
         await chatService.StreamChatCompletion(chatRequest, Response, user.Id);
     }
