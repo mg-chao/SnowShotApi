@@ -16,13 +16,62 @@ public class IpUserService(ApplicationDbContext context, IUserService userServic
     private readonly IUserService _userService = userService;
 
     /**
+     * 获取真实的客户端 IP 地址
+     * @param httpContext 请求上下文
+     * @returns IP 地址字符串
+     */
+    private static string? GetRealIpAddress(HttpContext httpContext)
+    {
+        // 优先检查常见的代理头部
+        // X-Forwarded-For: 可能包含多个 IP，格式为 "client, proxy1, proxy2"
+        var forwardedFor = httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(forwardedFor))
+        {
+            // 取第一个 IP（真实客户端 IP）
+            var ips = forwardedFor.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (ips.Length > 0)
+            {
+                var ip = ips[0].Trim();
+                if (!string.IsNullOrEmpty(ip))
+                {
+                    return ip;
+                }
+            }
+        }
+
+        // 检查 X-Real-IP（Nginx 常用）
+        var realIp = httpContext.Request.Headers["X-Real-IP"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(realIp))
+        {
+            return realIp.Trim();
+        }
+
+        // 检查 CF-Connecting-IP（Cloudflare）
+        var cfConnectingIp = httpContext.Request.Headers["CF-Connecting-IP"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(cfConnectingIp))
+        {
+            return cfConnectingIp.Trim();
+        }
+
+        // 检查 X-Original-For
+        var originalFor = httpContext.Request.Headers["X-Original-For"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(originalFor))
+        {
+            return originalFor.Trim();
+        }
+
+        // 如果都没有，回退到使用 RemoteIpAddress
+        return httpContext.Connection.RemoteIpAddress?.ToString();
+    }
+
+    /**
      * 获取 IP 对应的用户，如果用户不存在，则创建一个
-     * @param ipAddress 用户 IP 地址
+     * @param httpContext 请求上下文
      * @returns 用户
      */
     private async Task<IpUser?> GetIpUserAsync(HttpContext httpContext)
     {
-        var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+        var ipAddress = GetRealIpAddress(httpContext);
         if (string.IsNullOrEmpty(ipAddress))
         {
             return null;
