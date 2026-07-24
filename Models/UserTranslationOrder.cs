@@ -8,9 +8,9 @@ namespace SnowShotApi.Models;
 public enum UserTranslationType
 {
     /// <summary>
-    /// 有道翻译
+    /// DeepSeek Translation
     /// </summary>
-    Youdao,
+    DeepSeek,
 }
 
 public enum UserTranslationOrderStatus

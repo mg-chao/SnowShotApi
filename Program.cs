@@ -53,7 +53,7 @@ builder.Services.AddMvc()
     .AddDataAnnotationsLocalization();
 
 // 配置 HttpClient，解决 SSL 连接问题
-builder.Services.AddHttpClient<IYoudaoTranslationService, YoudaoTranslationService>()
+builder.Services.AddHttpClient<IDeepSeekTranslationService, DeepSeekTranslationService>()
     .ConfigurePrimaryHttpMessageHandler(() =>
     {
         var handler = new HttpClientHandler();

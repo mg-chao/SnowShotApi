@@ -28,7 +28,7 @@ public class TranslationRequest()
     [Required]
     [TranslationType]
     [JsonPropertyName("type")]
-    public UserTranslationType Type { get; set; } = UserTranslationType.Youdao;
+    public UserTranslationType Type { get; set; } = UserTranslationType.DeepSeek;
 
     [Required]
     [MaxLength(50)]
@@ -55,7 +55,7 @@ public class TranslationRequest()
 public class TranslationTypeOption
 {
     [JsonPropertyName("type")]
-    public UserTranslationType Type { get; set; } = UserTranslationType.Youdao;
+    public UserTranslationType Type { get; set; } = UserTranslationType.DeepSeek;
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
@@ -100,7 +100,7 @@ public class TranslationV2Controller(
     {
         var translationTypes = new List<TranslationTypeOption>
         {
-            new() { Type = UserTranslationType.Youdao, Name = _localizer["Youdao"] },
+            new() { Type = UserTranslationType.DeepSeek, Name = _localizer["DeepSeek Translation"] },
         };
 
         return Success(translationTypes);

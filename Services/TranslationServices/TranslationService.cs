@@ -34,7 +34,7 @@ public interface ITranslationService
 
 public class TranslationService(
     ITranslationOrderService translationOrderService,
-    IYoudaoTranslationService youdaoTranslationService) : ITranslationService
+    IDeepSeekTranslationService deepSeekTranslationService) : ITranslationService
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(20);
 
@@ -42,7 +42,7 @@ public class TranslationService(
     {
         return type switch
         {
-            UserTranslationType.Youdao => youdaoTranslationService,
+            UserTranslationType.DeepSeek => deepSeekTranslationService,
             _ => null,
         };
     }
