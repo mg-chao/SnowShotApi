@@ -7,35 +7,22 @@ namespace SnowShotApi.Models;
 
 public enum UserTranslationType
 {
-    /// <summary>
-    /// DeepSeek Translation
-    /// </summary>
-    DeepSeek,
+    AI = 0,
 }
 
 public enum UserTranslationOrderStatus
 {
-    /// <summary>
-    /// 已创建
-    /// </summary>
-    Created,
-
-    /// <summary>
-    /// 已完成
-    /// </summary>
-    Completed,
-
-    /// <summary>
-    /// 失败
-    /// </summary>
-    Failed,
+    Created = 0,
+    Completed = 1,
+    Failed = 2,
+    Cancelled = 3,
 }
 
 [PrimaryKey(nameof(Id))]
 [Index(nameof(UserId))]
 [Index(nameof(Type))]
 [Index(nameof(CreatedAt))]
-public class UserTranslationOrder
+public sealed class UserTranslationOrder
 {
     [Key]
     [Required]
@@ -66,11 +53,11 @@ public class UserTranslationOrder
     [MaxLength(16)]
     public required string Domain { get; set; }
 
-    /// <summary>
-    /// 记录普通翻译的内容长度
-    /// </summary>
     [Required]
     public required int ContentLength { get; set; }
+
+    [Required]
+    public required int QuotaDate { get; set; }
 
     [Required]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

@@ -21,7 +21,15 @@ public class MaxLengthElementAttribute(int maxLength) : ValidationAttribute
             var index = 0;
             foreach (var item in stringList)
             {
-                if (item != null && item.Length > _maxLength)
+                if (item == null)
+                {
+                    return new ValidationResult(
+                        ErrorMessage ?? $"Element [{index}] cannot be null.",
+                        [validationContext.MemberName ?? "Content"]
+                    );
+                }
+
+                if (item.Length > _maxLength)
                 {
                     return new ValidationResult(
                         ErrorMessage ?? $"Element [{index}] length cannot exceed {_maxLength} characters. Current length is {item.Length}.",

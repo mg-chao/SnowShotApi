@@ -1,17 +1,19 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Localization;
 using SnowShotApi.Data;
-using SnowShotApi.Services.UserServices;
-using System.Text.Json.Serialization;
 using SnowShotApi.Models;
-using System.ComponentModel.DataAnnotations;
 using SnowShotApi.RequestValidations;
-using SnowShotApi.Services.OrderServices;
 using SnowShotApi.Services.TranslationServices;
+using SnowShotApi.Services.UserServices;
 
 namespace SnowShotApi.Controllers.TranslationControllers;
 
-public class TranslateResponseData(List<TranslationContent> content, string? from = null, string? to = null)
+public sealed class TranslateResponseData(
+    List<TranslationContent> content,
+    string? from = null,
+    string? to = null)
 {
     [JsonPropertyName("results")]
     public List<TranslationContent> Results { get; set; } = content;
@@ -23,12 +25,12 @@ public class TranslateResponseData(List<TranslationContent> content, string? fro
     public string? To { get; set; } = to;
 }
 
-public class TranslationRequest()
+public sealed class TranslationRequest
 {
     [Required]
     [TranslationType]
     [JsonPropertyName("type")]
-    public UserTranslationType Type { get; set; } = UserTranslationType.DeepSeek;
+    public UserTranslationType Type { get; set; } = UserTranslationType.AI;
 
     [Required]
     [MaxLength(50)]
@@ -52,10 +54,10 @@ public class TranslationRequest()
     public string Domain { get; set; } = string.Empty;
 }
 
-public class TranslationTypeOption
+public sealed class TranslationTypeOption
 {
     [JsonPropertyName("type")]
-    public UserTranslationType Type { get; set; } = UserTranslationType.DeepSeek;
+    public UserTranslationType Type { get; set; } = UserTranslationType.AI;
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
@@ -63,15 +65,16 @@ public class TranslationTypeOption
 
 [ApiController]
 [Route("api/v2/translation")]
-public class TranslationV2Controller(
+public sealed class TranslationV2Controller(
     ApplicationDbContext context,
     IStringLocalizer<AppControllerBase> localizer,
     IIpUserService ipUserService,
-    ITranslationOrderStatsService translationOrderStatsService,
     ITranslationService translationService) : AppControllerBase(context, localizer)
 {
     [HttpPost("translate")]
-    public async Task<IActionResult> TranslateAsync([FromBody] TranslationRequest request)
+    public async Task<IActionResult> TranslateAsync(
+        [FromBody] TranslationRequest request,
+        CancellationToken cancellationToken)
     {
         var user = await ipUserService.GetUserAsync(HttpContext);
         if (user == null)
@@ -79,20 +82,35 @@ public class TranslationV2Controller(
             return Error(10001, _localizer["Cannot get client IP address"]);
         }
 
-        // 判断用户是否达到限额
-        if (await translationOrderStatsService.IsLimitIpUserAsync(user.Id, request.Type))
+        var outcome = await translationService.TranslateAsync(
+            new TranslationCommand(
+                request.Type,
+                request.Content,
+                request.From,
+                request.To,
+                request.Domain),
+            user.Id,
+            cancellationToken);
+
+        if (outcome.Status == TranslationOutcomeStatus.QuotaExceeded)
         {
             return Error(20001, _localizer["User translation limit reached"]);
         }
 
-        var result = await translationService.TranslateAsync(request, Response, user.Id);
+        if (outcome.Status == TranslationOutcomeStatus.Cancelled && cancellationToken.IsCancellationRequested)
+        {
+            return new EmptyResult();
+        }
 
-        if (result == null)
+        if (outcome.Status != TranslationOutcomeStatus.Success || outcome.Result == null)
         {
             return Error(30001, _localizer["Failed to translate"]);
         }
 
-        return Success(new TranslateResponseData(result.Results, result.From, result.To));
+        return Success(new TranslateResponseData(
+            outcome.Result.Results,
+            outcome.Result.From,
+            outcome.Result.To));
     }
 
     [HttpGet("types")]
@@ -100,7 +118,7 @@ public class TranslationV2Controller(
     {
         var translationTypes = new List<TranslationTypeOption>
         {
-            new() { Type = UserTranslationType.DeepSeek, Name = _localizer["DeepSeek Translation"] },
+            new() { Type = UserTranslationType.AI, Name = _localizer["AI Translation"] },
         };
 
         return Success(translationTypes);

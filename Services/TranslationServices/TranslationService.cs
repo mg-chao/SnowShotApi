@@ -1,69 +1,169 @@
 using System.Text.Json.Serialization;
-using SnowShotApi.Controllers.TranslationControllers;
 using SnowShotApi.Models;
 using SnowShotApi.Services.OrderServices;
 
 namespace SnowShotApi.Services.TranslationServices;
 
-public class TranslationContent(string content)
+public sealed class TranslationContent(string content)
 {
     [JsonPropertyName("content")]
     public string Content { get; set; } = content;
 }
 
-
-public class TranslateResult(List<TranslationContent> results, string from, string to)
+public sealed class TranslateResult(List<TranslationContent> results, string from, string to)
 {
     public List<TranslationContent> Results { get; set; } = results;
     public string From { get; set; } = from;
     public string To { get; set; } = to;
 }
 
-public interface ITranslationService
+public sealed record TranslationCommand(
+    UserTranslationType Type,
+    IReadOnlyList<string> Content,
+    string From,
+    string To,
+    string Domain);
+
+public enum TranslationOutcomeStatus
 {
-    /// <summary>
-    /// 翻译
-    /// </summary>
-    /// <param name="content">需要翻译的内容</param>
-    /// <returns>翻译结果</returns>
-    /// <param name="from">源语言</param>
-    /// <param name="to">目标语言</param>
-    /// <param name="domain">领域</param>
-    Task<TranslateResult?> TranslateAsync(TranslationRequest request, HttpResponse response, long userId);
+    Success,
+    QuotaExceeded,
+    Failed,
+    Cancelled,
 }
 
-public class TranslationService(
-    ITranslationOrderService translationOrderService,
-    IDeepSeekTranslationService deepSeekTranslationService) : ITranslationService
+public sealed record TranslationOutcome(
+    TranslationOutcomeStatus Status,
+    TranslateResult? Result = null)
 {
-    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(20);
+    public static TranslationOutcome Success(TranslateResult result) =>
+        new(TranslationOutcomeStatus.Success, result);
 
-    private ITranslationService? GetInstance(UserTranslationType type)
+    public static TranslationOutcome QuotaExceeded() =>
+        new(TranslationOutcomeStatus.QuotaExceeded);
+
+    public static TranslationOutcome Failed() => new(TranslationOutcomeStatus.Failed);
+
+    public static TranslationOutcome Cancelled() => new(TranslationOutcomeStatus.Cancelled);
+}
+
+public interface ITranslationService
+{
+    Task<TranslationOutcome> TranslateAsync(
+        TranslationCommand command,
+        long userId,
+        CancellationToken cancellationToken);
+}
+
+public sealed class TranslationService(
+    ITranslationOrderService translationOrderService,
+    IAITranslationService aiTranslationService,
+    ILogger<TranslationService> logger) : ITranslationService
+{
+    public async Task<TranslationOutcome> TranslateAsync(
+        TranslationCommand command,
+        long userId,
+        CancellationToken cancellationToken)
     {
-        return type switch
+        if (command.Type != UserTranslationType.AI)
         {
-            UserTranslationType.DeepSeek => deepSeekTranslationService,
-            _ => null,
-        };
+            return TranslationOutcome.Failed();
+        }
+
+        var reservation = await translationOrderService.ReserveAsync(
+            userId,
+            command.Type,
+            command.Content,
+            command.From,
+            command.To,
+            command.Domain,
+            cancellationToken);
+
+        if (reservation.Status == TranslationOrderReservationStatus.QuotaExceeded)
+        {
+            return TranslationOutcome.QuotaExceeded();
+        }
+
+        var order = reservation.Order!;
+        try
+        {
+            var batchResult = await aiTranslationService.TranslateAsync(
+                new AITranslationRequest(
+                    command.Content,
+                    command.From,
+                    command.To,
+                    command.Domain,
+                    order.Id),
+                cancellationToken);
+
+            return batchResult.Status switch
+            {
+                AITranslationBatchStatus.Success => await CompleteAsync(order.Id, command, batchResult.Translations!),
+                AITranslationBatchStatus.Cancelled => await FailAsync(
+                    order.Id,
+                    UserTranslationOrderStatus.Cancelled,
+                    TranslationOutcome.Cancelled()),
+                _ => await FailAsync(
+                    order.Id,
+                    UserTranslationOrderStatus.Failed,
+                    TranslationOutcome.Failed()),
+            };
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Translation order {OrderId} failed unexpectedly", order.Id);
+            return await FailAsync(
+                order.Id,
+                UserTranslationOrderStatus.Failed,
+                TranslationOutcome.Failed());
+        }
     }
-    public async Task<TranslateResult?> TranslateAsync(TranslationRequest request, HttpResponse response, long userId)
+
+    private async Task<TranslationOutcome> CompleteAsync(
+        long orderId,
+        TranslationCommand command,
+        IReadOnlyList<string> translations)
     {
-        var service = GetInstance(request.Type);
-        if (service == null)
+        using var finalizationCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var finalized = await translationOrderService.FinalizeAsync(
+            orderId,
+            UserTranslationOrderStatus.Completed,
+            command.From,
+            command.To,
+            finalizationCancellation.Token);
+
+        if (!finalized)
         {
-            return null;
+            logger.LogError("Translation order {OrderId} could not be finalized as completed", orderId);
+            return TranslationOutcome.Failed();
         }
 
-        var translationOrder = await translationOrderService.CreateAsync(userId, request.Type, request.Content, request.From, request.To, request.Domain);
-        var res = await service.TranslateAsync(request, response, userId);
+        var results = translations.Select(translation => new TranslationContent(translation)).ToList();
+        return TranslationOutcome.Success(new TranslateResult(results, command.From, command.To));
+    }
 
-        if (res == null)
+    private async Task<TranslationOutcome> FailAsync(
+        long orderId,
+        UserTranslationOrderStatus status,
+        TranslationOutcome outcome)
+    {
+        try
         {
-            await translationOrderService.UpdateAsync(translationOrder.Id, status: UserTranslationOrderStatus.Failed);
-            return null;
+            using var finalizationCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await translationOrderService.FinalizeAsync(
+                orderId,
+                status,
+                cancellationToken: finalizationCancellation.Token);
         }
-        await translationOrderService.UpdateAsync(translationOrder.Id, res.From, res.To, UserTranslationOrderStatus.Completed);
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Translation order {OrderId} could not be finalized as {Status}",
+                orderId,
+                status);
+        }
 
-        return res;
+        return outcome;
     }
 }

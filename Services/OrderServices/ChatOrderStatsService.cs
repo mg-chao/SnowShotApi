@@ -43,40 +43,45 @@ public class ChatOrderStatsService(ApplicationDbContext context) : IChatOrderSta
 
     public async Task<UserChatOrderStats?> UpdateAsync(long userId, string model, int promptTokens, int completionTokens)
     {
-        // 获取当前日期
-        var currentDateStr = DateTime.Now.Date.ToString("yyyyMMdd");
-        if (string.IsNullOrEmpty(currentDateStr))
-        {
-            return null;
-        }
-        var currentDate = int.Parse(currentDateStr);
+        var currentDate = GetCurrentDate();
+        var promptTokensToAdd = Math.Max(promptTokens, 0);
+        var completionTokensToAdd = Math.Max(completionTokens, 0);
+        var updatedAt = DateTime.UtcNow;
 
-        var stats = await _context.UserChatOrderStats.FirstOrDefaultAsync(s => s.UserId == userId && s.Model == model && s.Date == currentDate);
-        if (stats == null)
-        {
-            stats = new UserChatOrderStats
-            {
-                UserId = userId,
-                Date = currentDate,
-                Model = model,
-                PromptTokensSum = 0,
-                CompletionTokensSum = 0,
-            };
-            await _context.UserChatOrderStats.AddAsync(stats);
-        }
+        // The database constraint is also the UPSERT target, so concurrent first requests
+        // for the same user, model, and day produce one row without losing token updates.
+        await _context.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "UserChatOrderStats" (
+                "UserId",
+                "Date",
+                "Model",
+                "PromptTokensSum",
+                "CompletionTokensSum",
+                "UpdatedAt")
+            VALUES (
+                {userId},
+                {currentDate},
+                {model},
+                {promptTokensToAdd},
+                {completionTokensToAdd},
+                {updatedAt})
+            ON CONFLICT ("UserId", "Date", "Model")
+            DO UPDATE SET
+                "PromptTokensSum" = GREATEST(
+                    "UserChatOrderStats"."PromptTokensSum" + EXCLUDED."PromptTokensSum",
+                    0),
+                "CompletionTokensSum" = GREATEST(
+                    "UserChatOrderStats"."CompletionTokensSum" + EXCLUDED."CompletionTokensSum",
+                    0),
+                "UpdatedAt" = EXCLUDED."UpdatedAt";
+            """);
 
-        stats.PromptTokensSum = Math.Max(stats.PromptTokensSum + promptTokens, 0);
-        stats.CompletionTokensSum = Math.Max(stats.CompletionTokensSum + completionTokens, 0);
-        stats.UpdatedAt = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync();
-
-        return stats;
+        return await GetAsync(userId, model, currentDate);
     }
 
     public async Task<UserChatOrderStats?> GetAsync(long userId, string model)
     {
-        return await _context.UserChatOrderStats.FirstOrDefaultAsync(s => s.UserId == userId && s.Model == model);
+        return await GetAsync(userId, model, GetCurrentDate());
     }
 
     public async Task<bool> IsLimitIpUserAsync(long userId, string model)
@@ -95,4 +100,16 @@ public class ChatOrderStatsService(ApplicationDbContext context) : IChatOrderSta
 
         return (stats.PromptTokensSum / 1000M * modelInfo.PromptTokenPrice + stats.CompletionTokensSum / 1000M * modelInfo.CompletionTokenPrice) >= _chatApiEnv.UserCostLimit;
     }
+
+    private Task<UserChatOrderStats?> GetAsync(long userId, string model, int currentDate)
+    {
+        return _context.UserChatOrderStats
+            .AsNoTracking()
+            .FirstOrDefaultAsync(stats =>
+                stats.UserId == userId &&
+                stats.Model == model &&
+                stats.Date == currentDate);
+    }
+
+    private static int GetCurrentDate() => int.Parse(DateTime.Now.ToString("yyyyMMdd"));
 }

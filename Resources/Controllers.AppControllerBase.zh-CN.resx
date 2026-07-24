@@ -169,8 +169,8 @@
     <value>DeepSeek</value>
     <comment/>
   </data>
-  <data name="DeepSeek Translation" xml:space="preserve">
-    <value>DeepSeek 翻译</value>
+  <data name="AI Translation" xml:space="preserve">
+    <value>AI 翻译</value>
     <comment/>
   </data>
   <data name="Unknown" xml:space="preserve">
