@@ -1,0 +1,378 @@
+openapi: 3.1.1
+info:
+  title: SnowShot API
+  version: current
+paths:
+  /health/live:
+    get:
+      tags:
+      - Health
+      operationId: Liveness
+      responses:
+        '200':
+          description: OK
+  /health/ready:
+    get:
+      tags:
+      - Health
+      operationId: Readiness
+      responses:
+        '200':
+          description: OK
+        '503':
+          description: Service Unavailable
+  /health/components:
+    get:
+      tags:
+      - Health
+      operationId: DependencyTelemetry
+      responses:
+        '200':
+          description: OK
+  /api/v1/chat/completions:
+    post:
+      tags:
+      - Chat
+      operationId: ChatCompletions
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+  /api/v1/chat/models:
+    get:
+      tags:
+      - Chat
+      operationId: ChatModels
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/translation/translate:
+    post:
+      tags:
+      - Translation
+      operationId: Translate
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslationRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+  /api/v2/translation/types:
+    get:
+      tags:
+      - Translation
+      operationId: TranslationTypes
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v1/table/extract:
+    post:
+      tags:
+      - Table
+      operationId: TableExtraction
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/IFormFile'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+components:
+  schemas:
+    AppEnvelope:
+      required:
+      - code
+      - message
+      type: object
+      properties:
+        code:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+        message:
+          type: string
+        data: {}
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+        content:
+          $ref: '#/components/schemas/JsonElement'
+    ChatRequest:
+      required:
+      - model
+      type: object
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        enable_thinking:
+          type: boolean
+        temperature:
+          pattern: ^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$
+          type:
+          - number
+          - string
+          format: double
+        max_tokens:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+        thinking_budget_tokens:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+    IFormFile:
+      type: string
+      format: binary
+    JsonElement: {}
+    PublicProblem:
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - instance
+      - code
+      - trace_id
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+        trace_id:
+          type: string
+        retry_after_seconds:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - 'null'
+          - integer
+          - string
+          format: int32
+    TranslationRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/TranslationType'
+        content:
+          type: array
+          items:
+            type: string
+        from:
+          type: string
+        to:
+          type: string
+        domain:
+          type: string
+    TranslationType:
+      type: integer
+tags:
+- name: Health
+- name: Chat
+- name: Translation
+- name: Table

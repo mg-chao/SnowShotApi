@@ -1,0 +1,121 @@
+name: snowshot-fault
+
+x-api-environment: &api-environment
+  DOTNET_ENVIRONMENT: Development
+  ConnectionStrings__SnowShot: Host=postgres;Port=5432;Database=snowshot;Username=snowshot;Password=fault-test
+  ConnectionStrings__Redis: redis:6379,abortConnect=false
+  Identity__HmacKeyBase64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  Providers__Translation__LogicalModel: qwen-flash
+  Providers__CloudProviders__aliyun__Endpoint: http://fake-provider:8080/v1/chat/completions
+  Providers__CloudProviders__aliyun__ApiKey: fault-test
+  Providers__CloudProviders__deepseek__Endpoint: http://fake-provider:8080/v1/chat/completions
+  Providers__CloudProviders__deepseek__ApiKey: fault-test
+  Providers__Models__qwen-flash__Accesses__aliyun__Provider: aliyun
+  Providers__Models__qwen-flash__Accesses__aliyun__UpstreamModel: qwen-flash
+  Providers__Models__qwen-plus__Accesses__aliyun__Provider: aliyun
+  Providers__Models__qwen-plus__Accesses__aliyun__UpstreamModel: qwen-plus
+  Providers__Models__qwen3-vl-flash__Accesses__aliyun__Provider: aliyun
+  Providers__Models__qwen3-vl-flash__Accesses__aliyun__UpstreamModel: qwen3-vl-flash
+  Providers__Table__BaseUrl: http://fake-provider:8080/
+  Policy__Revision: 1
+  Policy__ActiveLeaseTtlSeconds: 6
+  Policy__LeaseRenewalSeconds: 2
+  Policy__Pricing__translation__InputRateNanoYuan: 2000
+  Policy__Pricing__translation__OutputRateNanoYuan: 8000
+  Policy__Pricing__qwen-flash__InputRateNanoYuan: 200
+  Policy__Pricing__qwen-flash__OutputRateNanoYuan: 800
+  Policy__Pricing__qwen-plus__InputRateNanoYuan: 2000
+  Policy__Pricing__qwen-plus__OutputRateNanoYuan: 8000
+  Policy__Pricing__qwen3-vl-flash__InputRateNanoYuan: 150
+  Policy__Pricing__qwen3-vl-flash__OutputRateNanoYuan: 1500
+  Policy__Pricing__deepseek-v4-flash__InputRateNanoYuan: 1000
+  Policy__Pricing__deepseek-v4-flash__OutputRateNanoYuan: 2000
+  Policy__Pricing__table-extraction__InputRateNanoYuan: 30000000
+  Policy__Pricing__table-extraction__OutputRateNanoYuan: 0
+  Policy__Resources__translation__RequestsPerMinute: 1000
+  Policy__Resources__translation__PerPrincipalConcurrency: 2
+  Policy__Resources__translation__GlobalConcurrency: 2
+  Policy__Resources__translation__GlobalQueueLength: 2
+  Policy__Resources__translation__QueueWaitSeconds: 5
+  Policy__Resources__translation__ExecutionDeadlineSeconds: 300
+  Policy__Resources__translation__OperatorMaximumNanoYuan: 1000000000
+  Policy__Resources__qwen-flash__RequestsPerMinute: 1000
+  Policy__Resources__qwen-flash__PerPrincipalConcurrency: 1
+  Policy__Resources__qwen-flash__GlobalConcurrency: 1
+  Policy__Resources__qwen-flash__GlobalQueueLength: 0
+  Policy__Resources__qwen-flash__QueueWaitSeconds: 0
+  Policy__Resources__qwen-flash__ExecutionDeadlineSeconds: 300
+  Policy__Resources__qwen-flash__OperatorMaximumNanoYuan: 1000000000
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    environment:
+      POSTGRES_DB: snowshot
+      POSTGRES_USER: snowshot
+      POSTGRES_PASSWORD: fault-test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snowshot -d snowshot"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine@sha256:e8eb6f2980c06c6a25c08f62cb2e00dc7d2fead9aa492cfdd8b54a42109ae0f2
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ports:
+      - "${SNOWSHOT_FAULT_REDIS_PORT:-46380}:6379"
+
+  fake-provider:
+    build: fake-provider
+    ports:
+      - "5300:8080"
+
+  migrator:
+    image: snowshot-migrator:fault
+    build:
+      context: ../..
+      target: migrator
+    environment:
+      <<: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api1:
+    image: snowshot-api:fault
+    build:
+      context: ../..
+      target: api
+    environment:
+      <<: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fake-provider:
+        condition: service_started
+    ports:
+      - "5101:8080"
+
+  api2:
+    image: snowshot-api:fault
+    build:
+      context: ../..
+      target: api
+    environment:
+      <<: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fake-provider:
+        condition: service_started
+    ports:
+      - "5102:8080"

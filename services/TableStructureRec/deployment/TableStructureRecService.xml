@@ -1,0 +1,38 @@
+<service>
+  <id>TableStructureRecService</id>
+  <name>SnowShot Table Structure Recognition</name>
+  <description>Process-isolated table image extraction service for SnowShotApi.</description>
+
+  <executable>%BASE%\venv\Scripts\python.exe</executable>
+  <arguments>-m table_rec_service</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+
+  <serviceaccount>
+    <domain>__TABLE_REC_SERVICE_ACCOUNT_DOMAIN__</domain>
+    <user>__TABLE_REC_SERVICE_ACCOUNT_USER__</user>
+    <allowservicelogon>true</allowservicelogon>
+  </serviceaccount>
+
+  <env name="TABLE_REC_MODEL_DIR" value="%BASE%\models" />
+  <env name="TABLE_REC_HOST" value="__TABLE_REC_HOST__" />
+  <env name="TABLE_REC_PORT" value="__TABLE_REC_PORT__" />
+  <env name="TABLE_REC_WORKERS" value="3" />
+  <env name="TABLE_REC_LOG_LEVEL" value="info" />
+  <env name="TABLE_REC_ENVIRONMENT" value="__TABLE_REC_ENVIRONMENT__" />
+  <env name="TABLE_REC_WATCHDOG_SECONDS" value="55" />
+  <env name="TABLE_REC_TLS_CERTIFICATE" value="__TABLE_REC_TLS_CERTIFICATE__" />
+  <env name="TABLE_REC_TLS_PRIVATE_KEY" value="__TABLE_REC_TLS_PRIVATE_KEY__" />
+  <env name="TABLE_REC_TLS_CLIENT_CA" value="__TABLE_REC_TLS_CLIENT_CA__" />
+
+  <startmode>Automatic</startmode>
+  <stoptimeout>30 sec</stoptimeout>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <resetfailure>1 hour</resetfailure>
+
+  <logpath>%BASE%\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

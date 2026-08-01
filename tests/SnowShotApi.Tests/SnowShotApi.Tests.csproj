@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);xUnit1051;CA1861</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Architecture\**\*.cs" />
+    <Compile Include="Domain\**\*.cs" />
+    <Compile Include="Api\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\contracts\table-worker\fixtures\*.json" Link="Fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SnowShotApi\SnowShotApi.csproj" />
+    <ProjectReference Include="..\..\src\SnowShot.ApiAdapter\SnowShot.ApiAdapter.csproj" />
+    <ProjectReference Include="..\..\src\SnowShot.Contracts\SnowShot.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\SnowShot.Domain\SnowShot.Domain.csproj" />
+    <ProjectReference Include="..\..\src\SnowShot.Application\SnowShot.Application.csproj" />
+    <ProjectReference Include="..\..\src\SnowShot.Infrastructure\SnowShot.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

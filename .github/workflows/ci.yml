@@ -1,0 +1,142 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.302
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12.10'
+      - shell: powershell
+        run: scripts/Verify-PowerShellSyntax.ps1
+      - shell: pwsh
+        run: scripts/Verify-PowerShellSyntax.ps1
+      - shell: pwsh
+        run: scripts/Verify-ObservabilityContract.ps1 -SelfTest
+      - run: dotnet tool restore
+      - run: pip install --require-hashes -r services/TableStructureRec/requirements-test.lock
+      - run: python -m venv .audit-venv
+      - run: .\.audit-venv\Scripts\python.exe -m pip install --require-hashes -r services/TableStructureRec/requirements-audit.lock
+      - run: dotnet restore SnowShotApi.sln --locked-mode
+      - run: dotnet build SnowShotApi.sln -c Release --no-restore --warnaserror
+      - run: dotnet test SnowShotApi.sln -c Release --no-build --no-restore
+      - run: dotnet tool run dotnet-ef migrations has-pending-model-changes --project src/SnowShot.Infrastructure/SnowShot.Infrastructure.csproj --configuration Release --no-build
+      - shell: pwsh
+        run: scripts/Verify-OpenApi.ps1
+      - run: dotnet format SnowShotApi.sln --verify-no-changes --no-restore
+      - run: dotnet list SnowShotApi.sln package --vulnerable --include-transitive --format json > dotnet-vulnerabilities.json
+      - shell: pwsh
+        run: scripts/Verify-DotnetVulnerabilities.ps1 -ReportPath dotnet-vulnerabilities.json
+      - run: dotnet list SnowShotApi.sln package --include-transitive --format json > dotnet-dependencies.json
+      - run: python -m pytest -q -W error services/TableStructureRec/tests
+      - run: .\.audit-venv\Scripts\pip-audit.exe -r services/TableStructureRec/requirements-windows.lock --format json --output python-vulnerabilities.json
+      - run: .\.audit-venv\Scripts\cyclonedx-py.exe requirements services/TableStructureRec/requirements-windows.lock -o python-sbom.json
+      - run: dotnet publish src/SnowShotApi/SnowShotApi.csproj -c Release --no-restore -o artifacts/api
+      - run: dotnet publish src/SnowShot.DatabaseMigrator/SnowShot.DatabaseMigrator.csproj -c Release --no-restore -o artifacts/migrator
+      - run: dotnet tool run sbom-tool -- generate -b artifacts/api -bc src -pn SnowShotApi -pv 0.0.0 -ps SnowShot -nsb https://snowshot.example/sbom -D true
+      - run: dotnet tool run sbom-tool -- validate -b artifacts/api -n true -mi SPDX:2.2 -o ./api-sbom-validation.json
+      - run: dotnet tool run sbom-tool -- generate -b artifacts/migrator -bc src/SnowShot.Infrastructure -pn SnowShot.DatabaseMigrator -pv 0.0.0 -ps SnowShot -nsb https://snowshot.example/sbom -D true
+      - run: dotnet tool run sbom-tool -- validate -b artifacts/migrator -n true -mi SPDX:2.2 -o ./migrator-sbom-validation.json
+      - shell: pwsh
+        run: scripts/Verify-SbomValidation.ps1 -ReportPath api-sbom-validation.json,migrator-sbom-validation.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-reports
+          path: |
+            artifacts/api/_manifest/
+            artifacts/migrator/_manifest/
+            dotnet-dependencies.json
+            dotnet-vulnerabilities.json
+            api-sbom-validation.json
+            migrator-sbom-validation.json
+            python-sbom.json
+            python-vulnerabilities.json
+
+  containers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: docker build --target api -t snowshot-api:ci .
+      - run: docker build --target migrator -t snowshot-migrator:ci .
+
+  database:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_DB: snowshot
+          POSTGRES_USER: snowshot
+          POSTGRES_PASSWORD: integration-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U snowshot -d snowshot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:8-alpine@sha256:e8eb6f2980c06c6a25c08f62cb2e00dc7d2fead9aa492cfdd8b54a42109ae0f2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      ConnectionStrings__SnowShot: Host=127.0.0.1;Port=5432;Database=snowshot;Username=snowshot;Password=integration-test
+      ConnectionStrings__Redis: 127.0.0.1:6379,abortConnect=false
+      DOTNET_ENVIRONMENT: Development
+      SNOWSHOT_RUN_INTEGRATION: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.302
+      - run: dotnet restore SnowShotApi.sln --locked-mode
+      - run: dotnet run --project src/SnowShot.DatabaseMigrator/SnowShot.DatabaseMigrator.csproj -c Release --no-restore
+      - run: dotnet run --project src/SnowShot.DatabaseMigrator/SnowShot.DatabaseMigrator.csproj -c Release --no-build
+      - run: dotnet test tests/SnowShotApi.Tests/SnowShotApi.Tests.csproj -c Release --filter Category=Integration
+
+  fault-load:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12.10'
+      - run: python tests/load/run_harness.py
+
+  recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12.10'
+      - run: python tests/recovery/run_harness.py
+
+  windows-service:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - shell: pwsh
+        run: services/TableStructureRec/tests/run_winsw_service_harness.ps1

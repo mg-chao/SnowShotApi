@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "service": "SnowShotApi",
+  "rules": [
+    {
+      "id": "policy-convergence-failing",
+      "signals": [
+        "snowshot.policy.activation",
+        "snowshot.policy.stale_replicas",
+        "snowshot.policy.reservation_rejections"
+      ],
+      "condition": "activation outcome is lower_revision or revision_conflict, or either stale-replica counter increases",
+      "windowSeconds": 60,
+      "severity": "page",
+      "owner": "Infrastructure",
+      "runbookSection": "Change and rollback"
+    },
+    {
+      "id": "admission-dependency-unavailable",
+      "signals": ["snowshot.admission.dependency_failures"],
+      "condition": "counter increase greater than 0 during the evaluation window",
+      "windowSeconds": 120,
+      "severity": "page",
+      "owner": "Infrastructure",
+      "runbookSection": "Readiness and dependency outage"
+    },
+    {
+      "id": "admission-cleanup-failing",
+      "signals": ["snowshot.admission.cleanup_failures"],
+      "condition": "counter increase greater than 0 during the evaluation window",
+      "windowSeconds": 300,
+      "severity": "ticket",
+      "owner": "Infrastructure",
+      "runbookSection": "Queue and lease incidents"
+    },
+    {
+      "id": "admission-capacity-degraded",
+      "signals": [
+        "snowshot.admission.queue_wait.ms",
+        "snowshot.admission.queue.stale_evictions",
+        "snowshot.admission.queue.principal_rejections"
+      ],
+      "condition": "queue-wait p95 exceeds 2000 ms or either counter increases continuously",
+      "windowSeconds": 600,
+      "severity": "page",
+      "owner": "Infrastructure",
+      "runbookSection": "Queue and lease incidents"
+    },
+    {
+      "id": "operation-ownership-degraded",
+      "signals": [
+        "snowshot.leases.active",
+        "snowshot.leases.lost",
+        "snowshot.operations.fenced_mutations",
+        "snowshot.operations.renewal_failures"
+      ],
+      "condition": "active leases are negative or above configured capacity, or any failure counter increases",
+      "windowSeconds": 120,
+      "severity": "page",
+      "owner": "Application",
+      "runbookSection": "Queue and lease incidents"
+    },
+    {
+      "id": "provider-capability-degraded",
+      "signals": [
+        "snowshot.provider.attempts",
+        "snowshot.provider.latency.ms",
+        "snowshot.provider.circuit_open"
+      ],
+      "condition": "failure ratio exceeds 20 percent, latency p95 exceeds 30000 ms, or circuit-open counter increases",
+      "windowSeconds": 600,
+      "severity": "page",
+      "owner": "Infrastructure",
+      "runbookSection": "Readiness and dependency outage"
+    },
+    {
+      "id": "durable-checkpoint-failing",
+      "signals": [
+        "snowshot.provider.attempt_checkpoint_failures",
+        "snowshot.operations.lifecycle_failures"
+      ],
+      "condition": "either counter increases during the evaluation window",
+      "windowSeconds": 60,
+      "severity": "page",
+      "owner": "Application",
+      "runbookSection": "Reconciliation and cost"
+    },
+    {
+      "id": "reconciliation-backlog-stale",
+      "signals": [
+        "snowshot.reconciliation.backlog.operations",
+        "snowshot.reconciliation.backlog.oldest_age.seconds"
+      ],
+      "condition": "oldest age exceeds 120 seconds or backlog is nonzero and does not decrease",
+      "windowSeconds": 300,
+      "severity": "page",
+      "owner": "Infrastructure",
+      "runbookSection": "Reconciliation and cost"
+    },
+    {
+      "id": "accounting-cost-uncertain",
+      "signals": ["snowshot.cost.unknown.operations"],
+      "condition": "counter increases during the evaluation window",
+      "windowSeconds": 60,
+      "severity": "page",
+      "owner": "Domain",
+      "runbookSection": "Reconciliation and cost"
+    },
+    {
+      "id": "accounting-operator-overage",
+      "signals": ["snowshot.cost.overage.nanoyuan"],
+      "condition": "counter increases during the evaluation window",
+      "windowSeconds": 60,
+      "severity": "page",
+      "owner": "Domain",
+      "runbookSection": "Reconciliation and cost"
+    },
+    {
+      "id": "identity-integrity-conflict",
+      "signals": ["snowshot.identity.integrity_conflicts"],
+      "condition": "counter increases during the evaluation window",
+      "windowSeconds": 60,
+      "severity": "page",
+      "owner": "Infrastructure",
+      "runbookSection": "Identity, budgets, and retention"
+    },
+    {
+      "id": "duplicate-request-surge",
+      "signals": ["snowshot.operations.duplicate_requests"],
+      "condition": "rate exceeds 10 percent of accepted paid requests",
+      "windowSeconds": 600,
+      "severity": "ticket",
+      "owner": "API adapter",
+      "runbookSection": "Queue and lease incidents"
+    },
+    {
+      "id": "table-worker-capacity-degraded",
+      "signals": ["snowshot.worker.busy"],
+      "condition": "rate exceeds 5 percent of table requests",
+      "windowSeconds": 600,
+      "severity": "page",
+      "owner": "Table worker",
+      "runbookSection": "Worker recovery"
+    }
+  ],
+  "dashboardOnly": [
+    {
+      "signal": "snowshot.leases.renewed",
+      "reason": "Successful renewals provide context for the ownership-degradation rule."
+    },
+    {
+      "signal": "snowshot.cost.public.nanoyuan",
+      "reason": "Budget alerts use authoritative PostgreSQL committed plus reserved totals instead of resettable process counters."
+    },
+    {
+      "signal": "snowshot.cost.operator.nanoyuan",
+      "reason": "Budget alerts use authoritative PostgreSQL committed plus reserved totals instead of resettable process counters."
+    },
+    {
+      "signal": "snowshot.reconciliations",
+      "reason": "Reconciliation throughput provides context for the backlog-staleness rule."
+    },
+    {
+      "signal": "snowshot.reconciliation.outcomes",
+      "reason": "Outcome counts provide diagnosis after the backlog-staleness rule fires."
+    },
+    {
+      "signal": "snowshot.provider.retries",
+      "reason": "Retry volume provides context for provider capability and latency alerts; retry policy bounds the count."
+    },
+    {
+      "signal": "snowshot.provider_access.active",
+      "reason": "Active provider-access leases provide capacity context without representing a failure by themselves."
+    },
+    {
+      "signal": "snowshot.provider_access.dependency_failures",
+      "reason": "Provider-access dependency failures are correlated with provider capability alerts and retained for diagnosis."
+    },
+    {
+      "signal": "snowshot.provider_access.saturation",
+      "reason": "Access-pool saturation is capacity context; the provider capability alert covers user-visible degradation."
+    },
+    {
+      "signal": "snowshot.provider_access.selections",
+      "reason": "Access selection volume provides denominator and balancing context for provider-access dashboards."
+    },
+    {
+      "signal": "snowshot.translation.active_conversations",
+      "reason": "Active translation conversations describe workload and capacity but do not independently indicate an incident."
+    },
+    {
+      "signal": "snowshot.translation.batch_size",
+      "reason": "Translation batch size describes workload shape for capacity analysis and is not an incident signal alone."
+    }
+  ]
+}

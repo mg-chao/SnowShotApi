@@ -1,0 +1,9 @@
+* @mg-chao
+
+/src/SnowShot.Domain/ @mg-chao
+/src/SnowShot.Application/ @mg-chao
+/src/SnowShot.Infrastructure/ @mg-chao
+/src/SnowShot.ApiAdapter/ @mg-chao
+/services/TableStructureRec/ @mg-chao
+/scripts/database/ @mg-chao
+/.github/workflows/ @mg-chao

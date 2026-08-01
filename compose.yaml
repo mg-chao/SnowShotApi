@@ -1,0 +1,83 @@
+name: snowshot
+
+services:
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      SNOWSHOT_SECRETS_DIRECTORY: /run/secrets/snowshot
+      ConnectionStrings__Redis: redis:6379,abortConnect=false
+      Providers__Table__BaseUrl: ${TABLE_WORKER_URL:-http://host.docker.internal:18080/}
+    volumes:
+      - type: bind
+        source: ${SNOWSHOT_API_SECRETS_DIRECTORY:-./.secrets/development/api}
+        target: /run/secrets/snowshot
+        read_only: true
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      SNOWSHOT_SECRETS_DIRECTORY: /run/secrets/snowshot
+    volumes:
+      - type: bind
+        source: ${SNOWSHOT_MIGRATOR_SECRETS_DIRECTORY:-./.secrets/development/migrator}
+        target: /run/secrets/snowshot
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    environment:
+      POSTGRES_DB: snowshot
+      POSTGRES_USER: snowshot
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    secrets:
+      - postgres-password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snowshot -d snowshot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine@sha256:e8eb6f2980c06c6a25c08f62cb2e00dc7d2fead9aa492cfdd8b54a42109ae0f2
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+secrets:
+  postgres-password:
+    file: ${POSTGRES_PASSWORD_FILE:-./.secrets/development/postgres-password}
+
+volumes:
+  postgres-data:
+  redis-data:

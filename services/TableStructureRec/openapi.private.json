@@ -1,0 +1,24 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/health/live": {
+      "get": {
+        "statuses": ["200"]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "statuses": ["200", "503"]
+      }
+    },
+    "/v2/table/extract": {
+      "post": {
+        "headers": ["X-Operation-ID", "X-Request-ID"],
+        "contentType": "image/webp",
+        "successSchema": "TableSuccessResponse",
+        "errorSchema": "ErrorResponse",
+        "statuses": ["200", "413", "415", "422", "500", "503"]
+      }
+    }
+  }
+}
