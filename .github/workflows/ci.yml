@@ -25,6 +25,8 @@ jobs:
         run: scripts/Verify-PowerShellSyntax.ps1
       - shell: pwsh
         run: scripts/Verify-ObservabilityContract.ps1 -SelfTest
+      - shell: pwsh
+        run: scripts/Verify-DeploymentConfiguration.ps1
       - run: dotnet tool restore
       - run: pip install --require-hashes -r services/TableStructureRec/requirements-test.lock
       - run: python -m venv .audit-venv

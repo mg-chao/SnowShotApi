@@ -128,7 +128,7 @@ public sealed class ChatProviderOptions
 public sealed class TranslationProviderOptions
 {
     public const string SectionName = "Providers:Translation";
-    [Required] public string LogicalModel { get; init; } = string.Empty;
+    [Required, MinLength(1)] public List<string> LogicalModels { get; init; } = [];
     [Range(1024, 4_194_304)] public int MaximumResponseBytes { get; init; } = 1_048_576;
     [Range(1, 32)] public int MaximumConcurrentConversations { get; init; } = 4;
     [Range(1, 5)] public int MaximumAttemptsPerConversation { get; init; } = 3;

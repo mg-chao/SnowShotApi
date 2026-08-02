@@ -667,7 +667,7 @@ public sealed class DistributedIntegrationTests
                 [Resources.QwenPlus] = Model("plus"),
                 [Resources.QwenVisionFlash] = Model("vision"),
             },
-        }, new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, requireHttps: true);
+        }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<RedisProviderAccessPool>.Instance;
         var firstReplica = new RedisProviderAccessPool(catalog, redis, logger);
         var secondReplica = new RedisProviderAccessPool(catalog, redis, logger);

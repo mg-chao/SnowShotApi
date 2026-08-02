@@ -223,6 +223,7 @@ public sealed class TranslationUseCase(
         var completedAttempts = new ConcurrentBag<TranslationProviderResult>();
         var itemResults = new ItemSuccess?[content.Length];
         BatchFailure? rootFailure = null;
+        var initialModelIndex = routing.InitialModelIndex(scope.Handle.OperationId);
         using var batch = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
         try
         {
@@ -233,7 +234,7 @@ public sealed class TranslationUseCase(
             }, async (itemIndex, batchToken) =>
             {
                 var result = await TranslateItemAsync(itemIndex, content[itemIndex], content.Length, context, request,
-                    resourcePolicy, scope, deadline, completedAttempts, linked.Token, batchToken);
+                    resourcePolicy, scope, deadline, initialModelIndex, completedAttempts, linked.Token, batchToken);
                 if (result.Success is not null)
                 {
                     itemResults[itemIndex] = result.Success;
@@ -284,11 +285,13 @@ public sealed class TranslationUseCase(
         ResourcePolicy resourcePolicy,
         OperationScope scope,
         CancellationTokenSource deadline,
+        int initialModelIndex,
         ConcurrentBag<TranslationProviderResult> completedAttempts,
         CancellationToken operationToken,
         CancellationToken batchToken)
     {
-        var excluded = new HashSet<string>(StringComparer.Ordinal);
+        var excluded = routing.LogicalModels.ToDictionary(model => model,
+            _ => new HashSet<string>(StringComparer.Ordinal), StringComparer.Ordinal);
         for (var itemAttempt = 1; itemAttempt <= routing.MaximumAttemptsPerConversation; itemAttempt++)
         {
             if (batchToken.IsCancellationRequested)
@@ -304,10 +307,11 @@ public sealed class TranslationUseCase(
 
             var waitBudget = remaining - routing.AttemptTimeout;
             var wait = resourcePolicy.Admission.QueueWait < waitBudget ? resourcePolicy.Admission.QueueWait : waitBudget;
+            var logicalModel = routing.ModelForAttempt(initialModelIndex, itemAttempt);
             IProviderAccessLease accessLease;
             try
             {
-                accessLease = await providerAccess.AcquireAsync(new(routing.LogicalModel, excluded, wait,
+                accessLease = await providerAccess.AcquireAsync(new(logicalModel, excluded[logicalModel], wait,
                     policy.ActiveLeaseTtl, policy.LeaseRenewalInterval), batchToken);
             }
             catch (OperationCanceledException) when (batchToken.IsCancellationRequested)
@@ -324,11 +328,12 @@ public sealed class TranslationUseCase(
                 if (!accessLease.Acquired)
                 {
                     var accessError = AccessError(accessLease);
+                    var poolProvider = $"{logicalModel}/provider-pool";
                     var poolStartedAt = clock.UtcNow;
                     ApplicationResult<ProviderAttemptPreparation> preparation;
                     try
                     {
-                        preparation = await scope.PrepareAttemptAsync(attemptNumber, "provider-pool", Resources.Translation,
+                        preparation = await scope.PrepareAttemptAsync(attemptNumber, poolProvider, Resources.Translation,
                             poolStartedAt, operationToken);
                     }
                     catch (OperationCanceledException) when (operationToken.IsCancellationRequested)
@@ -338,15 +343,31 @@ public sealed class TranslationUseCase(
                     }
                     if (!preparation.IsSuccess) return ItemWorkResult.Failed(preparation.Error!, preparation.Error!.Detail);
                     var poolAttempt = new ProviderAttempt(preparation.Value!.Id, scope.Handle.OperationId, attemptNumber,
-                        "provider-pool", Resources.Translation, accessError.Detail, null, 0, 0, NanoYuan.Zero, true,
+                        poolProvider, Resources.Translation, accessError.Detail, null, 0, 0, NanoYuan.Zero, true,
                         AttemptDispatchState.NotDispatched, poolStartedAt, clock.UtcNow);
                     var poolResult = new TranslationProviderResult(false, [], 0, 0, 0, 0, accessError.Detail,
-                        true, false, accessLease.RetryAfter, poolAttempt);
+                        true, accessLease.RejectionReason == ProviderAccessRejectionReason.Saturated,
+                        accessLease.RetryAfter, poolAttempt);
                     completedAttempts.Add(poolResult);
                     var poolCompletion = await scope.CompleteAttemptAsync(poolAttempt, CancellationToken.None);
-                    return poolCompletion is null
-                        ? ItemWorkResult.Failed(accessError, accessError.Detail)
-                        : ItemWorkResult.Failed(poolCompletion, poolCompletion.Detail);
+                    if (poolCompletion is not null)
+                        return ItemWorkResult.Failed(poolCompletion, poolCompletion.Detail);
+                    if (!poolResult.Retryable || itemAttempt == routing.MaximumAttemptsPerConversation)
+                        return ItemWorkResult.Failed(accessError, accessError.Detail);
+
+                    var poolRetryDelay = accessLease.RetryAfter ?? RetryDelay(itemAttempt);
+                    if (poolRetryDelay + routing.AttemptTimeout > scope.Handle.AbsoluteDeadline - clock.UtcNow)
+                        return ItemWorkResult.Failed(new(ApplicationErrorCode.DeadlineExceeded, "translation_deadline"),
+                            "translation_deadline");
+                    try { await Task.Delay(poolRetryDelay, batchToken); }
+                    catch (OperationCanceledException) when (batchToken.IsCancellationRequested)
+                    {
+                        return operationToken.IsCancellationRequested
+                            ? ItemWorkResult.Failed(CancellationError(scope, deadline, CancellationToken.None),
+                                CancellationOutcome(scope, deadline, CancellationToken.None))
+                            : ItemWorkResult.Cancelled;
+                    }
+                    continue;
                 }
 
                 if (batchToken.IsCancellationRequested) return ItemWorkResult.Cancelled;
@@ -415,7 +436,7 @@ public sealed class TranslationUseCase(
                     return ItemWorkResult.Failed(new(ApplicationErrorCode.ProviderFailure, providerResult.Outcome),
                         providerResult.Outcome);
 
-                excluded.Add(access.AccessId);
+                excluded[logicalModel].Add(access.AccessId);
                 var retryDelay = providerResult.RetryAfter ?? RetryDelay(itemAttempt);
                 if (retryDelay + routing.AttemptTimeout > scope.Handle.AbsoluteDeadline - clock.UtcNow)
                     return ItemWorkResult.Failed(new(ApplicationErrorCode.DeadlineExceeded, "translation_deadline"),

@@ -40,8 +40,12 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
 
         if (options.Models.Count == 0)
             throw new InvalidOperationException("Providers:Models must configure at least one public chat model.");
-        if (!options.Models.ContainsKey(translation.LogicalModel))
-            throw new InvalidOperationException("Providers:Translation:LogicalModel must reference a configured model.");
+        if (translation.LogicalModels.Count == 0 ||
+            translation.LogicalModels.Any(string.IsNullOrWhiteSpace) ||
+            translation.LogicalModels.Distinct(StringComparer.Ordinal).Count() != translation.LogicalModels.Count ||
+            translation.LogicalModels.Any(model => !options.Models.ContainsKey(model)))
+            throw new InvalidOperationException(
+                "Providers:Translation:LogicalModels must contain unique configured models.");
 
         _models = options.Models.ToDictionary(model => model.Key, model =>
         {

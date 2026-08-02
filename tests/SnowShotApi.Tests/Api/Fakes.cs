@@ -16,6 +16,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeLedger Ledger { get; } = new();
     public FakeChatClient Chat { get; } = new();
     public FakeTranslationClient Translation { get; } = new();
+    public FakeProviderAccessPool ProviderAccess { get; } = new();
     public FakeTableClient Table { get; } = new();
     public ServicePolicy Policy => Services.GetRequiredService<ServicePolicy>();
 
@@ -35,7 +36,8 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["ConnectionStrings:SnowShot"] = "Host=127.0.0.1;Database=unused;Username=unused;Password=unused",
             ["ConnectionStrings:Redis"] = "",
             ["Identity:HmacKeyBase64"] = Convert.ToBase64String(new byte[32]),
-            ["Providers:Translation:LogicalModel"] = "qwen-flash",
+            ["Providers:Translation:LogicalModels:0"] = "deepseek-v4-flash",
+            ["Providers:Translation:LogicalModels:1"] = "qwen-plus",
             ["Providers:CloudProviders:aliyun:Endpoint"] = "https://provider.test/chat",
             ["Providers:CloudProviders:aliyun:ApiKey"] = "test-key",
             ["Providers:CloudProviders:deepseek:Endpoint"] = "https://provider.test/chat",
@@ -51,6 +53,9 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:Provider"] = "test",
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:UpstreamModel"] = "qwen3-vl-flash",
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
+            ["Providers:Models:deepseek-v4-flash:Accesses:aliyun:Provider"] = "test",
+            ["Providers:Models:deepseek-v4-flash:Accesses:aliyun:UpstreamModel"] = "deepseek-v4-flash",
+            ["Providers:Models:deepseek-v4-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
             ["Providers:Table:BaseUrl"] = "http://table.test/",
         }));
         builder.ConfigureTestServices(services =>
@@ -66,7 +71,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IReadinessService>();
             services.AddSingleton<IPrincipalIdentity, FakeIdentity>();
             services.AddSingleton<IAdmissionController, FakeAdmission>();
-            services.AddSingleton<IProviderAccessPool, FakeProviderAccessPool>();
+            services.AddSingleton<IProviderAccessPool>(ProviderAccess);
             services.AddSingleton<IOperationLedger>(Ledger);
             services.AddSingleton<IChatProviderClient>(Chat);
             services.AddSingleton<ITranslationProviderClient>(Translation);
@@ -78,9 +83,21 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
 
 internal sealed class FakeProviderAccessPool : IProviderAccessPool
 {
-    public Task<IProviderAccessLease> AcquireAsync(ProviderAccessRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult<IProviderAccessLease>(new Lease(new(request.LogicalModel, "aliyun", "test", request.LogicalModel)));
+    public ConcurrentQueue<ProviderAccessRequest> Requests { get; } = new();
+    public Func<ProviderAccessRequest, IProviderAccessLease>? Handler { get; set; }
+
+    public Task<IProviderAccessLease> AcquireAsync(ProviderAccessRequest request, CancellationToken cancellationToken)
+    {
+        Requests.Enqueue(request);
+        return Task.FromResult(Handler?.Invoke(request) ?? Acquired(request));
+    }
+
     public Task<bool> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+    public static IProviderAccessLease Acquired(ProviderAccessRequest request) =>
+        new Lease(new(request.LogicalModel, "aliyun", "test", request.LogicalModel));
+
+    public static IProviderAccessLease Saturated() => new RejectedLease();
 
     private sealed class Lease(ProviderAccessSelection selection) : IProviderAccessLease
     {
@@ -89,6 +106,17 @@ internal sealed class FakeProviderAccessPool : IProviderAccessPool
         ProviderAccessSelection? IProviderAccessLease.Selection => Selection;
         public ProviderAccessRejectionReason RejectionReason => ProviderAccessRejectionReason.None;
         public TimeSpan? RetryAfter => null;
+        public CancellationToken OwnershipLost => CancellationToken.None;
+        public Task ReleaseAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RejectedLease : IProviderAccessLease
+    {
+        public bool Acquired => false;
+        public ProviderAccessSelection? Selection => null;
+        public ProviderAccessRejectionReason RejectionReason => ProviderAccessRejectionReason.Saturated;
+        public TimeSpan? RetryAfter => TimeSpan.Zero;
         public CancellationToken OwnershipLost => CancellationToken.None;
         public Task ReleaseAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

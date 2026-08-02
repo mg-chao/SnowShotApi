@@ -35,6 +35,26 @@ public sealed class DomainTests
     }
 
     [Fact]
+    public void TranslationRoutingIsStableBalancedAndAlternatesRetries()
+    {
+        var routing = new TranslationRouting([Resources.DeepSeekV4, Resources.QwenPlus], 4, 3,
+            TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(2));
+        var operation = Guid.Parse("019fc2f0-d649-73ad-a65e-4efcf336c49a");
+        var initial = routing.InitialModelIndex(operation);
+
+        Assert.Equal(initial, routing.InitialModelIndex(operation));
+        Assert.Equal(routing.LogicalModels[initial], routing.ModelForAttempt(initial, 1));
+        Assert.NotEqual(routing.ModelForAttempt(initial, 1), routing.ModelForAttempt(initial, 2));
+        Assert.Equal(routing.ModelForAttempt(initial, 1), routing.ModelForAttempt(initial, 3));
+
+        var counts = Enumerable.Range(0, 1_000)
+            .Select(index => routing.LogicalModels[routing.InitialModelIndex(Guid.Parse($"00000000-0000-0000-0000-{index:x12}"))])
+            .GroupBy(model => model).ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        Assert.InRange(counts[Resources.DeepSeekV4], 400, 600);
+        Assert.InRange(counts[Resources.QwenPlus], 400, 600);
+    }
+
+    [Fact]
     public void DefaultPolicyHasStableRequiredResourcesAndLimits()
     {
         var policy = ServicePolicy.Defaults();

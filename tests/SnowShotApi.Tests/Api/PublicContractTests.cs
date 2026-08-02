@@ -78,7 +78,9 @@ public sealed class PublicContractTests
         Assert.Equal(360_000, Assert.Single(factory.Ledger.Settlements).ReportedPublicCost.Value);
         Assert.Equal(2, factory.Ledger.Preparations.Count);
         Assert.Equal(2, factory.Ledger.Attempts.Count);
-        Assert.All(factory.Ledger.Attempts, attempt => Assert.Equal("test/aliyun", attempt.Provider));
+        var routedModel = Assert.Single(factory.Translation.Commands.Select(command => command.Access.LogicalModel).Distinct());
+        Assert.Contains(routedModel, new[] { Resources.DeepSeekV4, Resources.QwenPlus });
+        Assert.All(factory.Ledger.Attempts, attempt => Assert.Equal($"{routedModel}/test/aliyun", attempt.Provider));
     }
 
     [Fact]
@@ -143,6 +145,13 @@ public sealed class PublicContractTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(2, calls[3]);
         Assert.All(calls.Where(pair => pair.Key != 3), pair => Assert.Equal(1, pair.Value));
+        var initialModel = Assert.Single(factory.Translation.Commands.Where(command => command.ItemAttemptNumber == 1)
+            .Select(command => command.Access.LogicalModel).Distinct());
+        var retried = factory.Translation.Commands.Where(command => command.ItemIndex == 3)
+            .OrderBy(command => command.ItemAttemptNumber).ToArray();
+        Assert.Equal(2, retried.Length);
+        Assert.Equal(initialModel, retried[0].Access.LogicalModel);
+        Assert.NotEqual(initialModel, retried[1].Access.LogicalModel);
         Assert.Equal(9, factory.Ledger.Preparations.Count);
         Assert.Equal(9, factory.Ledger.Attempts.Count);
         var settlement = Assert.Single(factory.Ledger.Settlements);
@@ -150,6 +159,35 @@ public sealed class PublicContractTests
         Assert.Equal(9 * 180_000, settlement.ReportedOperatorCost.Value);
         Assert.Equal([10, 11], factory.Ledger.Attempts.Where(attempt => attempt.AttemptNumber is 10 or 11)
             .Select(attempt => attempt.AttemptNumber).Order().ToArray());
+    }
+
+    [Fact]
+    public async Task TranslationSwitchesModelsWhenTheInitialModelPoolIsSaturated()
+    {
+        await using var factory = new ApiFactory();
+        var acquisition = 0;
+        factory.ProviderAccess.Handler = request => Interlocked.Increment(ref acquisition) == 1
+            ? FakeProviderAccessPool.Saturated()
+            : FakeProviderAccessPool.Acquired(request);
+        using var client = factory.CreateAnonymousClient();
+
+        using var response = await client.PostAsJsonAsync("/api/v2/translation/translate", new
+        {
+            type = 0,
+            content = new[] { "item" },
+            from = "en",
+            to = "zh-CHS",
+            domain = "general",
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var requests = factory.ProviderAccess.Requests.ToArray();
+        Assert.Equal(2, requests.Length);
+        Assert.NotEqual(requests[0].LogicalModel, requests[1].LogicalModel);
+        var attempts = factory.Ledger.Attempts.OrderBy(attempt => attempt.AttemptNumber).ToArray();
+        Assert.Equal(2, attempts.Length);
+        Assert.Equal($"{requests[0].LogicalModel}/provider-pool", attempts[0].Provider);
+        Assert.Equal($"{requests[1].LogicalModel}/test/aliyun", attempts[1].Provider);
     }
 
     [Fact]
@@ -200,6 +238,9 @@ public sealed class PublicContractTests
 
         await AssertProblemAsync(response, HttpStatusCode.BadGateway, "provider_failure", "/api/v2/translation/translate");
         Assert.Equal([1, 2, 3], factory.Translation.Commands.Select(command => command.ItemAttemptNumber).ToArray());
+        var attemptedModels = factory.Translation.Commands.Select(command => command.Access.LogicalModel).ToArray();
+        Assert.Equal(attemptedModels[0], attemptedModels[2]);
+        Assert.NotEqual(attemptedModels[0], attemptedModels[1]);
         Assert.Equal([1, 2, 3], factory.Ledger.Attempts.Select(attempt => attempt.AttemptNumber).ToArray());
         Assert.Equal(factory.Ledger.Preparations.Count, factory.Ledger.Attempts.Count);
     }
@@ -280,7 +321,7 @@ public sealed class PublicContractTests
         Assert.True(factory.Ledger.SettlementCompleted);
         var expectedCost = factory.Policy.Get(Resources.QwenFlash).Price.Calculate(100, 20);
         Assert.Equal(expectedCost, Assert.Single(factory.Ledger.Settlements).ReportedPublicCost);
-        AssertCompletedAttempt(factory.Ledger, "test/aliyun");
+        AssertCompletedAttempt(factory.Ledger, "qwen-flash/test/aliyun");
     }
 
     [Fact]

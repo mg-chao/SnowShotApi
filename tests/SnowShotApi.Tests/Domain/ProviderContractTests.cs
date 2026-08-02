@@ -47,7 +47,7 @@ public sealed class ProviderContractTests
                     },
                 },
             },
-        }, new TranslationProviderOptions { LogicalModel = Resources.DeepSeekV4 }, requireHttps: true);
+        }, new TranslationProviderOptions { LogicalModels = [Resources.DeepSeekV4] }, requireHttps: true);
 
         var aliyun = catalog.Get(Resources.DeepSeekV4, "aliyun");
         var deepseek = catalog.Get(Resources.DeepSeekV4, "deepseek");
@@ -62,6 +62,35 @@ public sealed class ProviderContractTests
     }
 
     [Fact]
+    public void TranslationModelsMustBeUniqueAndConfigured()
+    {
+        var providers = new ProviderModelsOptions
+        {
+            CloudProviders = new Dictionary<string, CloudProviderOptions>(StringComparer.Ordinal)
+            {
+                ["test"] = new() { Endpoint = "https://provider.test/chat", ApiKey = "key" },
+            },
+            Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
+            {
+                [Resources.QwenPlus] = new()
+                {
+                    Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
+                    {
+                        ["test"] = new() { Provider = "test", UpstreamModel = "qwen-plus", MaxConcurrentRequests = 1 },
+                    },
+                },
+            },
+        };
+
+        Assert.Throws<InvalidOperationException>(() => new ProviderModelCatalog(providers,
+            new TranslationProviderOptions(), requireHttps: true));
+        Assert.Throws<InvalidOperationException>(() => new ProviderModelCatalog(providers,
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenPlus, Resources.QwenPlus] }, requireHttps: true));
+        Assert.Throws<InvalidOperationException>(() => new ProviderModelCatalog(providers,
+            new TranslationProviderOptions { LogicalModels = [Resources.DeepSeekV4] }, requireHttps: true));
+    }
+
+    [Fact]
     public async Task TranslationForwardsOnlyTheInternalOperationId()
     {
         const string payload = "{\"choices\":[{\"message\":{\"content\":\"{\\\"translations\\\":[{\\\"index\\\":0,\\\"content\\\":\\\"hola\\\"}]}\"}}]}";
@@ -69,7 +98,7 @@ public sealed class ProviderContractTests
         var catalog = Catalog();
         var client = new OpenAiTranslationClient(
             new SingleClientRegistry(new HttpClient(handler)),
-            new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, catalog,
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, catalog,
             ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
 
         var result = await client.TranslateAsync(TranslationCommand(), TestContext.Current.CancellationToken);
@@ -92,7 +121,7 @@ public sealed class ProviderContractTests
         const string payload = "{\"choices\":[{\"message\":{\"content\":\"{\\\"translations\\\":[{\\\"index\\\":0,\\\"content\\\":\\\"hola\\\"}]}\"}}]}";
         var handler = new ResponseHandler(payload, "application/json");
         var client = new OpenAiTranslationClient(new SingleClientRegistry(new HttpClient(handler)),
-            new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, Catalog(false),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(false),
             ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
 
         var result = await client.TranslateAsync(TranslationCommand(), TestContext.Current.CancellationToken);
@@ -181,7 +210,7 @@ public sealed class ProviderContractTests
         var handler = new ResponseHandler(payload, "application/json");
         var client = new OpenAiTranslationClient(
             new SingleClientRegistry(new HttpClient(handler)),
-            new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, Catalog(),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(),
             ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
 
         var result = await client.TranslateAsync(TranslationCommand(), TestContext.Current.CancellationToken);
@@ -256,7 +285,7 @@ public sealed class ProviderContractTests
         var policy = ServicePolicy.Defaults();
         var chat = new OpenAiChatClient(registry, new ChatProviderOptions(), catalog, policy, health, TimeProvider.System);
         var translation = new OpenAiTranslationClient(registry,
-            new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, catalog, policy, health, TimeProvider.System);
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, catalog, policy, health, TimeProvider.System);
 
         var chatEvents = new List<ChatProviderEvent>();
         await foreach (var providerEvent in chat.StreamAsync(Command(), TestContext.Current.CancellationToken))
@@ -299,7 +328,7 @@ public sealed class ProviderContractTests
     {
         var time = timeProvider ?? TimeProvider.System;
         return new(new SingleClientRegistry(new HttpClient(handler)),
-            new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, Catalog(),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(),
             ServicePolicy.Defaults(), new DependencyHealth(time), time);
     }
 
@@ -329,7 +358,7 @@ public sealed class ProviderContractTests
                 [Resources.QwenPlus] = Model("test-plus"),
                 [Resources.QwenVisionFlash] = Model("test-vision"),
             },
-        }, new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, requireHttps: true);
+        }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);
     }
 
     private sealed class SingleClientRegistry(HttpClient client) : IProviderHttpClientRegistry

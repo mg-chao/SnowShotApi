@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 using SnowShot.Domain;
 
 namespace SnowShot.Application;
@@ -25,12 +26,22 @@ public interface IChatModelCatalog
 }
 
 public sealed record TranslationRouting(
-    string LogicalModel,
+    IReadOnlyList<string> LogicalModels,
     int MaximumConcurrentConversations,
     int MaximumAttemptsPerConversation,
     TimeSpan AttemptTimeout,
     TimeSpan InitialRetryDelay,
-    TimeSpan MaximumRetryDelay);
+    TimeSpan MaximumRetryDelay)
+{
+    public int InitialModelIndex(Guid operationId)
+    {
+        var hash = SHA256.HashData(operationId.ToByteArray());
+        return hash[0] % LogicalModels.Count;
+    }
+
+    public string ModelForAttempt(int initialModelIndex, int itemAttemptNumber) =>
+        LogicalModels[(initialModelIndex + itemAttemptNumber - 1) % LogicalModels.Count];
+}
 public sealed record TableRequestLimits(long MaximumUploadBytes);
 public sealed record LifecycleTimeouts(TimeSpan Cleanup, TimeSpan AttemptRecording, TimeSpan Settlement)
 {
@@ -210,7 +221,7 @@ public sealed record ProviderAccessSelection(
     string Provider,
     string UpstreamModel)
 {
-    public string AttemptProvider => $"{Provider}/{AccessId}";
+    public string AttemptProvider => $"{LogicalModel}/{Provider}/{AccessId}";
 }
 
 public enum ProviderAccessRejectionReason { None, Saturated, DependencyUnavailable }

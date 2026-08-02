@@ -22,6 +22,13 @@ reachable from the API network and that credentials, certificates, and clocks
 are valid. Keep traffic admission closed when a required dependency is
 unavailable; restore the dependency or fail over before reopening traffic.
 
+Translation starts each batch on one of the configured logical models and
+switches models only for retryable failures. Use the model/provider/access
+identity on provider attempts to distinguish model degradation from an access
+or network failure. The nginx API read timeout must remain greater than every
+application execution deadline so the application can settle the operation and
+return its structured timeout response.
+
 ## Queue and lease incidents
 
 Compare active leases, queue wait, stale evictions, and rejection counters with

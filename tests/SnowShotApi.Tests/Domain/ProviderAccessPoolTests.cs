@@ -90,6 +90,6 @@ public sealed class ProviderAccessPoolTests
                 [Resources.QwenPlus] = Model("plus"),
                 [Resources.QwenVisionFlash] = Model("vision"),
             },
-        }, new TranslationProviderOptions { LogicalModel = Resources.QwenFlash }, requireHttps: true);
+        }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);
     }
 }

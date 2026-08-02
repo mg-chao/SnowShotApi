@@ -48,7 +48,10 @@ public static class DependencyInjection
         Configure<ChatProviderOptions>(services, configuration, ChatProviderOptions.SectionName, _ => true,
             "Invalid chat provider limits.");
         Configure<TranslationProviderOptions>(services, configuration, TranslationProviderOptions.SectionName,
-            options => options.InitialRetryDelayMilliseconds <= options.MaximumRetryDelayMilliseconds,
+            options => options.InitialRetryDelayMilliseconds <= options.MaximumRetryDelayMilliseconds &&
+                options.LogicalModels.Count > 0 &&
+                options.LogicalModels.All(model => !string.IsNullOrWhiteSpace(model)) &&
+                options.LogicalModels.Distinct(StringComparer.Ordinal).Count() == options.LogicalModels.Count,
             "Invalid translation provider limits or retry delays.");
         services.AddOptions<ProviderModelsOptions>().Bind(configuration.GetSection(ProviderModelsOptions.SectionName))
             .Validate(options =>
@@ -89,7 +92,7 @@ public static class DependencyInjection
         services.AddSingleton(sp =>
         {
             var options = sp.GetRequiredService<TranslationProviderOptions>();
-            return new TranslationRouting(options.LogicalModel, options.MaximumConcurrentConversations,
+            return new TranslationRouting(options.LogicalModels.ToArray(), options.MaximumConcurrentConversations,
                 options.MaximumAttemptsPerConversation, TimeSpan.FromSeconds(options.AttemptTimeoutSeconds),
                 TimeSpan.FromMilliseconds(options.InitialRetryDelayMilliseconds),
                 TimeSpan.FromMilliseconds(options.MaximumRetryDelayMilliseconds));

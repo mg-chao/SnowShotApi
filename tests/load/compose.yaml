@@ -5,7 +5,8 @@ x-api-environment: &api-environment
   ConnectionStrings__SnowShot: Host=postgres;Port=5432;Database=snowshot;Username=snowshot;Password=fault-test
   ConnectionStrings__Redis: redis:6379,abortConnect=false
   Identity__HmacKeyBase64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
-  Providers__Translation__LogicalModel: qwen-flash
+  Providers__Translation__LogicalModels__0: deepseek-v4-flash
+  Providers__Translation__LogicalModels__1: qwen-plus
   Providers__CloudProviders__aliyun__Endpoint: http://fake-provider:8080/v1/chat/completions
   Providers__CloudProviders__aliyun__ApiKey: fault-test
   Providers__CloudProviders__deepseek__Endpoint: http://fake-provider:8080/v1/chat/completions
