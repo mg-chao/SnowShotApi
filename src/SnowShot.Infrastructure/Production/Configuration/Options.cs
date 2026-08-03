@@ -170,7 +170,7 @@ public sealed class TableWorkerOptions
 {
     public const string SectionName = "Providers:Table";
     [Required, Url] public string BaseUrl { get; init; } = string.Empty;
-    [Range(1, 500 * 1024)] public long MaximumUploadBytes { get; init; } = 500 * 1024;
+    [Range(1, 800 * 1024)] public long MaximumUploadBytes { get; init; } = 800 * 1024;
     [Range(1024, 16_777_216)] public int MaximumResponseBytes { get; init; } = 2 * 1024 * 1024;
     public string? ClientCertificatePath { get; init; }
     public string? ClientCertificatePassword { get; init; }

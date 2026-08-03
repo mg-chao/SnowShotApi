@@ -12,7 +12,7 @@ from table_rec_service.__main__ import uvicorn_options
 def test_defaults_are_local_and_three_processes() -> None:
     settings = ServiceSettings.from_environment({})
 
-    assert MAX_UPLOAD_BYTES == 500 * 1024
+    assert MAX_UPLOAD_BYTES == 800 * 1024
     assert settings.host == "127.0.0.1"
     assert settings.port == 18080
     assert settings.workers == 3

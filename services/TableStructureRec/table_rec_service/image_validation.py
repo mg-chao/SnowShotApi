@@ -5,7 +5,7 @@ from io import BytesIO
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
-from .config import MAX_IMAGE_SIDE
+from .config import MAX_IMAGE_HEIGHT, MAX_IMAGE_WIDTH
 from .errors import IMAGE_TOO_LARGE, INVALID_IMAGE, NOT_WEBP, ServiceError
 
 
@@ -24,7 +24,7 @@ def decode_webp(payload: bytes) -> np.ndarray:
             width, height = image.size
             if width <= 0 or height <= 0:
                 raise INVALID_IMAGE.exception()
-            if width > MAX_IMAGE_SIDE or height > MAX_IMAGE_SIDE:
+            if width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
                 raise IMAGE_TOO_LARGE.exception()
             if getattr(image, "n_frames", 1) != 1:
                 raise INVALID_IMAGE.exception()

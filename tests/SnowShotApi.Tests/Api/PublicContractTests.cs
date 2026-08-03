@@ -12,7 +12,7 @@ namespace SnowShotApi.Tests.Api;
 
 public sealed class PublicContractTests
 {
-    private const int MaximumTableImageBytes = 500 * 1024;
+    private const int MaximumTableImageBytes = 800 * 1024;
 
     [Fact]
     public async Task ModelListPreservesShapeIdentifiersAndEnglishLocalization()

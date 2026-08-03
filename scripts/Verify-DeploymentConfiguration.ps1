@@ -56,6 +56,9 @@ if ($readTimeout -le $maximumDeadline) {
 if ($connectTimeout -ne 5) {
     throw "nginx proxy_connect_timeout must remain 5 seconds for the loopback API."
 }
+if (-not [regex]::IsMatch($nginx, '(?m)^\s*client_max_body_size\s+1m;\s*$')) {
+    throw "nginx table extraction requests must be limited to 1m."
+}
 if ($nginx.Contains('$proxy_add_x_forwarded_for')) {
     throw "nginx must not trust or append a client-supplied X-Forwarded-For chain."
 }

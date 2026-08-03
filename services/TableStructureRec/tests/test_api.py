@@ -86,11 +86,11 @@ def test_corrupt_webp_is_invalid_image() -> None:
     assert error_code(response) == "invalid_image"
 
 
-def test_image_side_limit_boundary() -> None:
+def test_image_dimension_limit_boundary() -> None:
     with client_for(FakeBundle()) as client:
-        exact = post_image(client, image_bytes(size=(1500, 1)))
-        width_over = post_image(client, image_bytes(size=(1501, 1)))
-        height_over = post_image(client, image_bytes(size=(1, 1501)))
+        exact = post_image(client, image_bytes(size=(2880, 2880)))
+        width_over = post_image(client, image_bytes(size=(2881, 1)))
+        height_over = post_image(client, image_bytes(size=(1, 2881)))
     assert exact.status_code == 200
     assert width_over.status_code == 422 and error_code(width_over) == "image_too_large"
     assert height_over.status_code == 422 and error_code(height_over) == "image_too_large"

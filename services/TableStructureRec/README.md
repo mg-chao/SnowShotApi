@@ -4,7 +4,8 @@ This Windows-only service accepts one cropped WebP table image at
 `POST /v2/table/extract` with a raw `image/webp` body. It classifies the table, runs OCR once, selects the
 wired or lineless structure engine, and returns `{"html":"..."}`.
 
-The raw image payload may not exceed 500 KiB (512000 bytes).
+The image dimensions may not exceed 2880 pixels wide by 2880 pixels high, and the
+raw image payload may not exceed 800 KiB (819200 bytes).
 
 ## Runtime configuration
 

@@ -49,13 +49,13 @@ INVALID_IMAGE = ErrorDefinition(
 IMAGE_TOO_LARGE = ErrorDefinition(
     422,
     "image_too_large",
-    "Neither image side may exceed 1500 pixels.",
+    "The image width and height may not exceed 2880 pixels.",
     "validation_dimensions",
 )
 PAYLOAD_TOO_LARGE = ErrorDefinition(
     413,
     "payload_too_large",
-    "The image payload may not exceed 500 KiB (512000 bytes).",
+    "The image payload may not exceed 800 KiB (819200 bytes).",
     "validation_payload_size",
 )
 NO_TABLE = ErrorDefinition(

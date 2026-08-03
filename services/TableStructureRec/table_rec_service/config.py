@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Mapping
 
 
-MAX_IMAGE_SIDE = 1_500
-MAX_UPLOAD_BYTES = 500 * 1024
+MAX_IMAGE_WIDTH = 2_880
+MAX_IMAGE_HEIGHT = 2_880
+MAX_UPLOAD_BYTES = 800 * 1024
 VALID_LOG_LEVELS = frozenset({"critical", "error", "warning", "info", "debug", "trace"})
 VALID_ENVIRONMENTS = frozenset({"development", "staging", "production"})
 
