@@ -62,6 +62,7 @@ public sealed class DomainTests
         Assert.Equal(3_000_000_000, policy.PrincipalDailyAllowance.Value);
         Assert.Equal(50_000_000_000, policy.DailyOperatorBudget.Value);
         Assert.Equal(200_000_000_000, policy.MonthlyOperatorBudget.Value);
+        Assert.All(policy.ResourcePolicies, resource => Assert.Equal(30_000_000, resource.OperatorMaximum.Value));
         Assert.Equal(TimeSpan.FromMinutes(5), policy.Get(Resources.Translation).ExecutionDeadline);
         Assert.Equal(TimeSpan.FromSeconds(60), policy.Get(Resources.TableExtraction).ExecutionDeadline);
 

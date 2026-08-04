@@ -202,6 +202,7 @@ public sealed record PersistenceReadiness(
     bool Connected,
     bool SchemaCurrent,
     bool PolicyConverged,
+    bool OperatorBudgetHeadroom,
     long? ActivePolicyRevision,
     string? ActivePolicyFingerprint);
 

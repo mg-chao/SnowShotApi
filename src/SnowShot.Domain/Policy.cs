@@ -172,11 +172,11 @@ public sealed class ServicePolicy
     public static ServicePolicy Defaults() => new(
         1,
         [
-            new(SnowShot.Domain.Resources.Translation, new(NanoYuan.Zero, NanoYuan.Zero), new(30, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(1_000_000_000)),
-            new(SnowShot.Domain.Resources.QwenFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(1_000_000_000)),
-            new(SnowShot.Domain.Resources.QwenPlus, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(2_000_000_000)),
-            new(SnowShot.Domain.Resources.QwenVisionFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(1_000_000_000)),
-            new(SnowShot.Domain.Resources.DeepSeekV4, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(1_000_000_000)),
+            new(SnowShot.Domain.Resources.Translation, new(NanoYuan.Zero, NanoYuan.Zero), new(30, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
+            new(SnowShot.Domain.Resources.QwenFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
+            new(SnowShot.Domain.Resources.QwenPlus, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
+            new(SnowShot.Domain.Resources.QwenVisionFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
+            new(SnowShot.Domain.Resources.DeepSeekV4, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
             new(SnowShot.Domain.Resources.TableExtraction, new(NanoYuan.Zero, NanoYuan.Zero), new(10, 3, 6, 12, TimeSpan.FromSeconds(30)), TimeSpan.FromSeconds(60), new(30_000_000)),
         ],
         NanoYuan.ThreeYuan,

@@ -7,7 +7,6 @@ using SnowShot.Application;
 using SnowShot.Domain;
 using SnowShot.Infrastructure.Configuration;
 using SnowShot.Infrastructure.Telemetry;
-using Polly.CircuitBreaker;
 
 namespace SnowShot.Infrastructure.Providers;
 
@@ -44,13 +43,6 @@ public sealed class OpenAiChatClient(
         {
             response = await clients.CreateClient(access.Selection).SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (BrokenCircuitException)
-        {
-            SnowShotTelemetry.CircuitOpen.Add(1,
-                new KeyValuePair<string, object?>[] { new("provider", "chat") });
-            dependencyHealth.Report("chat_provider", false);
-            sendFailure = Failure("circuit_open", null, null, true, AttemptDispatchState.NotDispatched, true);
-        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
         {
@@ -84,6 +76,7 @@ public sealed class OpenAiChatClient(
                 catch (InvalidDataException)
                 {
                     dependencyHealth.Report("chat_provider", false);
+                    await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
                     readFailure = Failure("invalid_stream", null, usage, usage is not null, AttemptDispatchState.Dispatched, false);
                     line = null;
                 }
@@ -92,6 +85,7 @@ public sealed class OpenAiChatClient(
                 if (line.Length == 0 || line.StartsWith(':')) continue;
                 if (!line.StartsWith("data:", StringComparison.Ordinal))
                 {
+                    await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
                     yield return Failure("invalid_stream", null, usage, usage is not null, AttemptDispatchState.Dispatched, false);
                     yield break;
                 }
@@ -113,6 +107,7 @@ public sealed class OpenAiChatClient(
                 catch (Exception exception) when (exception is JsonException or InvalidDataException or OverflowException)
                 {
                     dependencyHealth.Report("chat_provider", false);
+                    await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
                     parseFailure = Failure("invalid_stream", null, usage, usage is not null, AttemptDispatchState.Dispatched, false);
                     frame = [];
                 }
@@ -124,10 +119,12 @@ public sealed class OpenAiChatClient(
             dependencyHealth.Report("chat_provider", succeeded);
             if (!succeeded)
             {
+                await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
                 yield return Failure("truncated_stream", null, usage, usage is not null,
                     AttemptDispatchState.Dispatched, !delivered);
                 yield break;
             }
+            await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.Success);
             yield return new ChatProviderEvent.Terminal(usage, true, true, "success",
                 Attempt("success", null, usage, true, AttemptDispatchState.Dispatched));
         }

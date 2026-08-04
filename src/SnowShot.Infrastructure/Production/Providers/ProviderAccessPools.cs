@@ -9,7 +9,9 @@ using StackExchange.Redis;
 
 namespace SnowShot.Infrastructure.Providers;
 
-public sealed class InMemoryProviderAccessPool(ProviderModelCatalog catalog) : IProviderAccessPool
+public sealed class InMemoryProviderAccessPool(
+    ProviderModelCatalog catalog,
+    IProviderCircuitRegistry circuits) : IProviderAccessPool
 {
     private readonly ConcurrentDictionary<string, ModelState> _models = new(StringComparer.Ordinal);
 
@@ -17,7 +19,7 @@ public sealed class InMemoryProviderAccessPool(ProviderModelCatalog catalog) : I
     {
         var selections = catalog.Selections(request.LogicalModel);
         var exclude = request.ExcludedAccessIds.Count < selections.Count
-            ? request.ExcludedAccessIds
+            ? new HashSet<string>(request.ExcludedAccessIds, StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
         var state = _models.GetOrAdd(request.LogicalModel, _ => new(selections,
             selections.ToDictionary(
@@ -27,6 +29,7 @@ public sealed class InMemoryProviderAccessPool(ProviderModelCatalog catalog) : I
         var started = Stopwatch.GetTimestamp();
         while (true)
         {
+            ProviderAccessSelection? candidate = null;
             lock (state.Gate)
             {
                 for (var offset = 1; offset <= state.Selections.Count; offset++)
@@ -37,9 +40,22 @@ public sealed class InMemoryProviderAccessPool(ProviderModelCatalog catalog) : I
                         state.Active[selection.AccessId] >= state.MaxConcurrentRequests[selection.AccessId]) continue;
                     state.Cursor = index;
                     state.Active[selection.AccessId]++;
-                    RecordSelection(selection);
-                    return new MemoryLease(selection, state);
+                    candidate = selection;
+                    break;
                 }
+            }
+            if (candidate is not null)
+            {
+                if (await circuits.TryAcquireAsync(candidate, cancellationToken))
+                {
+                    RecordSelection(candidate);
+                    return new MemoryLease(candidate, state);
+                }
+                SnowShotTelemetry.CircuitOpen.Add(1, Tags(candidate));
+                lock (state.Gate) state.Active[candidate.AccessId]--;
+                exclude.Add(candidate.AccessId);
+                if (exclude.Count == selections.Count) return RejectedLease.Unavailable();
+                continue;
             }
             if (Stopwatch.GetElapsedTime(started) >= request.QueueWait)
                 return RejectedLease.Saturated();
@@ -101,6 +117,7 @@ public sealed class InMemoryProviderAccessPool(ProviderModelCatalog catalog) : I
 public sealed class RedisProviderAccessPool(
     ProviderModelCatalog catalog,
     IConnectionMultiplexer connection,
+    IProviderCircuitRegistry circuits,
     ILogger<RedisProviderAccessPool> logger) : IProviderAccessPool
 {
     private static readonly Action<ILogger, string, Exception?> CoordinationUnavailable =
@@ -146,7 +163,7 @@ public sealed class RedisProviderAccessPool(
     {
         var selections = catalog.Selections(request.LogicalModel);
         var exclude = request.ExcludedAccessIds.Count < selections.Count
-            ? request.ExcludedAccessIds
+            ? new HashSet<string>(request.ExcludedAccessIds, StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
         var database = connection.GetDatabase();
         var tag = $"{{snowshot:provider:{Hash(request.LogicalModel)}}}";
@@ -154,24 +171,32 @@ public sealed class RedisProviderAccessPool(
         var active = selections.Select(value => (RedisKey)$"{tag}:active:{Hash(value.AccessId)}").ToArray();
         var keys = new[] { cursor }.Concat(active).ToArray();
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        var arguments = new List<RedisValue>
-        {
-            Milliseconds(request.LeaseTtl), token, selections.Count,
-        };
-        arguments.AddRange(selections.Select(value => (RedisValue)value.AccessId));
-        arguments.AddRange(selections.Select(value => (RedisValue)catalog.GetMaxConcurrentRequests(value)));
-        arguments.AddRange(selections.Select(value => (RedisValue)(exclude.Contains(value.AccessId) ? "1" : "0")));
         var started = Stopwatch.GetTimestamp();
         try
         {
             while (true)
             {
+                var arguments = new List<RedisValue>
+                {
+                    Milliseconds(request.LeaseTtl), token, selections.Count,
+                };
+                arguments.AddRange(selections.Select(value => (RedisValue)value.AccessId));
+                arguments.AddRange(selections.Select(value => (RedisValue)catalog.GetMaxConcurrentRequests(value)));
+                arguments.AddRange(selections.Select(value => (RedisValue)(exclude.Contains(value.AccessId) ? "1" : "0")));
                 var result = (RedisResult[]?)(await database.ScriptEvaluateAsync(AcquireScript, keys, arguments.ToArray())
                     .WaitAsync(cancellationToken)) ?? throw new RedisException("Provider access selection returned no result.");
                 if ((int)result[0] == 1)
                 {
                     var index = (int)result[1] - 1;
                     var selection = selections[index];
+                    if (!await circuits.TryAcquireAsync(selection, cancellationToken))
+                    {
+                        SnowShotTelemetry.CircuitOpen.Add(1, Tags(selection));
+                        await database.SortedSetRemoveAsync(active[index], token).WaitAsync(cancellationToken);
+                        exclude.Add(selection.AccessId);
+                        if (exclude.Count == selections.Count) return RejectedLease.Unavailable();
+                        continue;
+                    }
                     RecordSelection(selection);
                     return new RedisLease(database, active[index], token, selection, request, logger);
                 }

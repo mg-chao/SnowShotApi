@@ -58,13 +58,17 @@ public sealed class ReadinessService(
             ["policy"] = persistence?.PolicyConverged ?? false,
             ["schema"] = persistence?.SchemaCurrent ?? false,
             ["postgresql"] = persistence?.Connected ?? false,
+            ["operator_budget"] = persistence?.OperatorBudgetHeadroom ?? false,
             ["admission"] = admissionReady,
             ["provider_access"] = providerAccessReady,
         };
         var staleBefore = timeProvider.GetUtcNow().AddSeconds(-maintenance.DependencyStatusStaleSeconds);
         foreach (var component in dependencyHealth.Snapshot())
             components[component.Key] = component.Value.Healthy && component.Value.ObservedAt >= staleBefore;
-        return new(persistence is { Connected: true, SchemaCurrent: true, PolicyConverged: true } && admissionReady && providerAccessReady,
+        var ready = persistence is
+        { Connected: true, SchemaCurrent: true, PolicyConverged: true, OperatorBudgetHeadroom: true } &&
+            admissionReady && providerAccessReady && components.Values.All(value => value);
+        return new(ready,
             policy.Revision, policy.Fingerprint, persistence?.ActivePolicyRevision,
             persistence?.ActivePolicyFingerprint, components);
     }

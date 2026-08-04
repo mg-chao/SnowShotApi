@@ -47,6 +47,9 @@ public static class DependencyInjection
         }, "Policy has invalid or inconsistent limits or pricing.");
         Configure<ChatProviderOptions>(services, configuration, ChatProviderOptions.SectionName, _ => true,
             "Invalid chat provider limits.");
+        Configure<ProviderCircuitOptions>(services, configuration, ProviderCircuitOptions.SectionName,
+            options => options.InitialBreakSeconds <= options.MaximumBreakSeconds,
+            "Invalid provider circuit breaker configuration.");
         Configure<TranslationProviderOptions>(services, configuration, TranslationProviderOptions.SectionName,
             options => options.InitialRetryDelayMilliseconds <= options.MaximumRetryDelayMilliseconds &&
                 options.LogicalModels.Count > 0 &&
@@ -79,6 +82,7 @@ public static class DependencyInjection
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<IdentityOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<PolicyOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<ChatProviderOptions>>().Value);
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<ProviderCircuitOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<TranslationProviderOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<ProviderModelsOptions>>().Value);
         services.AddSingleton(sp => new ProviderModelCatalog(sp.GetRequiredService<ProviderModelsOptions>(),
@@ -120,6 +124,7 @@ public static class DependencyInjection
         if (redisConfiguration is null)
         {
             services.AddSingleton<IAdmissionController, InMemoryAdmissionController>();
+            services.AddSingleton<IProviderCircuitRegistry, InMemoryProviderCircuitRegistry>();
             services.AddSingleton<IProviderAccessPool, InMemoryProviderAccessPool>();
         }
         else
@@ -128,6 +133,7 @@ public static class DependencyInjection
             services.AddSingleton<IConnectionMultiplexer>(provider =>
                 ConnectionMultiplexer.Connect(provider.GetRequiredService<ConfigurationOptions>()));
             services.AddSingleton<IAdmissionController, RedisAdmissionController>();
+            services.AddSingleton<IProviderCircuitRegistry, RedisProviderCircuitRegistry>();
             services.AddSingleton<IProviderAccessPool, RedisProviderAccessPool>();
         }
 
@@ -145,6 +151,8 @@ public static class DependencyInjection
         services.AddSingleton<TranslationUseCase>();
         services.AddSingleton<TableUseCase>();
         services.AddSingleton<IReadinessService, ReadinessService>();
+        services.AddHostedService<ProviderCircuitInitializationService>();
+        services.AddHostedService<ProviderReadinessProbeService>();
         services.AddHostedService<ReconciliationService>();
         services.AddHostedService<RetentionService>();
         return services;

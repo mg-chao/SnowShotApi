@@ -14,6 +14,14 @@ policy convergence, and error counters from a fresh metric window. Roll back
 again if replicas disagree on the policy fingerprint or reservations are being
 rejected for a stale policy.
 
+Temporary policy revision 5 raises the principal daily allowance to 6 CNY and
+the daily operator budget to 100 CNY. Revision 6 restores those values to 3 CNY
+and 50 CNY at the next Asia/Shanghai day boundary. Both revisions preserve the
+500 CNY monthly operator budget and the 0.03 CNY maximum for every operation.
+The production host mounts `runtime/appsettings.Production.json`; the restore
+job runs `Restore-TemporaryBudgets.sh`, keeps a rollback copy, recreates only
+the API container, and fails back if liveness does not recover.
+
 ## Readiness and dependency outage
 
 Check the API readiness endpoint and inspect PostgreSQL, Redis, provider access,
@@ -21,6 +29,11 @@ and table-worker connectivity in that order. Confirm that the dependency is
 reachable from the API network and that credentials, certificates, and clocks
 are valid. Keep traffic admission closed when a required dependency is
 unavailable; restore the dependency or fail over before reopening traffic.
+`/health/live` is public and process-only. `/health/ready` is public and returns
+only `ready` or `not_ready`; it requires policy convergence, at least 0.03 CNY
+operator headroom, viable provider routes, and the table-worker mTLS probe.
+Detailed `/health/components` output is available only over API loopback and is
+not proxied by nginx.
 
 Translation starts each batch on one of the configured logical models and
 switches models only for retryable failures. Use the model/provider/access
@@ -28,6 +41,12 @@ identity on provider attempts to distinguish model degradation from an access
 or network failure. The nginx API read timeout must remain greater than every
 application execution deadline so the application can settle the operation and
 return its structured timeout response.
+
+Provider circuits are shared in Redis by logical model, provider, and access.
+Five consecutive transient failures or a 50 percent failure ratio over at least
+10 attempts opens an access. Authentication errors open it for at least 10
+minutes. A half-open access admits one probe at a time and requires two valid
+responses before closing; caller cancellation is not counted as a failure.
 
 ## Queue and lease incidents
 
@@ -60,3 +79,7 @@ certificate chain, and loopback listener. Confirm the reverse tunnel or
 Tailscale route before changing firewall rules. Restart the worker through
 WinSW, then verify `/health/ready` through the authenticated API path and check
 that worker-busy and provider-access metrics return to baseline.
+For the reverse SSH topology, the `SnowShotTableTunnel` scheduled task must stay
+`Running`. Its persistent runner and rotated logs are under
+`C:\ProgramData\SnowShot\ssh`; a `Ready` task with exit result 255 means the old
+one-shot action is still installed or the runner itself failed.

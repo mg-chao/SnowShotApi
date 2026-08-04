@@ -1,3 +1,4 @@
+using System.Net;
 using SnowShot.Application;
 
 namespace SnowShot.Api;
@@ -19,22 +20,15 @@ internal static class HealthEndpoints
     private static async Task<IResult> ReadyAsync(IReadinessService readiness, CancellationToken cancellationToken)
     {
         var report = await readiness.CheckAsync(cancellationToken);
-        return Results.Json(new
-        {
-            status = report.Ready ? "ready" : "not_ready",
-            policy = new
-            {
-                configured_revision = report.ConfiguredPolicyRevision,
-                configured_fingerprint = report.ConfiguredPolicyFingerprint,
-                active_revision = report.ActivePolicyRevision,
-                active_fingerprint = report.ActivePolicyFingerprint,
-            },
-        },
+        return Results.Json(new { status = report.Ready ? "ready" : "not_ready" },
             statusCode: report.Ready ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
     }
 
-    private static async Task<IResult> ComponentsAsync(IReadinessService readiness, CancellationToken cancellationToken)
+    private static async Task<IResult> ComponentsAsync(HttpContext context, IReadinessService readiness,
+        CancellationToken cancellationToken)
     {
+        if (context.Connection.RemoteIpAddress is not { } address || !IPAddress.IsLoopback(address))
+            return Results.NotFound();
         var report = await readiness.CheckAsync(cancellationToken);
         return Results.Ok(new
         {

@@ -669,8 +669,9 @@ public sealed class DistributedIntegrationTests
             },
         }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<RedisProviderAccessPool>.Instance;
-        var firstReplica = new RedisProviderAccessPool(catalog, redis, logger);
-        var secondReplica = new RedisProviderAccessPool(catalog, redis, logger);
+        var circuits = new RedisProviderCircuitRegistry(redis, new ProviderCircuitOptions());
+        var firstReplica = new RedisProviderAccessPool(catalog, redis, circuits, logger);
+        var secondReplica = new RedisProviderAccessPool(catalog, redis, circuits, logger);
         var request = new ProviderAccessRequest(Resources.QwenFlash, new HashSet<string>(StringComparer.Ordinal),
             TimeSpan.Zero, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(3));
         var leases = new List<IProviderAccessLease>();
@@ -684,6 +685,41 @@ public sealed class DistributedIntegrationTests
         await using var saturated = await firstReplica.AcquireAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(ProviderAccessRejectionReason.Saturated, saturated.RejectionReason);
         foreach (var lease in leases) await lease.DisposeAsync();
+    }
+
+    [Fact, Trait("Category", "Integration")]
+    public async Task RedisProviderCircuitSharesOpenStateAndSingleHalfOpenProbeAcrossReplicas()
+    {
+        SkipUnlessEnabled();
+        await using var redis = await ConnectionMultiplexer.ConnectAsync(
+            Environment.GetEnvironmentVariable("ConnectionStrings__Redis")!);
+        var suffix = Guid.NewGuid().ToString("N");
+        var selection = new ProviderAccessSelection($"integration-{suffix}", $"access-{suffix}", "provider", "model");
+        var options = new ProviderCircuitOptions
+        {
+            ConsecutiveFailuresToOpen = 2,
+            InitialBreakSeconds = 1,
+            MaximumBreakSeconds = 1,
+            ProbeLeaseSeconds = 5,
+        };
+        var first = new RedisProviderCircuitRegistry(redis, options);
+        var second = new RedisProviderCircuitRegistry(redis, options);
+        await first.InitializeAsync([selection], TestContext.Current.CancellationToken);
+        await second.InitializeAsync([selection], TestContext.Current.CancellationToken);
+        await first.ReportAsync(selection, ProviderCircuitOutcome.TransientFailure, null,
+            TestContext.Current.CancellationToken);
+        await first.ReportAsync(selection, ProviderCircuitOutcome.TransientFailure, null,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(await second.TryAcquireAsync(selection, TestContext.Current.CancellationToken));
+        Assert.Equal(ProviderCircuitState.Open,
+            Assert.Single(await second.SnapshotAsync(TestContext.Current.CancellationToken)).State);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(1100), TestContext.Current.CancellationToken);
+        var probes = await Task.WhenAll(
+            first.TryAcquireAsync(selection, TestContext.Current.CancellationToken).AsTask(),
+            second.TryAcquireAsync(selection, TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(1, probes.Count(value => value));
     }
 
     private static ReserveOperation Operation(Guid principalId, ServicePolicy policy)

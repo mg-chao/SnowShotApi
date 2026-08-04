@@ -196,6 +196,41 @@ public sealed class ProviderContractTests
     }
 
     [Fact]
+    public async Task TranslationReportsOnlyValidatedResponsesAsCircuitSuccess()
+    {
+        const string valid = "{\"choices\":[{\"message\":{\"content\":\"{\\\"translations\\\":[{\\\"index\\\":0,\\\"content\\\":\\\"hola\\\"}]}\"}}]}";
+        var validRegistry = new SingleClientRegistry(new HttpClient(new ResponseHandler(valid, "application/json")));
+        var invalidRegistry = new SingleClientRegistry(new HttpClient(new ResponseHandler("{\"choices\":[]}", "application/json")));
+        var validClient = TranslationClient(validRegistry);
+        var invalidClient = TranslationClient(invalidRegistry);
+
+        Assert.True((await validClient.TranslateAsync(TranslationCommand(), CancellationToken.None)).Success);
+        Assert.False((await invalidClient.TranslateAsync(TranslationCommand(), CancellationToken.None)).Success);
+
+        Assert.Equal([ProviderCircuitOutcome.Success], validRegistry.Outcomes);
+        Assert.Equal([ProviderCircuitOutcome.TransientFailure], invalidRegistry.Outcomes);
+    }
+
+    [Fact]
+    public async Task TranslationReportsAttemptTimeoutButNotCallerCancellation()
+    {
+        var timeoutRegistry = new SingleClientRegistry(new HttpClient(new DelayingHandler()));
+        var timeoutClient = TranslationClient(timeoutRegistry);
+        var timedOut = await timeoutClient.TranslateAsync(
+            TranslationCommand() with { Timeout = TimeSpan.FromMilliseconds(20) }, CancellationToken.None);
+
+        var cancellationRegistry = new SingleClientRegistry(new HttpClient(new DelayingHandler()));
+        var cancellationClient = TranslationClient(cancellationRegistry);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
+        var cancelled = await cancellationClient.TranslateAsync(TranslationCommand(), cancellation.Token);
+
+        Assert.Equal("attempt_timeout", timedOut.Outcome);
+        Assert.Equal([ProviderCircuitOutcome.TransientFailure], timeoutRegistry.Outcomes);
+        Assert.Equal("cancelled", cancelled.Outcome);
+        Assert.Empty(cancellationRegistry.Outcomes);
+    }
+
+    [Fact]
     public async Task TranslationAcceptsOutputLargerThanFormerCharacterLimit()
     {
         var translated = new string('a', 6_000);
@@ -332,6 +367,12 @@ public sealed class ProviderContractTests
             ServicePolicy.Defaults(), new DependencyHealth(time), time);
     }
 
+    private static OpenAiTranslationClient TranslationClient(IProviderHttpClientRegistry registry)
+    {
+        return new(registry, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(),
+            ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+    }
+
     private static ProviderModelCatalog Catalog(bool? translationEnableThinking = null)
     {
         ProviderModelOptions Model(string upstream) => new()
@@ -363,7 +404,24 @@ public sealed class ProviderContractTests
 
     private sealed class SingleClientRegistry(HttpClient client) : IProviderHttpClientRegistry
     {
+        public List<ProviderCircuitOutcome> Outcomes { get; } = [];
         public HttpClient CreateClient(ProviderAccessSelection selection) => client;
+        public ValueTask ReportAsync(ProviderAccessSelection selection, ProviderCircuitOutcome outcome,
+            TimeSpan? retryAfter = null)
+        {
+            Outcomes.Add(outcome);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class DelayingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
+        }
     }
 
     private sealed class ResponseHandler(string payload, string mediaType = "text/event-stream",

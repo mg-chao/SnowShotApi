@@ -39,14 +39,14 @@ x-api-environment: &api-environment
   Policy__Resources__translation__GlobalQueueLength: 2
   Policy__Resources__translation__QueueWaitSeconds: 5
   Policy__Resources__translation__ExecutionDeadlineSeconds: 300
-  Policy__Resources__translation__OperatorMaximumNanoYuan: 1000000000
+  Policy__Resources__translation__OperatorMaximumNanoYuan: 30000000
   Policy__Resources__qwen-flash__RequestsPerMinute: 1000
   Policy__Resources__qwen-flash__PerPrincipalConcurrency: 1
   Policy__Resources__qwen-flash__GlobalConcurrency: 1
   Policy__Resources__qwen-flash__GlobalQueueLength: 0
   Policy__Resources__qwen-flash__QueueWaitSeconds: 0
   Policy__Resources__qwen-flash__ExecutionDeadlineSeconds: 300
-  Policy__Resources__qwen-flash__OperatorMaximumNanoYuan: 1000000000
+  Policy__Resources__qwen-flash__OperatorMaximumNanoYuan: 30000000
 
 services:
   postgres:

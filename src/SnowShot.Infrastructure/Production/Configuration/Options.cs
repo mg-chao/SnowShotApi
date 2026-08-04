@@ -144,6 +144,23 @@ public sealed class ProviderModelsOptions
     public Dictionary<string, ProviderModelOptions> Models { get; init; } = [];
 }
 
+public sealed class ProviderCircuitOptions
+{
+    public const string SectionName = "Providers:Circuit";
+    [Range(2, 100)] public int ConsecutiveFailuresToOpen { get; init; } = 5;
+    [Range(2, 1000)] public int MinimumThroughput { get; init; } = 10;
+    [Range(0.01, 1)] public double FailureRatio { get; init; } = 0.5;
+    [Range(5, 600)] public int SamplingSeconds { get; init; } = 30;
+    [Range(5, 3600)] public int InitialBreakSeconds { get; init; } = 60;
+    [Range(5, 3600)] public int MaximumBreakSeconds { get; init; } = 600;
+    [Range(1, 10)] public int MaximumBackoffLevel { get; init; } = 5;
+    [Range(1, 10)] public int HalfOpenSuccessesToClose { get; init; } = 2;
+    [Range(5, 600)] public int ProbeLeaseSeconds { get; init; } = 90;
+    [Range(60, 86400)] public int StableResetSeconds { get; init; } = 1800;
+    [Range(3600, 604800)] public int StateTtlSeconds { get; init; } = 86400;
+    public List<string> InitiallyOpenAccesses { get; init; } = [];
+}
+
 public sealed class CloudProviderOptions
 {
     [Required, Url] public string Endpoint { get; init; } = string.Empty;

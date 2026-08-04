@@ -390,9 +390,8 @@ public sealed class TranslationUseCase(
                 }
                 if (!prepared.IsSuccess) return ItemWorkResult.Failed(prepared.Error!, prepared.Error!.Detail);
 
-                using var timeout = new CancellationTokenSource(routing.AttemptTimeout);
                 using var attemptToken = CancellationTokenSource.CreateLinkedTokenSource(
-                    operationToken, batchToken, accessLease.OwnershipLost, timeout.Token);
+                    operationToken, batchToken, accessLease.OwnershipLost);
                 TranslationProviderResult providerResult;
                 try
                 {
@@ -409,7 +408,7 @@ public sealed class TranslationUseCase(
                 }
                 catch (OperationCanceledException)
                 {
-                    var outcome = timeout.IsCancellationRequested ? "attempt_timeout" : "cancelled";
+                    const string outcome = "cancelled";
                     var attempt = new ProviderAttempt(prepared.Value!.Id, scope.Handle.OperationId, attemptNumber,
                         access.AttemptProvider, Resources.Translation, outcome, null, 0, 0, NanoYuan.Zero, false,
                         AttemptDispatchState.Unknown, attemptStartedAt, clock.UtcNow);

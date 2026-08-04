@@ -7,7 +7,6 @@ using SnowShot.Application;
 using SnowShot.Domain;
 using SnowShot.Infrastructure.Configuration;
 using SnowShot.Infrastructure.Telemetry;
-using Polly.CircuitBreaker;
 
 namespace SnowShot.Infrastructure.Providers;
 
@@ -61,46 +60,59 @@ public sealed class OpenAiTranslationClient(
         request.Headers.TryAddWithoutValidation("X-Operation-ID", command.Operation.OperationId.ToString("N"));
         SnowShotTelemetry.TranslationActiveConversations.Add(1,
             new("model", access.Selection.LogicalModel), new("provider", access.Selection.Provider));
+        using var timeout = new CancellationTokenSource(command.Timeout);
+        using var attemptToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
-            using var response = await clients.CreateClient(access.Selection).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await clients.CreateClient(access.Selection).SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead, attemptToken.Token);
             if (!response.IsSuccessStatusCode)
             {
                 var retryAfter = ParseRetryAfter(response);
-                await using var error = await response.Content.ReadAsStreamAsync(cancellationToken);
-                try { _ = await BoundedStreams.ReadAllAsync(error, options.MaximumResponseBytes, cancellationToken); } catch (InvalidDataException) { }
+                await using var error = await response.Content.ReadAsStreamAsync(attemptToken.Token);
+                try { _ = await BoundedStreams.ReadAllAsync(error, options.MaximumResponseBytes, attemptToken.Token); } catch (InvalidDataException) { }
                 return Result(false, [], input, 0, $"provider_http_{(int)response.StatusCode}", false,
                     (int)response.StatusCode, AttemptDispatchState.Dispatched,
                     (int)response.StatusCode is 408 or 429 or >= 500 and <= 599, retryAfter);
             }
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            var bytes = await BoundedStreams.ReadAllAsync(stream, options.MaximumResponseBytes, cancellationToken);
+            await using var stream = await response.Content.ReadAsStreamAsync(attemptToken.Token);
+            var bytes = await BoundedStreams.ReadAllAsync(stream, options.MaximumResponseBytes, attemptToken.Token);
             var completion = JsonSerializer.Deserialize<CompletionResponse>(bytes, JsonOptions);
             var content = completion?.Choices is { Count: 1 } && completion.Choices[0]?.Message?.Content is { } value
                 ? value
                 : null;
             if (content is null)
+            {
+                await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
                 return Result(false, [], input, 0, "invalid_output", true, null,
                     AttemptDispatchState.Dispatched, true, null);
+            }
             var output = Count(content);
-            return TryParse(content, out var translation)
-                ? Result(true, [translation], input, output, "success", true, null, AttemptDispatchState.Dispatched, false, null)
-                : Result(false, [], input, output, "invalid_output", true, null, AttemptDispatchState.Dispatched, true, null);
+            if (TryParse(content, out var translation))
+            {
+                await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.Success);
+                return Result(true, [translation], input, output, "success", true, null,
+                    AttemptDispatchState.Dispatched, false, null);
+            }
+            await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
+            return Result(false, [], input, output, "invalid_output", true, null,
+                AttemptDispatchState.Dispatched, true, null);
         }
-        catch (BrokenCircuitException)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            SnowShotTelemetry.CircuitOpen.Add(1,
-                new KeyValuePair<string, object?>[] { new("provider", "translation") });
-            return Result(false, [], input, 0, "circuit_open", true, null,
-                AttemptDispatchState.NotDispatched, true, null);
+            await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
+            return Result(false, [], input, 0, "attempt_timeout", false, null,
+                AttemptDispatchState.Unknown, true, null);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return Result(false, [], input, 0, "cancelled", false, null,
                 AttemptDispatchState.Unknown, true, null);
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidDataException or OverflowException)
         {
+            if (exception is not HttpRequestException)
+                await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
             return Result(false, [], input, 0, exception is HttpRequestException ? "network" : "invalid_response", false,
                 null, exception is HttpRequestException ? AttemptDispatchState.Unknown : AttemptDispatchState.Dispatched,
                 true, null);
