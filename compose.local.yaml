@@ -1,0 +1,16 @@
+name: snowshot
+
+services:
+  api:
+    env_file:
+      - ./.secrets/deployment/table-communication/api/snowshot-api-table.env
+    environment:
+      Providers__Table__BaseUrl: https://snowshot-table-rec:18080/
+    extra_hosts:
+      - host.docker.internal:host-gateway
+      - snowshot-table-rec:192.168.0.203
+    volumes:
+      - type: bind
+        source: ./.secrets/deployment/table-communication/api
+        target: /run/secrets/table-communication
+        read_only: true
