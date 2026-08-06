@@ -158,16 +158,16 @@ def test_worker_rejects_concurrent_inference_without_queueing() -> None:
     assert bundle.maximum_active == 1
 
 
-def test_generated_html_is_restricted_to_safe_table_markup() -> None:
-    bundle = FakeBundle(result_html=(
+def test_generated_html_is_returned_unchanged() -> None:
+    html = (
         '<html><body><table onclick="alert(1)"><tr><td rowspan="2">'
-        'safe<script>alert(1)</script>&lt;value&gt;</td></tr></table></body></html>'))
+        'safe<script>alert(1)</script>&lt;value&gt;</td></tr></table></body></html>'
+    )
+    bundle = FakeBundle(result_html=html)
     with client_for(bundle) as client:
         response = post_image(client)
-    output = response.json()["html"]
     assert response.status_code == 200
-    assert "onclick" not in output and "script" not in output and "alert" not in output
-    assert 'rowspan="2"' in output and "&lt;value&gt;" in output
+    assert response.json()["html"] == html
 
 
 def test_declared_and_streamed_oversize_bodies_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

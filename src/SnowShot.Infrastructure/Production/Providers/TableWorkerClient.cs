@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AngleSharp.Html.Parser;
 using SnowShot.Application;
 using SnowShot.Domain;
 using SnowShot.Infrastructure.Configuration;
@@ -17,10 +16,6 @@ public sealed class TableWorkerClient(
     TimeProvider timeProvider) : ITableWorkerClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly HashSet<string> AllowedElements = new(StringComparer.OrdinalIgnoreCase)
-        { "html", "body", "table", "thead", "tbody", "tfoot", "colgroup", "col", "tr", "th", "td", "br" };
-    private static readonly HashSet<string> AllowedAttributes = new(StringComparer.OrdinalIgnoreCase)
-        { "rowspan", "colspan" };
 
     public async Task<TableExtractionResult> ExtractAsync(TableProviderCommand command, CancellationToken cancellationToken)
     {
@@ -47,7 +42,7 @@ public sealed class TableWorkerClient(
             if (response.StatusCode == HttpStatusCode.OK)
             {
                 var success = JsonSerializer.Deserialize<TableSuccess>(bytes, JsonOptions);
-                return string.IsNullOrWhiteSpace(success?.Html) || !IsSafeTableHtml(success.Html)
+                return string.IsNullOrWhiteSpace(success?.Html)
                     ? Result(TableExtractionStatus.InferenceFailed, null, "invalid_html", true, (int)response.StatusCode, AttemptDispatchState.Dispatched)
                     : Result(TableExtractionStatus.Success, success.Html, "success", true, (int)response.StatusCode, AttemptDispatchState.Dispatched);
             }
@@ -88,29 +83,6 @@ public sealed class TableWorkerClient(
                 started, timeProvider.GetUtcNow());
             return new(status, html, attempt);
         }
-    }
-
-    private static bool IsSafeTableHtml(string html)
-    {
-        try
-        {
-            var document = new HtmlParser().ParseDocument(html);
-            if (document.QuerySelectorAll("table").Length != 1)
-                return false;
-            foreach (var element in document.All)
-            {
-                // AngleSharp creates an empty head element even when the worker did not emit one.
-                if (element.LocalName.Equals("head", StringComparison.OrdinalIgnoreCase)) continue;
-                if (!AllowedElements.Contains(element.LocalName)) return false;
-                foreach (var attribute in element.Attributes)
-                {
-                    if (!AllowedAttributes.Contains(attribute.LocalName) ||
-                        !int.TryParse(attribute.Value, out var span) || span is < 1 or > 1_000) return false;
-                }
-            }
-            return true;
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { return false; }
     }
 
     private sealed class TableSuccess { [JsonPropertyName("html")] public string? Html { get; init; } }

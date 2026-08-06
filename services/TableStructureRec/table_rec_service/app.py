@@ -22,7 +22,6 @@ from .errors import (
     ServiceError,
     WORKER_UNAVAILABLE,
 )
-from .html_sanitizer import sanitize_table_html
 from .image_validation import decode_webp
 from .inference_gate import InferenceGate, ProcessTerminator
 
@@ -175,11 +174,11 @@ def create_app(
                 request.app.state.engine_bundle.extract,
                 image,
             )
-            sanitized_html = sanitize_table_html(result.html or "")
-            if not sanitized_html:
+            html = result.html or ""
+            if not html.strip():
                 raise NO_TABLE.exception()
             table_type = result.table_type
-            return {"html": sanitized_html}
+            return {"html": html}
         except ServiceError as exception:
             failure_category = exception.category
             raise

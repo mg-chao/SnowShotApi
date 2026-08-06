@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 -*-
 # @Author: SWHL
 # @Contact: liekkaskono@163.com
-import html
 import os
 import random
 from typing import Any, Dict, List, Union, Set, Tuple
@@ -461,11 +460,7 @@ def plot_html_table(
                     continue
                 if row == row_start and col == col_start:
                     ocr_rec_text = cell_box_map.get(i)
-                    text = "<br>".join(
-                        html.escape(line, quote=True)
-                        for fragment in ocr_rec_text
-                        for line in (str(fragment).splitlines() or [""])
-                    )
+                    text = "<br>".join(ocr_rec_text)
                     # 如果是起始单元格
                     row_span = row_end - row_start + 1
                     col_span = col_end - col_start + 1

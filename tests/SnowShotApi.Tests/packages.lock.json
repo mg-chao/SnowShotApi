@@ -696,7 +696,6 @@
       "snowshot.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "AngleSharp": "[1.6.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.0, )",
@@ -718,12 +717,6 @@
           "SnowShot.ApiAdapter": "[1.0.0, )",
           "SnowShot.Infrastructure": "[1.0.0, )"
         }
-      },
-      "AngleSharp": {
-        "type": "CentralTransitive",
-        "requested": "[1.6.0, )",
-        "resolved": "1.6.0",
-        "contentHash": "kVnhnZlM4Yww2KWqW3uSL8isvhYsrTTBMSPAgoF8ZhMrLSoay6783AP6dQxAj1J9gvWKi3OIM4ZezdE2Y4ufCQ=="
       },
       "Microsoft.AspNetCore.OpenApi": {
         "type": "CentralTransitive",

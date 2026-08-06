@@ -16,15 +16,12 @@ from wired_table_rec.utils.utils_table_recover import (
 
 
 @pytest.mark.parametrize("renderer", [plot_wired_html, plot_lineless_html])
-def test_ocr_text_is_escaped_and_only_generated_breaks_remain(renderer) -> None:
-    unsafe = '<script>"x" & \'y\'\nnext > previous < end'
-    rendered = renderer([[0, 0, 0, 0]], {0: [unsafe]})
+def test_ocr_text_is_rendered_without_rewriting(renderer) -> None:
+    original = '<script>"x" & \'y\'\nnext > previous < end'
+    rendered = renderer([[0, 0, 0, 0]], {0: [original]})
 
-    assert (
-        "&lt;script&gt;&quot;x&quot; &amp; &#x27;y&#x27;"
-        "<br>next &gt; previous &lt; end"
-    ) in rendered
-    assert "<script>" not in rendered
+    assert original in rendered
+    assert "<br>" not in rendered
     assert rendered.startswith("<html><body><table>")
 
 

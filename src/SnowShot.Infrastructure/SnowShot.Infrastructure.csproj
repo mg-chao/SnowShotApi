@@ -9,7 +9,6 @@
     <ProjectReference Include="..\SnowShot.Application\SnowShot.Application.csproj" />
     <ProjectReference Include="..\SnowShot.Domain\SnowShot.Domain.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="AngleSharp" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>

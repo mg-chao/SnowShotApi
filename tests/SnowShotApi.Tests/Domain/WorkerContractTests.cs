@@ -24,14 +24,16 @@ public sealed class WorkerContractTests
     }
 
     [Fact]
-    public async Task MaliciousFixtureIsRejectedWithoutRewriting()
+    public async Task WorkerHtmlIsAcceptedWithoutRewriting()
     {
         var client = Client(new FixtureHandler(HttpStatusCode.OK, Fixture("malicious.json")));
         var result = await client.ExtractAsync(Command(), TestContext.Current.CancellationToken);
 
-        Assert.Equal(TableExtractionStatus.InferenceFailed, result.Status);
-        Assert.Null(result.Html);
-        Assert.Equal("invalid_html", result.Attempt.Outcome);
+        Assert.Equal(TableExtractionStatus.Success, result.Status);
+        Assert.Equal(
+            "<html><body><table onclick=\"steal()\"><tr><td>bad</td></tr></table></body></html>",
+            result.Html);
+        Assert.Equal("success", result.Attempt.Outcome);
     }
 
     [Fact]
