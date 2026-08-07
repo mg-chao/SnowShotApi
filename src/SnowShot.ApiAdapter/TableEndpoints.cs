@@ -50,7 +50,7 @@ internal static class TableEndpoints
 
         using (image)
         {
-            if (!RequestContextFactory.TryCreate(context, out var requestContext, out var requestError))
+            if (!RequestContextFactory.TryCreate(context, messages, out var requestContext, out var requestError))
             {
                 await requestError!.ExecuteAsync(context); return;
             }
@@ -62,7 +62,7 @@ internal static class TableEndpoints
                 var result = execution.Value!;
                 var response = result.Status switch
                 {
-                    TableExtractionStatus.Success => ApiResponse.Success(new TableExtractionData(result.Html!)),
+                    TableExtractionStatus.Success => ApiResponse.Success(new TableExtractionData(result.Html!), messages),
                     TableExtractionStatus.InvalidRequest => ApiResponse.Problem(context, StatusCodes.Status400BadRequest, "invalid_request", messages["Invalid table image request"]),
                     TableExtractionStatus.NoTable => ApiResponse.Problem(context, StatusCodes.Status422UnprocessableEntity, "no_table", messages["Table extraction failed"]),
                     TableExtractionStatus.InferenceFailed => ApiResponse.Problem(context, StatusCodes.Status502BadGateway, "inference_failed", messages["Table extraction failed"]),

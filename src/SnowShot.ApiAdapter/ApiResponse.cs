@@ -11,7 +11,8 @@ namespace SnowShot.Api;
 internal static class ApiResponse
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    public static IResult Success(object data, string message = "Request success") => Results.Json(AppEnvelope.Success(data, message), JsonOptions);
+    public static IResult Success(object data, PublicMessages messages) =>
+        Results.Json(AppEnvelope.Success(data, messages["Request success"]), JsonOptions);
 
     public static IResult Problem(HttpContext context, int status, string code, string detail, TimeSpan? retryAfter = null)
     {
@@ -58,7 +59,7 @@ internal static class ApiResponse
     public static PublicProblem CreateProblem(HttpContext context, int status, string code, string detail, int? retryAfterSeconds = null) => new()
     {
         Type = $"urn:snowshot:problem:{code}",
-        Title = ReasonPhrases.GetReasonPhrase(status),
+        Title = context.RequestServices.GetRequiredService<PublicMessages>()[ReasonPhrases.GetReasonPhrase(status)],
         Status = status,
         Detail = detail,
         Instance = context.Request.Path.Value ?? "/",

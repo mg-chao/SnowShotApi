@@ -23,7 +23,8 @@ internal static class TranslationEndpoints
         return endpoints;
     }
 
-    private static IResult Types(PublicMessages messages) => ApiResponse.Success(new[] { new TranslationTypeOption(TranslationType.AI, messages["AI Translation"]) });
+    private static IResult Types(PublicMessages messages) => ApiResponse.Success(
+        new[] { new TranslationTypeOption(TranslationType.AI, messages["AI Translation"]) }, messages);
 
     private static async Task TranslateAsync(HttpContext context, TranslationUseCase useCase,
         PublicMessages messages,
@@ -46,10 +47,10 @@ internal static class TranslationEndpoints
         if (errors.Count > 0)
         {
             await ApiResponse.Problem(context, StatusCodes.Status400BadRequest, "invalid_request",
-                string.Join("; ", errors)).ExecuteAsync(context);
+                string.Join("; ", errors.Select(messages.Validation))).ExecuteAsync(context);
             return;
         }
-        if (!RequestContextFactory.TryCreate(context, out var requestContext, out var requestError))
+        if (!RequestContextFactory.TryCreate(context, messages, out var requestContext, out var requestError))
         {
             await requestError!.ExecuteAsync(context); return;
         }
@@ -59,7 +60,7 @@ internal static class TranslationEndpoints
         {
             var value = result.Value!;
             await ApiResponse.Success(new TranslationResponseData(
-                value.Results.Select(item => new TranslationContent(item)).ToArray(), value.From, value.To)).ExecuteAsync(context);
+                value.Results.Select(item => new TranslationContent(item)).ToArray(), value.From, value.To), messages).ExecuteAsync(context);
             return;
         }
         await ApiResponse.ApplicationProblem(context, result.Error!, messages).ExecuteAsync(context);

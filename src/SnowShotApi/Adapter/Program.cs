@@ -52,10 +52,26 @@ if (deployedEnvironment)
 }
 app.UseRequestLocalization(new RequestLocalizationOptions
 {
-    DefaultRequestCulture = new RequestCulture("zh-CN"),
-    SupportedCultures = [new CultureInfo("zh-CN"), new CultureInfo("en-US")],
-    SupportedUICultures = [new CultureInfo("zh-CN"), new CultureInfo("en-US")],
+    DefaultRequestCulture = new RequestCulture("en-US"),
+    SupportedCultures =
+    [
+        new CultureInfo("en-US"), new CultureInfo("en"),
+        new CultureInfo("zh-CN"), new CultureInfo("zh-Hans"), new CultureInfo("zh"),
+    ],
+    SupportedUICultures =
+    [
+        new CultureInfo("en-US"), new CultureInfo("en"),
+        new CultureInfo("zh-CN"), new CultureInfo("zh-Hans"), new CultureInfo("zh"),
+    ],
     RequestCultureProviders = [new AcceptLanguageHeaderRequestCultureProvider()],
+});
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.ContentLanguage = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "zh"
+        ? "zh-CN"
+        : "en-US";
+    context.Response.Headers.Vary = "Accept-Language";
+    await next(context);
 });
 app.UseSnowShotApiAdapter();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();

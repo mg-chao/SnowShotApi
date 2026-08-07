@@ -1,11 +1,12 @@
 using SnowShot.Application;
 using SnowShot.Contracts;
+using SnowShot.Api.Resources;
 
 namespace SnowShot.Api;
 
 internal static class RequestContextFactory
 {
-    public static bool TryCreate(HttpContext context, out RequestContext requestContext, out IResult? error)
+    public static bool TryCreate(HttpContext context, PublicMessages messages, out RequestContext requestContext, out IResult? error)
     {
         var suppliedValues = context.Request.Headers["X-Request-ID"];
         if (suppliedValues.Count > 0 &&
@@ -14,7 +15,7 @@ internal static class RequestContextFactory
         {
             requestContext = default!;
             error = ApiResponse.Problem(context, StatusCodes.Status400BadRequest, "invalid_request",
-                "X-Request-ID must contain exactly one value with at most 64 visible ASCII characters.");
+                messages["Request ID invalid"]);
             return false;
         }
         var requestId = suppliedValues.Count == 0 ? context.TraceIdentifier : suppliedValues[0]!;

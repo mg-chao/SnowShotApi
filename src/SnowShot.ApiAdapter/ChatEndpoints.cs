@@ -33,8 +33,7 @@ internal static class ChatEndpoints
     {
         return ApiResponse.Success(modelCatalog.Models.Select(model =>
             new ChatModelDescriptor(model.Model,
-                messages[model.Model],
-                model.Thinking, model.SupportVision)).ToArray());
+                messages[model.Model], model.Thinking, model.SupportVision)).ToArray(), messages);
     }
 
     private static async Task CompleteAsync(
@@ -69,13 +68,13 @@ internal static class ChatEndpoints
         var errors = useCase.Validate(request);
         if (errors.Count > 0)
         {
-            var modelError = errors.Any(value => value.StartsWith("Unsupported model", StringComparison.Ordinal));
+            var modelError = errors.Any(value => value.Code == ValidationIssueCode.UnsupportedModel);
             await ApiResponse.Problem(context, StatusCodes.Status400BadRequest,
                 modelError ? "model_not_found" : "invalid_request",
-                modelError ? $"The model `{model}` does not exist or you do not have access to it." : string.Join("; ", errors)).ExecuteAsync(context);
+                modelError ? messages.Format("Model not found", model) : string.Join("; ", errors.Select(messages.Validation))).ExecuteAsync(context);
             return;
         }
-        if (!RequestContextFactory.TryCreate(context, out var requestContext, out var requestError))
+        if (!RequestContextFactory.TryCreate(context, messages, out var requestContext, out var requestError))
         {
             await requestError!.ExecuteAsync(context);
             return;

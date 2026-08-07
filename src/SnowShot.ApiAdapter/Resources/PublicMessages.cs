@@ -1,4 +1,5 @@
 using System.Globalization;
+using SnowShot.Application;
 
 namespace SnowShot.Api.Resources;
 
@@ -28,6 +29,23 @@ public sealed class PublicMessages
         ["Payload too large"] = ("The request payload is too large", "请求负载过大"),
         ["Request deadline exceeded"] = ("The request deadline was exceeded", "请求已超过截止时间"),
         ["Upstream service failed"] = ("The upstream service failed", "上游服务失败"),
+        ["Request ID invalid"] = ("X-Request-ID must contain exactly one value with at most 64 visible ASCII characters.", "X-Request-ID 必须且只能包含一个值，且最多为 64 个可见 ASCII 字符。"),
+        ["Model not found"] = ("The model `{0}` does not exist or you do not have access to it.", "模型 `{0}` 不存在，或您无权访问该模型。"),
+        ["Content count invalid"] = ("Content must contain between 1 and 50 items.", "content 必须包含 1 到 50 项。"),
+        ["Content item null"] = ("Content[{0}] cannot be null.", "content[{0}] 不能为 null。"),
+        ["Content too long"] = ("Content total length cannot exceed 5000 characters.", "content 总长度不能超过 5000 个字符。"),
+        ["Unsupported language"] = ("Unsupported language code: {0}", "不支持的语言代码：{0}"),
+        ["Unsupported domain"] = ("Unsupported domain: {0}", "不支持的领域：{0}"),
+        ["Bad Request"] = ("Bad Request", "错误请求"),
+        ["Conflict"] = ("Conflict", "请求冲突"),
+        ["Payload Too Large"] = ("Payload Too Large", "请求负载过大"),
+        ["Unprocessable Content"] = ("Unprocessable Content", "无法处理的内容"),
+        ["Unprocessable Entity"] = ("Unprocessable Entity", "无法处理的内容"),
+        ["Too Many Requests"] = ("Too Many Requests", "请求过多"),
+        ["Internal Server Error"] = ("Internal Server Error", "服务器内部错误"),
+        ["Bad Gateway"] = ("Bad Gateway", "网关错误"),
+        ["Service Unavailable"] = ("Service Unavailable", "服务不可用"),
+        ["Gateway Timeout"] = ("Gateway Timeout", "网关超时"),
         ["qwen-flash"] = ("Qwen Flash", "通义千问 Flash"),
         ["qwen-plus"] = ("Qwen Plus", "通义千问 Plus"),
         ["qwen3-vl-flash"] = ("Qwen VL Flash", "通义千问 VL Flash"),
@@ -35,6 +53,23 @@ public sealed class PublicMessages
     };
 
     public string this[string key] => Values.TryGetValue(key, out var value)
-        ? CultureInfo.CurrentUICulture.Name.Equals("en-US", StringComparison.OrdinalIgnoreCase) ? value.English : value.Chinese
+        ? IsChinese ? value.Chinese : value.English
         : key;
+
+    public string Format(string key, params object?[] arguments) =>
+        string.Format(CultureInfo.CurrentCulture, this[key], arguments);
+
+    public string Validation(ValidationIssue issue) => issue.Code switch
+    {
+        ValidationIssueCode.UnsupportedModel => Format("Model not found", issue.Value),
+        ValidationIssueCode.ContentCount => this["Content count invalid"],
+        ValidationIssueCode.NullContentItem => Format("Content item null", issue.Index),
+        ValidationIssueCode.ContentTooLong => this["Content too long"],
+        ValidationIssueCode.UnsupportedLanguage => Format("Unsupported language", issue.Value),
+        ValidationIssueCode.UnsupportedDomain => Format("Unsupported domain", issue.Value),
+        _ => this["Validation failed"],
+    };
+
+    private static bool IsChinese =>
+        CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.Equals("zh", StringComparison.OrdinalIgnoreCase);
 }

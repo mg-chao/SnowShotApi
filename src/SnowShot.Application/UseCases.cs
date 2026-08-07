@@ -20,7 +20,7 @@ public sealed class ChatUseCase(
     ServicePolicy policy,
     IChatModelCatalog modelCatalog)
 {
-    public IReadOnlyList<string> Validate(ChatCommand request) => CommandValidator.Validate(request, policy, modelCatalog);
+    public IReadOnlyList<ValidationIssue> Validate(ChatCommand request) => CommandValidator.Validate(request, policy, modelCatalog);
 
     public async IAsyncEnumerable<ChatApplicationEvent> ExecuteAsync(
         RequestContext context,
@@ -186,7 +186,7 @@ public sealed class TranslationUseCase(
     TranslationRouting routing,
     ITranslationTelemetry telemetry)
 {
-    public static IReadOnlyList<string> Validate(TranslationCommand request) => CommandValidator.Validate(request);
+    public static IReadOnlyList<ValidationIssue> Validate(TranslationCommand request) => CommandValidator.Validate(request);
 
     public async Task<ApplicationResult<TranslationResult>> ExecuteAsync(
         RequestContext context,

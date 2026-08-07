@@ -15,6 +15,119 @@ public sealed class PublicContractTests
     private const int MaximumTableImageBytes = 800 * 1024;
 
     [Fact]
+    public async Task EnglishIsTheDefaultResponseLanguage()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+
+        using var response = await client.GetAsync("/api/v2/translation/types", TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("en-US", Assert.Single(response.Content.Headers.ContentLanguage));
+        Assert.Equal("Request success", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal("AI Translation", document.RootElement.GetProperty("data")[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task UnsupportedLanguageFallsBackToEnglish()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("fr-FR");
+
+        using var response = await client.GetAsync("/api/v1/chat/models", TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal("en-US", Assert.Single(response.Content.Headers.ContentLanguage));
+        Assert.Equal("Request success", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal("Qwen Flash", document.RootElement.GetProperty("data")[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task AcceptLanguageQualitySelectsThePreferredSupportedLanguage()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("zh-CN;q=0.5, en-US;q=0.9");
+
+        using var response = await client.GetAsync("/api/v2/translation/types", TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal("en-US", Assert.Single(response.Content.Headers.ContentLanguage));
+        Assert.Equal("Request success", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Theory]
+    [InlineData("zh")]
+    [InlineData("zh-Hans")]
+    public async Task ChineseLocalizesSuccessEnvelopeAndAdvertisesSelectedLanguage(string language)
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(language);
+
+        using var response = await client.GetAsync("/api/v2/translation/types", TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal("zh-CN", Assert.Single(response.Content.Headers.ContentLanguage));
+        Assert.Contains("Accept-Language", response.Headers.Vary);
+        Assert.Equal("请求成功", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal("AI 翻译", document.RootElement.GetProperty("data")[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task ChineseLocalizesProblemTitleAndDetailedTranslationValidation()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("zh-CN");
+
+        using var response = await client.PostAsJsonAsync("/api/v2/translation/translate", new
+        {
+            type = 0,
+            content = Array.Empty<string?>(),
+            from = "invalid",
+            to = "invalid",
+            domain = "invalid",
+        }, TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var problem = document.RootElement;
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("zh-CN", Assert.Single(response.Content.Headers.ContentLanguage));
+        Assert.Equal("错误请求", problem.GetProperty("title").GetString());
+        var detail = problem.GetProperty("detail").GetString()!;
+        Assert.Contains("content 必须包含 1 到 50 项", detail, StringComparison.Ordinal);
+        Assert.Contains("不支持的语言代码：invalid", detail, StringComparison.Ordinal);
+        Assert.Contains("不支持的领域：invalid", detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChineseLocalizesModelAndRequestIdValidation()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("zh-CN");
+
+        using var modelResponse = await client.PostAsJsonAsync("/api/v1/chat/completions",
+            new { model = "unknown", messages = new[] { new { role = "user", content = "hello" } } },
+            TestContext.Current.CancellationToken);
+        using var modelDocument = JsonDocument.Parse(await modelResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("模型 `unknown` 不存在，或您无权访问该模型。", modelDocument.RootElement.GetProperty("detail").GetString());
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v2/translation/translate")
+        {
+            Content = JsonContent.Create(new { type = 0, content = new[] { "one" }, from = "en", to = "zh-CHS", domain = "general" }),
+        };
+        request.Headers.TryAddWithoutValidation("X-Request-ID", "unsafe request id");
+        using var idResponse = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        using var idDocument = JsonDocument.Parse(await idResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("X-Request-ID 必须且只能包含一个值，且最多为 64 个可见 ASCII 字符。",
+            idDocument.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
     public async Task ModelListPreservesShapeIdentifiersAndEnglishLocalization()
     {
         await using var factory = new ApiFactory();
