@@ -32,7 +32,7 @@ INSERT INTO snowshot.usage_operations
      "SettledAt", "SettlementFingerprint")
 VALUES
     ('0198a56e-8f5f-7b3f-8cf1-e80d0547ca02', '0198a56e-8f5f-7b3f-8cf1-e80d0547ca01', CURRENT_DATE,
-     1, 'qwen-flash', decode(repeat('02', 32), 'hex'), decode(repeat('03', 32), 'hex'), 1,
+     1, 'qwen3.8-flash', decode(repeat('02', 32), 'hex'), decode(repeat('03', 32), 'hex'), 1,
      decode(repeat('04', 32), 'hex'), 1, 1, 1, 1000, 100, 100, 10, 10, 0, 2,
      clock_timestamp() - interval '2 minutes', clock_timestamp() + interval '3 minutes',
      clock_timestamp() + interval '1 minute', clock_timestamp() - interval '1 minute', clock_timestamp(),
@@ -40,20 +40,20 @@ VALUES
 
 INSERT INTO snowshot.provider_attempts
     ("Id", "OperationId", "AttemptNumber", "Provider", "Resource", "State", "DispatchState", "Outcome",
-     "HttpStatus", "InputUnits", "OutputUnits", "CostNanoYuan", "CostKnown", "StartedAt", "CompletedAt")
+     "HttpStatus", "InputUnits", "OutputUnits", "CostNanoYuan", "CostBasis", "StartedAt", "CompletedAt")
 VALUES
     ('0198a56e-8f5f-7b3f-8cf1-e80d0547ca03', '0198a56e-8f5f-7b3f-8cf1-e80d0547ca02', 1,
-     'recovery-provider', 'qwen-flash', 1, 2, 'success', 200, 5, 5, 10, true,
+     'recovery-provider', 'qwen3.8-flash', 1, 2, 'success', 200, 5, 5, 10, 0,
      clock_timestamp() - interval '1 minute', clock_timestamp());
 
 INSERT INTO snowshot.usage_events
     ("OperationId", "PrincipalId", "Kind", "Resource", "Outcome", "InputUnits", "OutputUnits",
-     "PublicCostNanoYuan", "OperatorCostNanoYuan", "OperatorOverageNanoYuan", "CostKnown", "OccurredAt")
+     "PublicCostNanoYuan", "OperatorCostNanoYuan", "OperatorOverageNanoYuan", "CostBasis", "OccurredAt")
 VALUES
     ('0198a56e-8f5f-7b3f-8cf1-e80d0547ca02', '0198a56e-8f5f-7b3f-8cf1-e80d0547ca01', 1,
-     'qwen-flash', 'success', 5, 5, 10, 10, 0, true, clock_timestamp());
+     'qwen3.8-flash', 'success', 5, 5, 10, 10, 0, 0, clock_timestamp());
 
 INSERT INTO snowshot.daily_aggregates
-    ("UsageDate", "Kind", "Resource", "Requests", "UnknownCostRequests", "InputUnits", "OutputUnits",
+    ("UsageDate", "Kind", "Resource", "Requests", "UnknownCostRequests", "EstimatedCostRequests", "InputUnits", "OutputUnits",
      "PublicCostNanoYuan", "OperatorCostNanoYuan", "OperatorOverageNanoYuan", "UpdatedAt")
-VALUES (CURRENT_DATE, 1, 'qwen-flash', 1, 0, 5, 5, 10, 10, 0, clock_timestamp());
+VALUES (CURRENT_DATE, 1, 'qwen3.8-flash', 1, 0, 0, 5, 5, 10, 10, 0, clock_timestamp());

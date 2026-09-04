@@ -71,7 +71,8 @@ public sealed record ChatModelDescriptor(
     [property: JsonPropertyName("model")] string Model,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("thinking")] bool Thinking,
-    [property: JsonPropertyName("support_vision")] bool SupportVision);
+    [property: JsonPropertyName("support_vision")] bool SupportVision,
+    [property: JsonPropertyName("translation")] bool Translation);
 
 public sealed record ChatUsage(
     [property: JsonPropertyName("prompt_tokens")] long PromptTokens,

@@ -8,16 +8,16 @@ public static class ApplicationResources
 {
     public const string Translation = Resources.Translation;
     public const string QwenFlash = Resources.QwenFlash;
-    public const string QwenPlus = Resources.QwenPlus;
     public const string QwenVisionFlash = Resources.QwenVisionFlash;
-    public const string DeepSeekV4 = Resources.DeepSeekV4;
+    public const string QwenMtFlash = Resources.QwenMtFlash;
     public const string TableExtraction = Resources.TableExtraction;
 }
 
 public sealed record ChatModelDefinition(
     string Model,
     bool Thinking,
-    bool SupportVision);
+    bool SupportVision,
+    bool Translation);
 
 public interface IChatModelCatalog
 {
@@ -141,7 +141,7 @@ public sealed record OperationSettlement(
     NanoYuan ReportedPublicCost,
     NanoYuan ReportedOperatorCost,
     bool Delivered,
-    bool CostKnown,
+    CostBasis Basis,
     bool VerifiableOverage,
     long InputUnits,
     long OutputUnits,
@@ -163,10 +163,13 @@ public sealed record ProviderAttempt(
     long InputUnits,
     long OutputUnits,
     NanoYuan Cost,
-    bool CostKnown,
+    CostBasis Basis,
     AttemptDispatchState DispatchState,
     DateTimeOffset StartedAt,
-    DateTimeOffset CompletedAt);
+    DateTimeOffset CompletedAt)
+{
+    public bool CostKnown => Basis == CostBasis.Exact;
+}
 
 public sealed record ProviderAttemptPreparation(
     Guid Id,
@@ -212,7 +215,7 @@ public abstract record ChatProviderEvent
 {
     private ChatProviderEvent() { }
     public sealed record Frame(ReadOnlyMemory<byte> Utf8Json) : ChatProviderEvent;
-    public sealed record Terminal(ChatUsage? Usage, bool Delivered, bool CostKnown, string Outcome, ProviderAttempt Attempt) : ChatProviderEvent;
+    public sealed record Terminal(ChatUsage? Usage, bool Delivered, CostBasis Basis, string Outcome, ProviderAttempt Attempt) : ChatProviderEvent;
     public sealed record Failure(string Category, bool Retryable, ProviderAttempt Attempt) : ChatProviderEvent;
 }
 
@@ -284,10 +287,13 @@ public sealed record TranslationProviderResult(
     long OperatorInputCharacters,
     long OperatorOutputCharacters,
     string Outcome,
-    bool CostKnown,
+    CostBasis Basis,
     bool Retryable,
     TimeSpan? RetryAfter,
-    ProviderAttempt Attempt);
+    ProviderAttempt Attempt)
+{
+    public bool CostKnown => Basis == CostBasis.Exact;
+}
 
 public interface ITranslationProviderClient
 {

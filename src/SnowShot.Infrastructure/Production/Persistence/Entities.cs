@@ -102,7 +102,7 @@ internal sealed class ProviderAttemptEntity
     public long InputUnits { get; set; }
     public long OutputUnits { get; set; }
     public long CostNanoYuan { get; set; }
-    public bool CostKnown { get; set; }
+    public CostBasis CostBasis { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
 }
@@ -122,7 +122,7 @@ internal sealed class UsageEventEntity
     public long PublicCostNanoYuan { get; set; }
     public long OperatorCostNanoYuan { get; set; }
     public long OperatorOverageNanoYuan { get; set; }
-    public bool CostKnown { get; set; }
+    public CostBasis CostBasis { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
 }
 
@@ -133,6 +133,7 @@ internal sealed class DailyAggregateEntity
     public required string Resource { get; set; }
     public long Requests { get; set; }
     public long UnknownCostRequests { get; set; }
+    public long EstimatedCostRequests { get; set; }
     public long InputUnits { get; set; }
     public long OutputUnits { get; set; }
     public long PublicCostNanoYuan { get; set; }

@@ -2,7 +2,6 @@
 param(
     [string]$SecretsRoot = (Join-Path $PSScriptRoot "..\.secrets\development"),
     [Security.SecureString]$ProviderApiKey,
-    [Security.SecureString]$DeepSeekApiKey,
     [switch]$Force
 )
 
@@ -15,7 +14,6 @@ $targets = @(
     (Join-Path $apiDirectory "ConnectionStrings__SnowShot"),
     (Join-Path $apiDirectory "Identity__HmacKeyBase64"),
     (Join-Path $apiDirectory "Providers__CloudProviders__aliyun__ApiKey"),
-    (Join-Path $apiDirectory "Providers__CloudProviders__deepseek__ApiKey"),
     (Join-Path $migratorDirectory "ConnectionStrings__SnowShot")
 )
 
@@ -73,7 +71,6 @@ function New-RandomBytes {
 }
 
 $providerApiKeyText = Get-RequiredSecretText -Value $ProviderApiKey -Prompt "Aliyun/DashScope provider API key"
-$deepSeekApiKeyText = Get-RequiredSecretText -Value $DeepSeekApiKey -Prompt "DeepSeek provider API key"
 $postgresPassword = -join ((New-RandomBytes 24) | ForEach-Object { $_.ToString("x2") })
 $identityKey = [Convert]::ToBase64String((New-RandomBytes 32))
 $connectionString = "Host=postgres;Port=5432;Database=snowshot;Username=snowshot;Password=$postgresPassword"
@@ -84,7 +81,6 @@ Write-SecretFile (Join-Path $resolvedRoot "postgres-password") $postgresPassword
 Write-SecretFile (Join-Path $apiDirectory "ConnectionStrings__SnowShot") $connectionString
 Write-SecretFile (Join-Path $apiDirectory "Identity__HmacKeyBase64") $identityKey
 Write-SecretFile (Join-Path $apiDirectory "Providers__CloudProviders__aliyun__ApiKey") $providerApiKeyText
-Write-SecretFile (Join-Path $apiDirectory "Providers__CloudProviders__deepseek__ApiKey") $deepSeekApiKeyText
 Write-SecretFile (Join-Path $migratorDirectory "ConnectionStrings__SnowShot") $connectionString
 
 Write-Host "Development configuration initialized under $resolvedRoot"

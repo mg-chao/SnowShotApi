@@ -155,7 +155,7 @@ public sealed class ProviderAccessPoolTests
             Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
             {
                 [Resources.QwenFlash] = Model("flash"),
-                [Resources.QwenPlus] = Model("plus"),
+                [Resources.QwenMtFlash] = Model("mt"),
                 [Resources.QwenVisionFlash] = Model("vision"),
             },
         }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);

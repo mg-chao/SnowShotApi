@@ -6,16 +6,15 @@ namespace SnowShot.Domain;
 public static class Resources
 {
     public const string Translation = "translation";
-    public const string QwenFlash = "qwen-flash";
-    public const string QwenPlus = "qwen-plus";
+    public const string QwenFlash = "qwen3.8-flash";
     public const string QwenVisionFlash = "qwen3-vl-flash";
-    public const string DeepSeekV4 = "deepseek-v4-flash";
+    public const string QwenMtFlash = "qwen-mt-flash";
     public const string TableExtraction = "table-extraction";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        Translation, QwenFlash, QwenPlus, QwenVisionFlash,
-        DeepSeekV4, TableExtraction,
+        Translation, QwenFlash, QwenVisionFlash,
+        QwenMtFlash, TableExtraction,
     };
 }
 
@@ -54,6 +53,28 @@ public sealed record ResourcePolicy(
     TimeSpan ExecutionDeadline,
     NanoYuan OperatorMaximum);
 
+/// <summary>
+/// Ratios used to estimate token usage from local evidence when a provider response
+/// carries no usable usage data: UTF-8 bytes of the transmitted prompt per input token
+/// and delivered content characters per output token.
+/// </summary>
+public sealed record EstimationRatios(long BytesPerInputToken, long CharsPerOutputToken)
+{
+    public const long MaximumRatio = 1024;
+    public static EstimationRatios Defaults { get; } = new(3, 2);
+
+    public long EstimateInputTokens(long payloadBytes) => Estimate(payloadBytes, BytesPerInputToken);
+
+    public long EstimateOutputTokens(long contentChars) => Estimate(contentChars, CharsPerOutputToken);
+
+    private static long Estimate(long units, long ratio)
+    {
+        if (units <= 0) return 0;
+        var bounded = Math.Min(units, checked(AccountingLimits.MaximumUnitsPerDimension * ratio));
+        return Math.Min((bounded + ratio - 1) / ratio, AccountingLimits.MaximumUnitsPerDimension);
+    }
+}
+
 public sealed class ServicePolicy
 {
     private readonly IReadOnlyDictionary<string, ResourcePolicy> _resources;
@@ -67,7 +88,8 @@ public sealed class ServicePolicy
         NanoYuan monthlyOperatorBudget,
         TimeSpan activeLeaseTtl,
         TimeSpan leaseRenewalInterval,
-        IEnumerable<string>? additionalResources = null)
+        IEnumerable<string>? additionalResources = null,
+        EstimationRatios? estimation = null)
     {
         Revision = revision;
         _resources = resources.ToDictionary(value => value.Resource, StringComparer.Ordinal);
@@ -77,6 +99,7 @@ public sealed class ServicePolicy
         MonthlyOperatorBudget = monthlyOperatorBudget;
         ActiveLeaseTtl = activeLeaseTtl;
         LeaseRenewalInterval = leaseRenewalInterval;
+        Estimation = estimation ?? EstimationRatios.Defaults;
         Validate();
         Fingerprint = ComputeFingerprint();
     }
@@ -87,6 +110,7 @@ public sealed class ServicePolicy
     public NanoYuan MonthlyOperatorBudget { get; }
     public TimeSpan ActiveLeaseTtl { get; }
     public TimeSpan LeaseRenewalInterval { get; }
+    public EstimationRatios Estimation { get; }
     public string Fingerprint { get; }
     public string CanonicalDocument => Canonicalize();
     public IEnumerable<ResourcePolicy> ResourcePolicies => _resources.Values;
@@ -116,6 +140,12 @@ public sealed class ServicePolicy
         if (ActiveLeaseTtl <= TimeSpan.Zero || LeaseRenewalInterval <= TimeSpan.Zero || LeaseRenewalInterval >= ActiveLeaseTtl)
         {
             throw new PolicyValidationException("Lease renewal must be positive and shorter than the active lease TTL.");
+        }
+        if (Estimation.BytesPerInputToken is <= 0 or > EstimationRatios.MaximumRatio ||
+            Estimation.CharsPerOutputToken is <= 0 or > EstimationRatios.MaximumRatio)
+        {
+            throw new PolicyValidationException(
+                $"Estimation ratios must be between 1 and {EstimationRatios.MaximumRatio}.");
         }
         foreach (var resource in _resources.Values)
         {
@@ -166,7 +196,8 @@ public sealed class ServicePolicy
                 value.Admission.RequestsPerMinute, value.Admission.PerPrincipalConcurrency,
                 value.Admission.GlobalConcurrency, value.Admission.GlobalQueueLength, value.Admission.PerPrincipalQueueLength,
                 value.Admission.QueueWait.Ticks, value.ExecutionDeadline.Ticks, value.OperatorMaximum.Value))) +
-            $"\n{PrincipalDailyAllowance.Value}|{DailyOperatorBudget.Value}|{MonthlyOperatorBudget.Value}|{ActiveLeaseTtl.Ticks}|{LeaseRenewalInterval.Ticks}";
+            $"\n{PrincipalDailyAllowance.Value}|{DailyOperatorBudget.Value}|{MonthlyOperatorBudget.Value}|{ActiveLeaseTtl.Ticks}|{LeaseRenewalInterval.Ticks}" +
+            $"|{Estimation.BytesPerInputToken}|{Estimation.CharsPerOutputToken}";
     }
 
     public static ServicePolicy Defaults() => new(
@@ -174,9 +205,8 @@ public sealed class ServicePolicy
         [
             new(SnowShot.Domain.Resources.Translation, new(NanoYuan.Zero, NanoYuan.Zero), new(30, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
             new(SnowShot.Domain.Resources.QwenFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
-            new(SnowShot.Domain.Resources.QwenPlus, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
             new(SnowShot.Domain.Resources.QwenVisionFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
-            new(SnowShot.Domain.Resources.DeepSeekV4, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
+            new(SnowShot.Domain.Resources.QwenMtFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
             new(SnowShot.Domain.Resources.TableExtraction, new(NanoYuan.Zero, NanoYuan.Zero), new(10, 3, 6, 12, TimeSpan.FromSeconds(30)), TimeSpan.FromSeconds(60), new(30_000_000)),
         ],
         NanoYuan.ThreeYuan,

@@ -46,10 +46,9 @@ public sealed class PublicMessages
         ["Bad Gateway"] = ("Bad Gateway", "网关错误"),
         ["Service Unavailable"] = ("Service Unavailable", "服务不可用"),
         ["Gateway Timeout"] = ("Gateway Timeout", "网关超时"),
-        ["qwen-flash"] = ("Qwen Flash", "通义千问 Flash"),
-        ["qwen-plus"] = ("Qwen Plus", "通义千问 Plus"),
+        ["qwen3.8-flash"] = ("Qwen Flash", "通义千问 Flash"),
         ["qwen3-vl-flash"] = ("Qwen VL Flash", "通义千问 VL Flash"),
-        ["deepseek-v4-flash"] = ("DeepSeek V4 Flash", "DeepSeek V4 Flash"),
+        ["qwen-mt-flash"] = ("Qwen MT Flash", "通义千问 MT Flash"),
     };
 
     public string this[string key] => Values.TryGetValue(key, out var value)

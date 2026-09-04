@@ -78,8 +78,9 @@ public sealed class TableWorkerClient(
                 dependencyHealth.Report("table_worker", status is TableExtractionStatus.Success or TableExtractionStatus.NoTable or
                     TableExtractionStatus.InvalidRequest or TableExtractionStatus.Busy);
             var cost = status == TableExtractionStatus.Success ? policy.Get(Resources.TableExtraction).Price.Input : NanoYuan.Zero;
+            var basis = known ? CostBasis.Exact : CostBasis.Unknown;
             var attempt = new ProviderAttempt(id, operationId, 1, "table-worker", Resources.TableExtraction, outcome,
-                httpStatus, status == TableExtractionStatus.Success ? 1 : 0, 0, cost, known, dispatchState,
+                httpStatus, status == TableExtractionStatus.Success ? 1 : 0, 0, cost, basis, dispatchState,
                 started, timeProvider.GetUtcNow());
             return new(status, html, attempt);
         }

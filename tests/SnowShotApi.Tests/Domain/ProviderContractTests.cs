@@ -18,12 +18,61 @@ public sealed class ProviderContractTests
         var catalog = Catalog();
 
         var flash = catalog.Get(Resources.QwenFlash, "test");
-        var plus = catalog.Get(Resources.QwenPlus, "test");
+        var mt = catalog.Get(Resources.QwenMtFlash, "test");
 
-        Assert.Equal(flash.Endpoint, plus.Endpoint);
-        Assert.Equal(flash.ApiKey, plus.ApiKey);
+        Assert.Equal(flash.Endpoint, mt.Endpoint);
+        Assert.Equal(flash.ApiKey, mt.ApiKey);
         Assert.Equal("test-model", flash.Selection.UpstreamModel);
-        Assert.Equal("test-plus", plus.Selection.UpstreamModel);
+        Assert.Equal("test-mt", mt.Selection.UpstreamModel);
+    }
+
+    [Fact]
+    public void TranslationDesignatedModelsAreFlaggedInTheChatCatalog()
+    {
+        var catalog = Catalog();
+
+        Assert.Equal([Resources.QwenMtFlash, Resources.QwenVisionFlash, Resources.QwenFlash],
+            catalog.Models.Select(model => model.Model).ToArray());
+        Assert.Equal([true, false, false],
+            catalog.Models.Select(model => model.Translation).ToArray());
+        Assert.True(catalog.Contains(Resources.QwenFlash));
+        Assert.True(catalog.Contains(Resources.QwenVisionFlash));
+        Assert.True(catalog.Contains(Resources.QwenMtFlash));
+        Assert.True(catalog.IsTranslationModel(Resources.QwenMtFlash));
+        Assert.False(catalog.IsTranslationModel(Resources.QwenFlash));
+        Assert.Equal("test-mt", catalog.Get(Resources.QwenMtFlash, "test").Selection.UpstreamModel);
+        Assert.Equal([Resources.QwenMtFlash], catalog.Selections(Resources.QwenMtFlash)
+            .Select(selection => selection.LogicalModel).ToArray());
+    }
+
+    [Fact]
+    public void TranslationOnlyCatalogStillExposesChatModels()
+    {
+        var providers = new ProviderModelsOptions
+        {
+            CloudProviders = new Dictionary<string, CloudProviderOptions>(StringComparer.Ordinal)
+            {
+                ["test"] = new() { Endpoint = "https://provider.test/chat", ApiKey = "key" },
+            },
+            Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
+            {
+                [Resources.QwenMtFlash] = new()
+                {
+                    Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
+                    {
+                        ["test"] = new() { Provider = "test", UpstreamModel = "qwen-mt-flash", MaxConcurrentRequests = 1 },
+                    },
+                },
+            },
+        };
+
+        var catalog = new ProviderModelCatalog(providers,
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, requireHttps: true);
+
+        var model = Assert.Single(catalog.Models);
+        Assert.Equal(Resources.QwenMtFlash, model.Model);
+        Assert.True(model.Translation);
+        Assert.True(catalog.Contains(Resources.QwenMtFlash));
     }
 
     [Fact]
@@ -33,32 +82,40 @@ public sealed class ProviderContractTests
         {
             CloudProviders = new Dictionary<string, CloudProviderOptions>(StringComparer.Ordinal)
             {
-                ["aliyun"] = new() { Endpoint = "https://aliyun.test/chat", ApiKey = "aliyun-key" },
-                ["deepseek"] = new() { Endpoint = "https://deepseek.test/chat", ApiKey = "deepseek-key" },
+                ["primary"] = new() { Endpoint = "https://primary.test/chat", ApiKey = "primary-key" },
+                ["secondary"] = new() { Endpoint = "https://secondary.test/chat", ApiKey = "secondary-key" },
             },
             Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
             {
-                [Resources.DeepSeekV4] = new()
+                [Resources.QwenVisionFlash] = new()
+                {
+                    SupportVision = true,
+                    Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
+                    {
+                        ["primary"] = new() { Provider = "primary", UpstreamModel = "qwen3-vl-flash", MaxConcurrentRequests = 16 },
+                        ["secondary"] = new() { Provider = "secondary", UpstreamModel = "qwen3-vl-flash", MaxConcurrentRequests = 16 },
+                    },
+                },
+                [Resources.QwenMtFlash] = new()
                 {
                     Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
                     {
-                        ["aliyun"] = new() { Provider = "aliyun", UpstreamModel = "deepseek-v4-flash", MaxConcurrentRequests = 16 },
-                        ["deepseek"] = new() { Provider = "deepseek", UpstreamModel = "deepseek-v4-flash", MaxConcurrentRequests = 16 },
+                        ["primary"] = new() { Provider = "primary", UpstreamModel = "qwen-mt-flash", MaxConcurrentRequests = 16 },
                     },
                 },
             },
-        }, new TranslationProviderOptions { LogicalModels = [Resources.DeepSeekV4] }, requireHttps: true);
+        }, new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, requireHttps: true);
 
-        var aliyun = catalog.Get(Resources.DeepSeekV4, "aliyun");
-        var deepseek = catalog.Get(Resources.DeepSeekV4, "deepseek");
+        var primary = catalog.Get(Resources.QwenVisionFlash, "primary");
+        var secondary = catalog.Get(Resources.QwenVisionFlash, "secondary");
 
-        Assert.Equal("https://aliyun.test/chat", aliyun.Endpoint.ToString());
-        Assert.Equal("aliyun-key", aliyun.ApiKey);
-        Assert.Equal("https://deepseek.test/chat", deepseek.Endpoint.ToString());
-        Assert.Equal("deepseek-key", deepseek.ApiKey);
-        var model = Assert.Single(catalog.Models);
-        Assert.Equal(Resources.DeepSeekV4, model.Model);
-        Assert.False(model.SupportVision);
+        Assert.Equal("https://primary.test/chat", primary.Endpoint.ToString());
+        Assert.Equal("primary-key", primary.ApiKey);
+        Assert.Equal("https://secondary.test/chat", secondary.Endpoint.ToString());
+        Assert.Equal("secondary-key", secondary.ApiKey);
+        var model = Assert.Single(catalog.Models, definition => definition.Model == Resources.QwenVisionFlash);
+        Assert.True(model.SupportVision);
+        Assert.False(model.Translation);
     }
 
     [Fact]
@@ -72,11 +129,11 @@ public sealed class ProviderContractTests
             },
             Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
             {
-                [Resources.QwenPlus] = new()
+                [Resources.QwenMtFlash] = new()
                 {
                     Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
                     {
-                        ["test"] = new() { Provider = "test", UpstreamModel = "qwen-plus", MaxConcurrentRequests = 1 },
+                        ["test"] = new() { Provider = "test", UpstreamModel = "qwen-mt-flash", MaxConcurrentRequests = 1 },
                     },
                 },
             },
@@ -85,9 +142,9 @@ public sealed class ProviderContractTests
         Assert.Throws<InvalidOperationException>(() => new ProviderModelCatalog(providers,
             new TranslationProviderOptions(), requireHttps: true));
         Assert.Throws<InvalidOperationException>(() => new ProviderModelCatalog(providers,
-            new TranslationProviderOptions { LogicalModels = [Resources.QwenPlus, Resources.QwenPlus] }, requireHttps: true));
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash, Resources.QwenMtFlash] }, requireHttps: true));
         Assert.Throws<InvalidOperationException>(() => new ProviderModelCatalog(providers,
-            new TranslationProviderOptions { LogicalModels = [Resources.DeepSeekV4] }, requireHttps: true));
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true));
     }
 
     [Fact]
@@ -109,7 +166,11 @@ public sealed class ProviderContractTests
         Assert.False(handler.SawClientRequestId);
         using var request = JsonDocument.Parse(handler.RequestBody!);
         Assert.False(request.RootElement.TryGetProperty("enable_thinking", out _));
-        using var user = JsonDocument.Parse(request.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!);
+        var message = Assert.Single(request.RootElement.GetProperty("messages").EnumerateArray());
+        Assert.Equal("user", message.GetProperty("role").GetString());
+        var content = message.GetProperty("content").GetString()!;
+        Assert.Contains("Return JSON only", content, StringComparison.Ordinal);
+        using var user = JsonDocument.Parse(content[(content.LastIndexOf('\n') + 1)..]);
         var item = Assert.Single(user.RootElement.EnumerateArray());
         Assert.Equal(0, item.GetProperty("index").GetInt32());
         Assert.Equal("hello", item.GetProperty("content").GetString());
@@ -272,9 +333,236 @@ public sealed class ProviderContractTests
         var failure = Assert.IsType<ChatProviderEvent.Failure>(Assert.Single(events));
         Assert.Equal("invalid_stream", failure.Category);
         Assert.False(failure.Attempt.CostKnown);
+        Assert.Equal(CostBasis.Estimated, failure.Attempt.Basis);
+        Assert.True(failure.Attempt.InputUnits > 0);
         Assert.Equal(AttemptDispatchState.Dispatched, failure.Attempt.DispatchState);
         Assert.True(handler.SawOperationId);
         Assert.False(handler.SawClientRequestId);
+    }
+
+    [Fact]
+    public async Task TruncatedChatStreamWithoutUsageSettlesFromDeliveredEvidence()
+    {
+        const string payload = "data: {\"id\":\"one\",\"choices\":[{\"delta\":{\"content\":\"hello world, this streamed\"}}]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking hard about the answer\"}}]}\n\n";
+        var handler = new ResponseHandler(payload);
+        var policy = PricedPolicy();
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), policy, new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+
+        await foreach (var providerEvent in client.StreamAsync(Command(), TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+
+        var failure = Assert.IsType<ChatProviderEvent.Failure>(events[^1]);
+        Assert.Equal("truncated_stream", failure.Category);
+        Assert.Equal(CostBasis.Estimated, failure.Attempt.Basis);
+        Assert.Equal(AttemptDispatchState.Dispatched, failure.Attempt.DispatchState);
+        Assert.True(failure.Attempt.InputUnits > 0);
+        Assert.True(failure.Attempt.OutputUnits > 0);
+        Assert.Equal(policy.Get(Resources.QwenFlash).Price.Calculate(failure.Attempt.InputUnits, failure.Attempt.OutputUnits),
+            failure.Attempt.Cost);
+    }
+
+    [Fact]
+    public async Task ChatOutputEstimationCountsUnicodeScalars()
+    {
+        const string payload = "data: {\"choices\":[{\"delta\":{\"content\":\"😀😀\"}}]}\n\n";
+        var handler = new ResponseHandler(payload);
+        var policy = PricedPolicy(ratios: new EstimationRatios(3, 3));
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), policy, new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+
+        await foreach (var providerEvent in client.StreamAsync(Command(), TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+
+        var failure = Assert.IsType<ChatProviderEvent.Failure>(events[^1]);
+        Assert.Equal(CostBasis.Estimated, failure.Attempt.Basis);
+        Assert.Equal(1, failure.Attempt.OutputUnits);
+    }
+
+    [Fact]
+    public async Task ChatUsageWithTotalBelowKnownComponentFallsBackToEstimation()
+    {
+        const string payload = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"completion_tokens\":10,\"total_tokens\":2}}\n\n" +
+            "data: [DONE]\n\n";
+        var handler = new ResponseHandler(payload);
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), PricedPolicy(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+
+        await foreach (var providerEvent in client.StreamAsync(Command(), TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+
+        var failure = Assert.IsType<ChatProviderEvent.Failure>(events[^1]);
+        Assert.Equal("truncated_stream", failure.Category);
+        Assert.Equal(CostBasis.Estimated, failure.Attempt.Basis);
+    }
+
+    [Fact]
+    public async Task ChatServerErrorBillsTheTransmittedPromptAsAnEstimate()
+    {
+        var handler = new ResponseHandler("error", "text/plain", HttpStatusCode.InternalServerError);
+        var policy = PricedPolicy();
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), policy, new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+
+        await foreach (var providerEvent in client.StreamAsync(Command(), TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+
+        var failure = Assert.IsType<ChatProviderEvent.Failure>(Assert.Single(events));
+        Assert.Equal("provider_http_500", failure.Category);
+        Assert.True(failure.Retryable);
+        Assert.Equal(CostBasis.Estimated, failure.Attempt.Basis);
+        Assert.True(failure.Attempt.InputUnits > 0);
+        Assert.Equal(0, failure.Attempt.OutputUnits);
+        Assert.Equal(policy.Get(Resources.QwenFlash).Price.Calculate(failure.Attempt.InputUnits, 0), failure.Attempt.Cost);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    public async Task ChatRejectedRequestsBillExactZeroCost(HttpStatusCode status)
+    {
+        var handler = new ResponseHandler("error", "text/plain", status);
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), PricedPolicy(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+
+        await foreach (var providerEvent in client.StreamAsync(Command(), TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+
+        var failure = Assert.IsType<ChatProviderEvent.Failure>(Assert.Single(events));
+        Assert.Equal($"provider_http_{(int)status}", failure.Category);
+        Assert.Equal(CostBasis.Exact, failure.Attempt.Basis);
+        Assert.True(failure.Attempt.CostKnown);
+        Assert.Equal(0, failure.Attempt.InputUnits);
+        Assert.Equal(NanoYuan.Zero, failure.Attempt.Cost);
+    }
+
+    [Fact]
+    public async Task ContradictoryChatUsageTotalsAreNormalizedInsteadOfRejected()
+    {
+        const string payload = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":999}}\n\n" +
+            "data: [DONE]\n\n";
+        var handler = new ResponseHandler(payload);
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+
+        await foreach (var providerEvent in client.StreamAsync(Command(), TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+
+        var terminal = Assert.IsType<ChatProviderEvent.Terminal>(events[^1]);
+        Assert.Equal(new ChatUsage(10, 2, 12), terminal.Usage);
+        Assert.Equal(CostBasis.Exact, terminal.Attempt.Basis);
+        Assert.Equal(10, terminal.Attempt.InputUnits);
+        Assert.Equal(2, terminal.Attempt.OutputUnits);
+    }
+
+    [Fact]
+    public async Task MissingChatUsageComponentsAreDerivedAndReasoningClamped()
+    {
+        const string payload = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"total_tokens\":9}}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"completion_tokens\":4,\"total_tokens\":9," +
+            "\"completion_tokens_details\":{\"reasoning_tokens\":50}}}\n\n" +
+            "data: [DONE]\n\n";
+        var handler = new ResponseHandler(payload);
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+
+        await foreach (var providerEvent in client.StreamAsync(Command(), TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+
+        var terminal = Assert.IsType<ChatProviderEvent.Terminal>(events[^1]);
+        Assert.Equal(new ChatUsage(5, 4, 9, 4), terminal.Usage);
+    }
+
+    [Fact]
+    public async Task TranslationServerErrorBillsExactInputCharactersAsAnEstimate()
+    {
+        var policy = PricedPolicy(new(100), new(100));
+        var client = new OpenAiTranslationClient(
+            new SingleClientRegistry(new HttpClient(new ResponseHandler("failure", "text/plain", HttpStatusCode.ServiceUnavailable))),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(), policy,
+            new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(TranslationCommand(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.Equal("provider_http_503", result.Outcome);
+        Assert.Equal(CostBasis.Estimated, result.Attempt.Basis);
+        Assert.True(result.Attempt.InputUnits > 0);
+        Assert.Equal(0, result.Attempt.OutputUnits);
+        Assert.Equal(policy.Get(Resources.Translation).Price.Calculate(result.Attempt.InputUnits, 0), result.Attempt.Cost);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    public async Task TranslationRejectedRequestsBillExactZeroCost(HttpStatusCode status)
+    {
+        var client = new OpenAiTranslationClient(
+            new SingleClientRegistry(new HttpClient(new ResponseHandler("failure", "text/plain", status))),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(), PricedPolicy(),
+            new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(TranslationCommand(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.Equal(CostBasis.Exact, result.Attempt.Basis);
+        Assert.Equal(0, result.Attempt.InputUnits);
+        Assert.Equal(NanoYuan.Zero, result.Attempt.Cost);
+    }
+
+    [Fact]
+    public async Task TranslationUnparseableResponsesBillEstimatedInputOnly()
+    {
+        var policy = PricedPolicy(new(100), new(100));
+        var client = new OpenAiTranslationClient(
+            new SingleClientRegistry(new HttpClient(new ResponseHandler("not json", "application/json"))),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(), policy,
+            new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(TranslationCommand(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_response", result.Outcome);
+        Assert.Equal(CostBasis.Estimated, result.Attempt.Basis);
+        Assert.Equal(AttemptDispatchState.Dispatched, result.Attempt.DispatchState);
+        Assert.Equal(policy.Get(Resources.Translation).Price.Calculate(result.Attempt.InputUnits, 0), result.Attempt.Cost);
+    }
+
+    [Fact]
+    public async Task TranslationTimeoutsRemainUnknownCost()
+    {
+        var client = new OpenAiTranslationClient(
+            new SingleClientRegistry(new HttpClient(new DelayingHandler())),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, Catalog(), PricedPolicy(),
+            new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(
+            TranslationCommand() with { Timeout = TimeSpan.FromMilliseconds(20) }, CancellationToken.None);
+
+        Assert.Equal("attempt_timeout", result.Outcome);
+        Assert.Equal(CostBasis.Unknown, result.Attempt.Basis);
+        Assert.False(result.Attempt.CostKnown);
+        Assert.Equal(NanoYuan.Zero, result.Attempt.Cost);
+    }
+
+    private static ServicePolicy PricedPolicy(NanoYuan? input = null, NanoYuan? output = null, EstimationRatios? ratios = null)
+    {
+        var defaults = ServicePolicy.Defaults();
+        var price = new UnitPrice(input ?? new(200), output ?? new(800));
+        var resources = defaults.ResourcePolicies.Select(value => value with { Price = price }).ToArray();
+        return new(defaults.Revision, resources, defaults.PrincipalDailyAllowance, defaults.DailyOperatorBudget,
+            defaults.MonthlyOperatorBudget, defaults.ActiveLeaseTtl, defaults.LeaseRenewalInterval, estimation: ratios);
     }
 
     [Fact]
@@ -308,6 +596,65 @@ public sealed class ProviderContractTests
         Assert.True(root.GetProperty("stream_options").GetProperty("vendor_detail").GetBoolean());
         Assert.Equal(99, root.GetProperty("temperature").GetInt32());
         Assert.True(root.GetProperty("vendor_option").GetProperty("enabled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ChatMergesSystemMessagesIntoTheUserTurnForTranslationModelsOnly()
+    {
+        const string response = "data: {\"id\":\"one\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n" +
+            "data: [DONE]\n\n";
+
+        var merged = await ForwardedMessagesAsync(new ResponseHandler(response), Resources.QwenMtFlash, """
+            {"model":"qwen-mt-flash","messages":[
+                {"role":"system","content":"first"},
+                {"role":"system","content":"second"},
+                {"role":"user","content":"hello","name":"caller"},
+                {"role":"assistant","content":"hola"}]}
+            """u8.ToArray());
+        Assert.Equal(2, merged.GetArrayLength());
+        Assert.Equal("user", merged[0].GetProperty("role").GetString());
+        Assert.Equal("first\n\nsecond\n\nhello", merged[0].GetProperty("content").GetString());
+        Assert.Equal("caller", merged[0].GetProperty("name").GetString());
+        Assert.Equal("assistant", merged[1].GetProperty("role").GetString());
+        Assert.Equal("hola", merged[1].GetProperty("content").GetString());
+
+        var withoutUserTurn = await ForwardedMessagesAsync(new ResponseHandler(response), Resources.QwenMtFlash, """
+            {"model":"qwen-mt-flash","messages":[
+                {"role":"system","content":"instructions"},
+                {"role":"assistant","content":"hola"}]}
+            """u8.ToArray());
+        Assert.Equal(2, withoutUserTurn.GetArrayLength());
+        Assert.Equal("user", withoutUserTurn[0].GetProperty("role").GetString());
+        Assert.Equal("instructions", withoutUserTurn[0].GetProperty("content").GetString());
+        Assert.Equal("assistant", withoutUserTurn[1].GetProperty("role").GetString());
+
+        var verbatim = await ForwardedMessagesAsync(new ResponseHandler(response), Resources.QwenFlash, """
+            {"model":"qwen3.8-flash","messages":[
+                {"role":"system","content":"instructions"},
+                {"role":"user","content":"hello"}]}
+            """u8.ToArray());
+        Assert.Equal(2, verbatim.GetArrayLength());
+        Assert.Equal("system", verbatim[0].GetProperty("role").GetString());
+        Assert.Equal("instructions", verbatim[0].GetProperty("content").GetString());
+        Assert.Equal("user", verbatim[1].GetProperty("role").GetString());
+    }
+
+    private static async Task<JsonElement> ForwardedMessagesAsync(ResponseHandler handler, string model, byte[] payload)
+    {
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var command = Command() with
+        {
+            Request = new ChatCommand(model, payload),
+            Access = new ProviderAccessSelection(model, "test", "test", "test-model"),
+        };
+        var events = new List<ChatProviderEvent>();
+        await foreach (var providerEvent in client.StreamAsync(command, TestContext.Current.CancellationToken))
+            events.Add(providerEvent);
+        Assert.IsType<ChatProviderEvent.Terminal>(events[^1]);
+        using var forwarded = JsonDocument.Parse(handler.RequestBody!);
+        return forwarded.RootElement.GetProperty("messages").Clone();
     }
 
     [Fact]
@@ -354,7 +701,7 @@ public sealed class ProviderContractTests
             policy.PrincipalDailyAllowance, new NanoYuan(1_000_000), resource.OperatorMaximum);
         var handle = new OperationHandle(Guid.CreateVersion7(), new byte[32], 1,
             DateTimeOffset.UtcNow.AddMinutes(1), snapshot);
-        var access = new ProviderAccessSelection(Resources.QwenFlash, "test", "test", "test-model");
+        var access = new ProviderAccessSelection(Resources.QwenMtFlash, "test", "test", "test-model");
         return new("hello", "en", "es", "general", access, handle, "request-1", "trace-1", 1,
             0, 1, 1, Guid.CreateVersion7(), DateTimeOffset.UtcNow, TimeSpan.FromSeconds(30));
     }
@@ -396,10 +743,10 @@ public sealed class ProviderContractTests
             Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
             {
                 [Resources.QwenFlash] = Model("test-model"),
-                [Resources.QwenPlus] = Model("test-plus"),
                 [Resources.QwenVisionFlash] = Model("test-vision"),
+                [Resources.QwenMtFlash] = Model("test-mt"),
             },
-        }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);
+        }, new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, requireHttps: true);
     }
 
     private sealed class SingleClientRegistry(HttpClient client) : IProviderHttpClientRegistry

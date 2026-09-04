@@ -33,7 +33,7 @@ internal static class ChatEndpoints
     {
         return ApiResponse.Success(modelCatalog.Models.Select(model =>
             new ChatModelDescriptor(model.Model,
-                messages[model.Model], model.Thinking, model.SupportVision)).ToArray(), messages);
+                messages[model.Model], model.Thinking, model.SupportVision, model.Translation)).ToArray(), messages);
     }
 
     private static async Task CompleteAsync(

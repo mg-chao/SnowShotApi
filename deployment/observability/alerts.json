@@ -107,6 +107,15 @@
       "runbookSection": "Reconciliation and cost"
     },
     {
+      "id": "accounting-cost-estimated",
+      "signals": ["snowshot.cost.estimated.operations"],
+      "condition": "counter increases during the evaluation window",
+      "windowSeconds": 300,
+      "severity": "ticket",
+      "owner": "Domain",
+      "runbookSection": "Reconciliation and cost"
+    },
+    {
       "id": "accounting-operator-overage",
       "signals": ["snowshot.cost.overage.nanoyuan"],
       "condition": "counter increases during the evaluation window",

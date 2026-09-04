@@ -3,7 +3,7 @@ set -eu
 
 deployment_root=/opt/snowshot-v2
 active_policy="$deployment_root/runtime/appsettings.Production.json"
-restore_policy="$deployment_root/runtime/policy-revision-6.json"
+restore_policy="$deployment_root/runtime/policy-revision-9.json"
 backup_policy="$deployment_root/runtime/appsettings.Production.before-restore.json"
 compose_file="$deployment_root/compose.yaml"
 environment_file="$deployment_root/runtime/api.env"

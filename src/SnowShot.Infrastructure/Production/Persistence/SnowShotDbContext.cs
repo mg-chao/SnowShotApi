@@ -63,12 +63,12 @@ public sealed class SnowShotDbContext(DbContextOptions<SnowShotDbContext> option
             entity.ToTable("usage_operations", table =>
             {
                 table.HasCheckConstraint("ck_usage_operation_kind", "\"Kind\" IN (0, 1, 2)");
-                table.HasCheckConstraint("ck_usage_operation_state", "\"State\" BETWEEN 0 AND 4");
+                table.HasCheckConstraint("ck_usage_operation_state", "\"State\" BETWEEN 0 AND 5");
                 table.HasCheckConstraint("ck_usage_operation_hashes", "octet_length(\"IdempotencyHash\") = 32 AND octet_length(\"OwnerToken\") = 32 AND octet_length(\"PolicyFingerprint\") = 32 AND \"PolicyRevision\" > 0 AND (\"SettlementFingerprint\" IS NULL OR octet_length(\"SettlementFingerprint\") = 32)");
                 table.HasCheckConstraint("ck_usage_operation_fence", "\"Fence\" > 0");
                 table.HasCheckConstraint("ck_usage_operation_costs", "\"InputRateNanoYuan\" >= 0 AND \"OutputRateNanoYuan\" >= 0 AND \"ReservedPublicNanoYuan\" >= 0 AND \"ReservedOperatorNanoYuan\" >= 0 AND \"ActualPublicNanoYuan\" >= 0 AND \"ActualOperatorNanoYuan\" >= 0 AND \"OperatorOverageNanoYuan\" >= 0");
                 table.HasCheckConstraint("ck_usage_operation_deadline", "\"CreatedAt\" < \"AbsoluteDeadline\" AND \"LeaseExpiresAt\" <= \"AbsoluteDeadline\"");
-                table.HasCheckConstraint("ck_usage_operation_terminal", "(\"State\" IN (0, 1) AND \"SettledAt\" IS NULL AND \"SettlementFingerprint\" IS NULL) OR (\"State\" IN (2, 3, 4) AND \"SettledAt\" IS NOT NULL AND \"SettlementFingerprint\" IS NOT NULL)");
+                table.HasCheckConstraint("ck_usage_operation_terminal", "(\"State\" IN (0, 1) AND \"SettledAt\" IS NULL AND \"SettlementFingerprint\" IS NULL) OR (\"State\" IN (2, 3, 4, 5) AND \"SettledAt\" IS NOT NULL AND \"SettlementFingerprint\" IS NOT NULL)");
             });
             entity.HasKey(value => value.Id);
             entity.Property(value => value.Resource).HasMaxLength(64);
@@ -86,9 +86,9 @@ public sealed class SnowShotDbContext(DbContextOptions<SnowShotDbContext> option
         {
             entity.ToTable("provider_attempts", table =>
             {
-                table.HasCheckConstraint("ck_provider_attempt_values", "\"AttemptNumber\" > 0 AND \"InputUnits\" >= 0 AND \"OutputUnits\" >= 0 AND \"CostNanoYuan\" >= 0 AND (\"CostKnown\" OR \"CostNanoYuan\" = 0)");
+                table.HasCheckConstraint("ck_provider_attempt_values", "\"AttemptNumber\" > 0 AND \"InputUnits\" >= 0 AND \"OutputUnits\" >= 0 AND \"CostNanoYuan\" >= 0 AND \"CostBasis\" BETWEEN 0 AND 2 AND (\"CostBasis\" IN (0, 1) OR \"CostNanoYuan\" = 0)");
                 table.HasCheckConstraint("ck_provider_attempt_state", "\"State\" IN (0, 1) AND \"DispatchState\" BETWEEN 0 AND 3");
-                table.HasCheckConstraint("ck_provider_attempt_lifecycle", "(\"State\" = 0 AND \"DispatchState\" = 0 AND \"CompletedAt\" IS NULL AND \"Outcome\" IS NULL AND \"HttpStatus\" IS NULL AND \"InputUnits\" = 0 AND \"OutputUnits\" = 0 AND \"CostNanoYuan\" = 0 AND NOT \"CostKnown\") OR (\"State\" = 1 AND \"DispatchState\" IN (1, 2, 3) AND \"CompletedAt\" IS NOT NULL AND \"CompletedAt\" >= \"StartedAt\" AND \"Outcome\" IS NOT NULL AND (\"DispatchState\" <> 1 OR (\"CostKnown\" AND \"CostNanoYuan\" = 0)))");
+                table.HasCheckConstraint("ck_provider_attempt_lifecycle", "(\"State\" = 0 AND \"DispatchState\" = 0 AND \"CompletedAt\" IS NULL AND \"Outcome\" IS NULL AND \"HttpStatus\" IS NULL AND \"InputUnits\" = 0 AND \"OutputUnits\" = 0 AND \"CostNanoYuan\" = 0 AND \"CostBasis\" = 2) OR (\"State\" = 1 AND \"DispatchState\" IN (1, 2, 3) AND \"CompletedAt\" IS NOT NULL AND \"CompletedAt\" >= \"StartedAt\" AND \"Outcome\" IS NOT NULL AND (\"DispatchState\" <> 1 OR (\"CostBasis\" = 0 AND \"CostNanoYuan\" = 0)))");
             });
             entity.HasKey(value => value.Id);
             entity.Property(value => value.Provider).HasMaxLength(64);
@@ -100,7 +100,7 @@ public sealed class SnowShotDbContext(DbContextOptions<SnowShotDbContext> option
         });
         modelBuilder.Entity<UsageEventEntity>(entity =>
         {
-            entity.ToTable("usage_events", table => table.HasCheckConstraint("ck_usage_event_values", "\"InputUnits\" >= 0 AND \"OutputUnits\" >= 0 AND \"PublicCostNanoYuan\" >= 0 AND \"OperatorCostNanoYuan\" >= 0 AND \"OperatorOverageNanoYuan\" >= 0"));
+            entity.ToTable("usage_events", table => table.HasCheckConstraint("ck_usage_event_values", "\"InputUnits\" >= 0 AND \"OutputUnits\" >= 0 AND \"PublicCostNanoYuan\" >= 0 AND \"OperatorCostNanoYuan\" >= 0 AND \"OperatorOverageNanoYuan\" >= 0 AND \"CostBasis\" BETWEEN 0 AND 2"));
             entity.HasKey(value => value.Id);
             entity.Property(value => value.Id).UseIdentityByDefaultColumn();
             entity.Property(value => value.Resource).HasMaxLength(64);

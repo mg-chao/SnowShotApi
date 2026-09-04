@@ -129,10 +129,10 @@ public sealed class DistributedIntegrationTests
             "provider", Resources.QwenFlash, started);
         Assert.Equal(OwnershipMutationResult.Applied, await ledger.PrepareAttemptAsync(preparation, token));
         var attempt = new ProviderAttempt(preparation.Id, handle.OperationId, 1, "provider", Resources.QwenFlash,
-            "success", 200, 10, 2, new(80), true, AttemptDispatchState.Dispatched,
+            "success", 200, 10, 2, new(80), CostBasis.Exact, AttemptDispatchState.Dispatched,
             started, DateTimeOffset.UtcNow);
         var settlement = new OperationSettlement(handle, new(80), NanoYuan.Zero,
-            true, true, false, 10, 2, "success");
+            true, CostBasis.Exact, false, 10, 2, "success");
         acknowledgementLoss.Arm();
 
         var result = await ledger.CompleteAsync(new(settlement, attempt), token);
@@ -219,7 +219,7 @@ public sealed class DistributedIntegrationTests
             await ledger.MarkDispatchedAsync(staleFence, TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
         Assert.Equal(OwnershipMutationResult.Applied,
             await ledger.MarkDispatchedAsync(handle, TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
-        var settlement = new OperationSettlement(handle, new(10), new(10), true, true, false, 5, 5, "success");
+        var settlement = new OperationSettlement(handle, new(10), new(10), true, CostBasis.Exact, false, 5, 5, "success");
         var staleSettlement = await ledger.CompleteAsync(new(settlement with { Handle = staleFence }), TestContext.Current.CancellationToken);
         Assert.Equal(SettlementRejectionReason.LeaseLost, staleSettlement.RejectionReason);
         var decision = await ledger.CompleteAsync(new(settlement), TestContext.Current.CancellationToken);
@@ -238,7 +238,7 @@ public sealed class DistributedIntegrationTests
         Assert.Equal(OwnershipMutationResult.LeaseLost,
             await ledger.RenewAsync(expiringHandle, TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken));
         var expiredSettlement = await ledger.CompleteAsync(new(new(expiringHandle, NanoYuan.Zero, NanoYuan.Zero,
-            false, true, false, 0, 0, "late_owner")), TestContext.Current.CancellationToken);
+            false, CostBasis.Exact, false, 0, 0, "late_owner")), TestContext.Current.CancellationToken);
         Assert.Equal(SettlementRejectionReason.LeaseLost, expiredSettlement.RejectionReason);
         Assert.True(await ledger.ReconcileExpiredAsync(100, TestContext.Current.CancellationToken) >= 1);
     }
@@ -278,7 +278,7 @@ public sealed class DistributedIntegrationTests
         }
 
         var firstAttempt = new ProviderAttempt(firstPreparation.Id, handle.OperationId, 1, "provider", Resources.QwenFlash,
-            "retryable_failure", 503, 10, 0, new(10), true, AttemptDispatchState.Dispatched,
+            "retryable_failure", 503, 10, 0, new(10), CostBasis.Exact, AttemptDispatchState.Dispatched,
             firstStarted, DateTimeOffset.UtcNow);
         Assert.Equal(OwnershipMutationResult.Applied, await ledger.CompleteAttemptAsync(handle, firstAttempt, token));
         Assert.Equal(OwnershipMutationResult.Applied, await ledger.CompleteAttemptAsync(handle, firstAttempt, token));
@@ -290,9 +290,9 @@ public sealed class DistributedIntegrationTests
             "provider", Resources.QwenFlash, secondStarted);
         Assert.Equal(OwnershipMutationResult.Applied, await ledger.PrepareAttemptAsync(secondPreparation, token));
         var secondAttempt = new ProviderAttempt(secondPreparation.Id, handle.OperationId, 2, "provider", Resources.QwenFlash,
-            "success", 200, 20, 0, new(20), true, AttemptDispatchState.Dispatched,
+            "success", 200, 20, 0, new(20), CostBasis.Exact, AttemptDispatchState.Dispatched,
             secondStarted, DateTimeOffset.UtcNow);
-        var settlement = new OperationSettlement(handle, new(30), NanoYuan.Zero, true, true, false, 30, 0, "success");
+        var settlement = new OperationSettlement(handle, new(30), NanoYuan.Zero, true, CostBasis.Exact, false, 30, 0, "success");
         var staleHandle = new OperationHandle(handle.OperationId, handle.OwnerToken.AsSpan(), handle.Fence + 1,
             handle.AbsoluteDeadline, handle.Snapshot);
         var stale = await ledger.CompleteAsync(new(settlement with { Handle = staleHandle }, secondAttempt), token);
@@ -314,8 +314,17 @@ public sealed class DistributedIntegrationTests
             "provider", Resources.QwenFlash, exactStarted);
         await ledger.PrepareAttemptAsync(exactPreparation, token);
         await ledger.CompleteAttemptAsync(exact, new ProviderAttempt(exactPreparation.Id, exact.OperationId, 1,
-            "provider", Resources.QwenFlash, "completed_before_crash", 200, 7, 0, new(7), true,
+            "provider", Resources.QwenFlash, "completed_before_crash", 200, 7, 0, new(7), CostBasis.Exact,
             AttemptDispatchState.Dispatched, exactStarted, DateTimeOffset.UtcNow), token);
+
+        var estimated = await ReserveDispatchedAsync(ledger, Operation(principalId, policy), token);
+        var estimatedStarted = DateTimeOffset.UtcNow;
+        var estimatedPreparation = new ProviderAttemptPreparation(Guid.CreateVersion7(), estimated, 1,
+            "provider", Resources.QwenFlash, estimatedStarted);
+        await ledger.PrepareAttemptAsync(estimatedPreparation, token);
+        await ledger.CompleteAttemptAsync(estimated, new ProviderAttempt(estimatedPreparation.Id, estimated.OperationId, 1,
+            "provider", Resources.QwenFlash, "truncated_stream", null, 90, 12, new(12), CostBasis.Estimated,
+            AttemptDispatchState.Dispatched, estimatedStarted, DateTimeOffset.UtcNow), token);
 
         var uncertain = await ReserveDispatchedAsync(ledger, Operation(principalId, policy), token);
         await ledger.PrepareAttemptAsync(new ProviderAttemptPreparation(Guid.CreateVersion7(), uncertain, 1,
@@ -323,21 +332,29 @@ public sealed class DistributedIntegrationTests
         await using (var expire = new SnowShotDbContext(options))
         {
             var expiredAt = DateTimeOffset.UtcNow.AddSeconds(-1);
-            await expire.UsageOperations.Where(value => value.Id == exact.OperationId || value.Id == uncertain.OperationId)
+            await expire.UsageOperations.Where(value => value.Id == exact.OperationId || value.Id == estimated.OperationId ||
+                    value.Id == uncertain.OperationId)
                 .ExecuteUpdateAsync(update => update.SetProperty(value => value.LeaseExpiresAt, expiredAt), token);
         }
 
-        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => ledger.ReconcileExpiredAsync(2, token)));
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => ledger.ReconcileExpiredAsync(3, token)));
         await using (var verification = new SnowShotDbContext(options))
         {
             var exactOperation = await verification.UsageOperations.AsNoTracking().SingleAsync(value => value.Id == exact.OperationId, token);
+            var estimatedOperation = await verification.UsageOperations.AsNoTracking().SingleAsync(value => value.Id == estimated.OperationId, token);
             var uncertainOperation = await verification.UsageOperations.AsNoTracking().SingleAsync(value => value.Id == uncertain.OperationId, token);
             Assert.True(exactOperation.State.IsTerminal());
+            Assert.True(estimatedOperation.State.IsTerminal());
             Assert.True(uncertainOperation.State.IsTerminal());
             Assert.Equal(7, exactOperation.ActualOperatorNanoYuan);
+            Assert.Equal(12, estimatedOperation.ActualOperatorNanoYuan);
             Assert.Equal(uncertain.Snapshot.OperatorMaximum.Value, uncertainOperation.ActualOperatorNanoYuan);
-            Assert.True((await verification.UsageEvents.AsNoTracking().SingleAsync(value => value.OperationId == exact.OperationId, token)).CostKnown);
-            Assert.False((await verification.UsageEvents.AsNoTracking().SingleAsync(value => value.OperationId == uncertain.OperationId, token)).CostKnown);
+            Assert.Equal(ReservationState.Released, exactOperation.State);
+            Assert.Equal(ReservationState.EstimatedCost, estimatedOperation.State);
+            Assert.Equal(ReservationState.UnknownCost, uncertainOperation.State);
+            Assert.Equal(CostBasis.Exact, (await verification.UsageEvents.AsNoTracking().SingleAsync(value => value.OperationId == exact.OperationId, token)).CostBasis);
+            Assert.Equal(CostBasis.Estimated, (await verification.UsageEvents.AsNoTracking().SingleAsync(value => value.OperationId == estimated.OperationId, token)).CostBasis);
+            Assert.Equal(CostBasis.Unknown, (await verification.UsageEvents.AsNoTracking().SingleAsync(value => value.OperationId == uncertain.OperationId, token)).CostBasis);
         }
     }
 
@@ -501,6 +518,7 @@ public sealed class DistributedIntegrationTests
         var old = DateTimeOffset.UtcNow.AddDays(-500);
         var recent = DateTimeOffset.UtcNow;
         var oldDate = DateOnly.FromDateTime(old.UtcDateTime);
+        var estimatedOperationId = Guid.CreateVersion7();
 
         await using (var arrange = new SnowShotDbContext(options))
         {
@@ -545,6 +563,66 @@ public sealed class DistributedIntegrationTests
                 Resource = $"retention-{oldPrincipalId:N}",
                 UpdatedAt = old,
             });
+            arrange.UsageOperations.Add(new UsageOperationEntity
+            {
+                Id = estimatedOperationId,
+                PrincipalId = oldPrincipalId,
+                AllowanceDate = oldDate,
+                Kind = UsageKind.Chat,
+                Resource = Resources.QwenFlash,
+                IdempotencyHash = SHA256.HashData(Encoding.UTF8.GetBytes($"retention-{estimatedOperationId:N}")),
+                OwnerToken = RandomNumberGenerator.GetBytes(32),
+                Fence = 1,
+                PolicyFingerprint = new byte[32],
+                PolicyRevision = 1,
+                InputRateNanoYuan = 1,
+                OutputRateNanoYuan = 1,
+                AllowanceLimitNanoYuan = 1,
+                ReservedPublicNanoYuan = 1,
+                ReservedOperatorNanoYuan = 1,
+                ActualPublicNanoYuan = 1,
+                ActualOperatorNanoYuan = 1,
+                OperatorOverageNanoYuan = 0,
+                State = ReservationState.EstimatedCost,
+                CreatedAt = old.AddMinutes(-1),
+                AbsoluteDeadline = old.AddDays(1),
+                LeaseExpiresAt = old,
+                DispatchedAt = old,
+                SettledAt = old,
+                SettlementFingerprint = new byte[32],
+            });
+            arrange.ProviderAttempts.Add(new ProviderAttemptEntity
+            {
+                Id = Guid.CreateVersion7(),
+                OperationId = estimatedOperationId,
+                AttemptNumber = 1,
+                Provider = "provider",
+                Resource = Resources.QwenFlash,
+                State = ProviderAttemptState.Completed,
+                DispatchState = AttemptDispatchState.Dispatched,
+                Outcome = "truncated_stream",
+                InputUnits = 1,
+                OutputUnits = 1,
+                CostNanoYuan = 1,
+                CostBasis = CostBasis.Estimated,
+                StartedAt = old,
+                CompletedAt = old,
+            });
+            arrange.UsageEvents.Add(new UsageEventEntity
+            {
+                OperationId = estimatedOperationId,
+                PrincipalId = oldPrincipalId,
+                Kind = UsageKind.Chat,
+                Resource = Resources.QwenFlash,
+                Outcome = "truncated_stream",
+                InputUnits = 1,
+                OutputUnits = 1,
+                PublicCostNanoYuan = 1,
+                OperatorCostNanoYuan = 1,
+                OperatorOverageNanoYuan = 0,
+                CostBasis = CostBasis.Estimated,
+                OccurredAt = old,
+            });
             await arrange.SaveChangesAsync(token);
         }
 
@@ -557,6 +635,7 @@ public sealed class DistributedIntegrationTests
                 token);
         }
 
+        Assert.Equal(1, removed.Operations);
         Assert.Equal(1, removed.Aggregates);
         Assert.Equal(1, removed.AllowancePeriods);
         Assert.Equal(1, removed.BudgetPeriods);
@@ -564,6 +643,9 @@ public sealed class DistributedIntegrationTests
         Assert.Equal(1, removed.Principals);
         Assert.True(removed.HasFullCategory(1));
         await using var verification = new SnowShotDbContext(options);
+        Assert.False(await verification.UsageOperations.AnyAsync(value => value.Id == estimatedOperationId, token));
+        Assert.False(await verification.ProviderAttempts.AnyAsync(value => value.OperationId == estimatedOperationId, token));
+        Assert.False(await verification.UsageEvents.AnyAsync(value => value.OperationId == estimatedOperationId, token));
         Assert.False(await verification.Principals.AnyAsync(value => value.Id == oldPrincipalId, token));
         Assert.True(await verification.Principals.AnyAsync(value => value.Id == recentPrincipalId, token));
         Assert.True(await verification.PrincipalFingerprints.AnyAsync(value => value.PrincipalId == recentPrincipalId, token));
@@ -664,7 +746,7 @@ public sealed class DistributedIntegrationTests
             Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
             {
                 [Resources.QwenFlash] = Model("flash"),
-                [Resources.QwenPlus] = Model("plus"),
+                [Resources.QwenMtFlash] = Model("mt"),
                 [Resources.QwenVisionFlash] = Model("vision"),
             },
         }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);

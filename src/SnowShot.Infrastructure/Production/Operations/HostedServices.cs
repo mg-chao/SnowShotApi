@@ -165,7 +165,8 @@ public sealed class RetentionService(
         var operations = await context.Database.ExecuteSqlInterpolatedAsync($"""
             WITH expired AS (
                 SELECT "Id" FROM snowshot.usage_operations
-                WHERE "SettledAt" < {operationCutoff} AND "State" IN ({(int)ReservationState.Committed}, {(int)ReservationState.Released}, {(int)ReservationState.UnknownCost})
+                WHERE "SettledAt" < {operationCutoff}
+                  AND "State" NOT IN ({(int)ReservationState.Reserved}, {(int)ReservationState.Dispatched})
                 ORDER BY "SettledAt" LIMIT {batchSize}
             ), attempts AS (
                 DELETE FROM snowshot.provider_attempts WHERE "OperationId" IN (SELECT "Id" FROM expired)

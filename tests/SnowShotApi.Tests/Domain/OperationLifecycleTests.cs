@@ -49,7 +49,7 @@ public sealed class OperationLifecycleTests
             TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), LifecycleTimeouts.Defaults, telemetry);
 
         var error = await scope.CompleteAsync(new OperationSettlement(scope.Handle, NanoYuan.Zero, NanoYuan.Zero,
-            false, false, false, 0, 0, "failed"));
+            false, CostBasis.Unknown, false, 0, 0, "failed"));
 
         Assert.Equal("settlement_failed", error?.Detail);
         var failure = Assert.Single(telemetry.Failures);

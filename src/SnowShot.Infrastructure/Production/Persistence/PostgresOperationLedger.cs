@@ -249,6 +249,7 @@ internal sealed class PostgresOperationLedger(
                 Resource = attempt.Resource,
                 State = ProviderAttemptState.Prepared,
                 DispatchState = AttemptDispatchState.Prepared,
+                CostBasis = CostBasis.Unknown,
                 StartedAt = attempt.StartedAt,
             });
             await context.SaveChangesAsync(cancellationToken);
@@ -360,7 +361,8 @@ internal sealed class PostgresOperationLedger(
         if (attempt.DispatchState == AttemptDispatchState.Prepared ||
             attempt.CompletedAt < attempt.StartedAt || string.IsNullOrWhiteSpace(attempt.Outcome) ||
             (attempt.DispatchState == AttemptDispatchState.NotDispatched &&
-             (!attempt.CostKnown || attempt.Cost != NanoYuan.Zero)))
+             (attempt.Basis != CostBasis.Exact || attempt.Cost != NanoYuan.Zero)) ||
+            (attempt.Basis == CostBasis.Unknown && attempt.Cost != NanoYuan.Zero))
             return AttemptCompletionResult.Conflict;
         entity.State = ProviderAttemptState.Completed;
         entity.DispatchState = attempt.DispatchState;
@@ -369,7 +371,7 @@ internal sealed class PostgresOperationLedger(
         entity.InputUnits = attempt.InputUnits;
         entity.OutputUnits = attempt.OutputUnits;
         entity.CostNanoYuan = attempt.Cost.Value;
-        entity.CostKnown = attempt.CostKnown;
+        entity.CostBasis = attempt.Basis;
         entity.CompletedAt = attempt.CompletedAt;
         return AttemptCompletionResult.Transitioned;
     }
@@ -396,21 +398,27 @@ internal sealed class PostgresOperationLedger(
             : operation.State;
         var attempts = await context.ProviderAttempts.Where(value => value.OperationId == operation.Id)
             .AsNoTracking().ToListAsync(cancellationToken);
-        var attemptsCertain = attempts.All(value => value.State == ProviderAttemptState.Completed && value.CostKnown &&
+        // Durable attempt checkpoints are the only cost evidence; an attempt with an
+        // unknown basis (unresolved dispatch or abandoned preparation) forfeits certainty
+        // for the whole operation. Exact and estimated attempts are summed per attempt.
+        var attemptsCertain = attempts.All(value => value.State == ProviderAttemptState.Completed &&
+            value.CostBasis != CostBasis.Unknown &&
             value.DispatchState is AttemptDispatchState.NotDispatched or AttemptDispatchState.Dispatched) &&
             (sourceState == ReservationState.Reserved || attempts.Count > 0);
+        var allExact = attemptsCertain && attempts.All(value => value.CostBasis == CostBasis.Exact);
+        var basis = !attemptsCertain ? CostBasis.Unknown : allExact ? CostBasis.Exact : CostBasis.Estimated;
         var operatorCost = attemptsCertain
             ? new NanoYuan(attempts.Aggregate(0L, (total, attempt) => checked(total + attempt.CostNanoYuan)))
             : snapshot.OperatorMaximum;
         var effective = settlement with
         {
             ReportedOperatorCost = operatorCost,
-            CostKnown = settlement.CostKnown && attemptsCertain,
-            VerifiableOverage = settlement.VerifiableOverage && attemptsCertain,
+            Basis = basis,
+            VerifiableOverage = settlement.VerifiableOverage && allExact,
         };
         var decision = ReservationRules.Settle(sourceState, snapshot,
             effective.ReportedPublicCost, effective.ReportedOperatorCost, effective.Delivered,
-            effective.CostKnown, effective.VerifiableOverage, effective.InputUnits,
+            effective.Basis, effective.VerifiableOverage, effective.InputUnits,
             effective.OutputUnits, effective.Outcome);
         var fingerprint = Convert.FromHexString(decision.Fingerprint);
         if (operation.State.IsTerminal())
@@ -463,7 +471,7 @@ internal sealed class PostgresOperationLedger(
             PublicCostNanoYuan = decision.PublicCost.Value,
             OperatorCostNanoYuan = decision.OperatorCost.Value,
             OperatorOverageNanoYuan = decision.OperatorOverage.Value,
-            CostKnown = effective.CostKnown,
+            CostBasis = effective.Basis,
             OccurredAt = now,
         });
         await context.SaveChangesAsync(cancellationToken);
@@ -506,7 +514,7 @@ internal sealed class PostgresOperationLedger(
                 var reserved = selectedReserved.Value;
                 var handle = Handle(operation);
                 var settlement = new OperationSettlement(handle, NanoYuan.Zero, NanoYuan.Zero,
-                    false, true, true, 0, 0,
+                    false, CostBasis.Exact, true, 0, 0,
                     reserved ? "expired_before_dispatch" : "expired_unknown_cost");
                 var result = await SettleLockedAsync(context, operation, settlement, requireOwner: false, cancellationToken);
                 if (!result.Accepted) throw new InvalidOperationException("Locked reconciliation settlement was rejected.");
@@ -659,7 +667,7 @@ internal sealed class PostgresOperationLedger(
         entity.State == ProviderAttemptState.Completed && entity.DispatchState == attempt.DispatchState &&
         string.Equals(entity.Outcome, attempt.Outcome, StringComparison.Ordinal) && entity.HttpStatus == attempt.HttpStatus &&
         entity.InputUnits == attempt.InputUnits && entity.OutputUnits == attempt.OutputUnits &&
-        entity.CostNanoYuan == attempt.Cost.Value && entity.CostKnown == attempt.CostKnown &&
+        entity.CostNanoYuan == attempt.Cost.Value && entity.CostBasis == attempt.Basis &&
         entity.CompletedAt is not null && SameDatabaseTimestamp(entity.CompletedAt.Value, attempt.CompletedAt);
 
     private static bool SameDatabaseTimestamp(DateTimeOffset left, DateTimeOffset right) =>
@@ -678,17 +686,18 @@ internal sealed class PostgresOperationLedger(
         UsageEventEntity? committedEvent)
     {
         if (committedEvent is not null)
-            Observe(operation.Resource, committedEvent.Outcome, result.Decision!, committedEvent.CostKnown);
+            Observe(operation.Resource, committedEvent.Outcome, result.Decision!, committedEvent.CostBasis);
     }
 
     private static Task<int> UpsertAggregateAsync(SnowShotDbContext context, UsageOperationEntity operation,
         OperationSettlement settlement, SettlementDecision decision, CancellationToken token) =>
         context.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO snowshot.daily_aggregates ("UsageDate", "Kind", "Resource", "Requests", "UnknownCostRequests", "InputUnits", "OutputUnits", "PublicCostNanoYuan", "OperatorCostNanoYuan", "OperatorOverageNanoYuan", "UpdatedAt")
-            VALUES ({operation.AllowanceDate}, {(int)operation.Kind}, {operation.Resource}, 1, {(!settlement.CostKnown ? 1 : 0)}, {settlement.InputUnits}, {settlement.OutputUnits}, {decision.PublicCost.Value}, {decision.OperatorCost.Value}, {decision.OperatorOverage.Value}, {operation.SettledAt!.Value})
+            INSERT INTO snowshot.daily_aggregates ("UsageDate", "Kind", "Resource", "Requests", "UnknownCostRequests", "EstimatedCostRequests", "InputUnits", "OutputUnits", "PublicCostNanoYuan", "OperatorCostNanoYuan", "OperatorOverageNanoYuan", "UpdatedAt")
+            VALUES ({operation.AllowanceDate}, {(int)operation.Kind}, {operation.Resource}, 1, {(settlement.Basis == CostBasis.Unknown ? 1 : 0)}, {(settlement.Basis == CostBasis.Estimated ? 1 : 0)}, {settlement.InputUnits}, {settlement.OutputUnits}, {decision.PublicCost.Value}, {decision.OperatorCost.Value}, {decision.OperatorOverage.Value}, {operation.SettledAt!.Value})
             ON CONFLICT ("UsageDate", "Kind", "Resource") DO UPDATE SET
               "Requests" = snowshot.daily_aggregates."Requests" + 1,
               "UnknownCostRequests" = snowshot.daily_aggregates."UnknownCostRequests" + EXCLUDED."UnknownCostRequests",
+              "EstimatedCostRequests" = snowshot.daily_aggregates."EstimatedCostRequests" + EXCLUDED."EstimatedCostRequests",
               "InputUnits" = snowshot.daily_aggregates."InputUnits" + EXCLUDED."InputUnits",
               "OutputUnits" = snowshot.daily_aggregates."OutputUnits" + EXCLUDED."OutputUnits",
               "PublicCostNanoYuan" = snowshot.daily_aggregates."PublicCostNanoYuan" + EXCLUDED."PublicCostNanoYuan",
@@ -697,12 +706,13 @@ internal sealed class PostgresOperationLedger(
               "UpdatedAt" = EXCLUDED."UpdatedAt"
             """, token);
 
-    private static void Observe(string resource, string outcome, SettlementDecision decision, bool costKnown)
+    private static void Observe(string resource, string outcome, SettlementDecision decision, CostBasis basis)
     {
         var tags = new KeyValuePair<string, object?>[] { new("resource", resource) };
         SnowShotTelemetry.PublicCost.Add(decision.PublicCost.Value, tags);
         SnowShotTelemetry.OperatorCost.Add(decision.OperatorCost.Value, tags);
-        if (!costKnown) SnowShotTelemetry.UnknownCost.Add(1, tags);
+        if (basis == CostBasis.Unknown) SnowShotTelemetry.UnknownCost.Add(1, tags);
+        if (basis == CostBasis.Estimated) SnowShotTelemetry.EstimatedCost.Add(1, tags);
         if (decision.OperatorOverage > NanoYuan.Zero) SnowShotTelemetry.Overage.Add(decision.OperatorOverage.Value, tags);
     }
 }

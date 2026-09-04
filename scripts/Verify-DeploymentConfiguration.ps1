@@ -1,7 +1,7 @@
 param(
     [string]$ApplicationSettingsPath = "src/SnowShotApi/appsettings.json",
     [string]$NginxConfigurationPath = "deployment/nginx/snowshot.top.conf",
-    [string]$RestorePolicyPath = "deployment/policy/policy-revision-6.json"
+    [string]$RestorePolicyPath = "deployment/policy/policy-revision-9.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,11 +20,17 @@ $settings = Get-Content -LiteralPath $ApplicationSettingsPath -Raw | ConvertFrom
 $nginx = Get-Content -LiteralPath $NginxConfigurationPath -Raw
 $restore = Get-Content -LiteralPath $RestorePolicyPath -Raw | ConvertFrom-Json
 
-if ([long]$settings.Policy.PrincipalDailyAllowanceNanoYuan -ne 6000000000) {
-    throw "The temporary per-user daily allowance must be 6000000000 NanoYuan (6 yuan)."
+if ([long]$settings.Policy.Revision -ne 9) {
+    throw "The active policy revision must be 9."
 }
-if ([long]$settings.Policy.DailyOperatorBudgetNanoYuan -ne 100000000000) {
-    throw "The temporary daily operator budget must be 100000000000 NanoYuan (100 yuan)."
+if ([long]$settings.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000) {
+    throw "The per-user daily allowance must be 3000000000 NanoYuan (3 yuan)."
+}
+if ([long]$settings.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000) {
+    throw "The daily operator budget must be 50000000000 NanoYuan (50 yuan)."
+}
+if ([long]$settings.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
+    throw "The monthly operator budget must be 1000000000000 NanoYuan (1000 yuan)."
 }
 $operatorMaximums = @($settings.Policy.Resources.PSObject.Properties | ForEach-Object {
     [long]$_.Value.OperatorMaximumNanoYuan
@@ -32,24 +38,27 @@ $operatorMaximums = @($settings.Policy.Resources.PSObject.Properties | ForEach-O
 if ($operatorMaximums.Count -eq 0 -or @($operatorMaximums | Where-Object { $_ -ne 30000000 }).Count -ne 0) {
     throw "Every resource OperatorMaximumNanoYuan must be exactly 30000000 (0.03 yuan)."
 }
-if ([long]$restore.Policy.Revision -ne 6 -or
+if ([long]$settings.Policy.Estimation.BytesPerInputToken -ne 3 -or [long]$settings.Policy.Estimation.CharsPerOutputToken -ne 2) {
+    throw "The cost estimation ratios must be 3 payload bytes per input token and 2 delivered characters per output token."
+}
+if ([long]$restore.Policy.Revision -ne 9 -or
     [long]$restore.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000 -or
     [long]$restore.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000 -or
-    [long]$restore.Policy.MonthlyOperatorBudgetNanoYuan -ne 500000000000) {
-    throw "Revision 6 must restore the 3 yuan user allowance and 50 yuan daily operator budget while preserving the 500 yuan monthly budget."
+    [long]$restore.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
+    throw "Revision 9 must preserve the 3 yuan user allowance, 50 yuan daily operator budget, and 1000 yuan monthly budget."
 }
 $restoreMaximums = @($restore.Policy.Resources.PSObject.Properties | ForEach-Object {
     [long]$_.Value.OperatorMaximumNanoYuan
 })
 if ($restoreMaximums.Count -ne $operatorMaximums.Count -or
     @($restoreMaximums | Where-Object { $_ -ne 30000000 }).Count -ne 0) {
-    throw "Revision 6 must preserve every resource OperatorMaximumNanoYuan at 30000000."
+    throw "Revision 9 must preserve every resource OperatorMaximumNanoYuan at 30000000."
 }
 
 $models = @($settings.Providers.Translation.LogicalModels)
-$expectedModels = @("deepseek-v4-flash", "qwen-plus")
+$expectedModels = @("qwen-mt-flash")
 if (($models -join "`n") -ne ($expectedModels -join "`n")) {
-    throw "Translation logical models must be ordered as deepseek-v4-flash, qwen-plus."
+    throw "Translation logical models must be qwen-mt-flash only."
 }
 
 $translationDeadline = [int]$settings.Policy.Resources.translation.ExecutionDeadlineSeconds

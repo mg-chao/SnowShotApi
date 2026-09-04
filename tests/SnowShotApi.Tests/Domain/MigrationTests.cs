@@ -12,7 +12,7 @@ public sealed class MigrationTests
     {
         using var context = Context();
         Assert.False(context.Database.HasPendingModelChanges());
-        Assert.Equal(2, context.Database.GetMigrations().Count());
+        Assert.Equal(3, context.Database.GetMigrations().Count());
     }
 
     [Fact]

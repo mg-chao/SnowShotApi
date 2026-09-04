@@ -38,6 +38,7 @@ public sealed class PolicyOptions
     [Range(1, long.MaxValue)] public long MonthlyOperatorBudgetNanoYuan { get; init; } = 200_000_000_000;
     [Range(2, 3600)] public int ActiveLeaseTtlSeconds { get; init; } = 30;
     [Range(1, 3599)] public int LeaseRenewalSeconds { get; init; } = 10;
+    public EstimationOptions Estimation { get; init; } = new();
     public Dictionary<string, ResourcePricingOptions> Pricing { get; init; } = [];
     public Dictionary<string, ResourcePolicyOptions> Resources { get; init; } = [];
 
@@ -71,7 +72,8 @@ public sealed class PolicyOptions
             .Select(pair => BuildResource(pair.Key, pair.Value, Price(pair.Key), null)))
             .ToArray();
         return new ServicePolicy(Revision, resources, new(PrincipalDailyAllowanceNanoYuan), new(DailyOperatorBudgetNanoYuan),
-            new(MonthlyOperatorBudgetNanoYuan), TimeSpan.FromSeconds(ActiveLeaseTtlSeconds), TimeSpan.FromSeconds(LeaseRenewalSeconds), additional);
+            new(MonthlyOperatorBudgetNanoYuan), TimeSpan.FromSeconds(ActiveLeaseTtlSeconds), TimeSpan.FromSeconds(LeaseRenewalSeconds),
+            additional, new(Estimation.BytesPerInputToken, Estimation.CharsPerOutputToken));
     }
 
     private UnitPrice Price(string resource)
@@ -98,6 +100,13 @@ public sealed class PolicyOptions
             ? new ResourcePolicy(resource, price, admission, deadline, maximum)
             : fallback with { Price = price, Admission = admission, ExecutionDeadline = deadline, OperatorMaximum = maximum };
     }
+}
+
+public sealed class EstimationOptions
+{
+    public const string SectionName = "Policy:Estimation";
+    [Range(1, EstimationRatios.MaximumRatio)] public long BytesPerInputToken { get; init; } = 3;
+    [Range(1, EstimationRatios.MaximumRatio)] public long CharsPerOutputToken { get; init; } = 2;
 }
 
 public sealed class ResourcePricingOptions

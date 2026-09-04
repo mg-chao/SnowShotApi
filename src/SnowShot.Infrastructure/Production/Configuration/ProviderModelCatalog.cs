@@ -20,7 +20,8 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
 {
     private readonly Dictionary<string, CloudProviderDefinition> _providers;
     private readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, ProviderAccessDefinition>> _models;
-    private readonly IReadOnlyList<ChatModelDefinition> _chatModels;
+    private readonly HashSet<string> _translationModels;
+    private readonly ChatModelDefinition[] _chatModels;
 
     public ProviderModelCatalog(ProviderModelsOptions options, TranslationProviderOptions translation, bool requireHttps)
     {
@@ -72,14 +73,21 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
             }, StringComparer.Ordinal);
         }, StringComparer.Ordinal);
 
-        _chatModels = options.Models.OrderBy(model => model.Value.Order).ThenBy(model => model.Key, StringComparer.Ordinal)
-            .Select(model => new ChatModelDefinition(model.Key, model.Value.Thinking, model.Value.SupportVision))
+        // Models designated for the translation service are also offered for chat,
+        // flagged so clients can present them as translation-specialized.
+        _translationModels = translation.LogicalModels.ToHashSet(StringComparer.Ordinal);
+        _chatModels = options.Models
+            .OrderBy(model => model.Value.Order).ThenBy(model => model.Key, StringComparer.Ordinal)
+            .Select(model => new ChatModelDefinition(model.Key, model.Value.Thinking, model.Value.SupportVision,
+                _translationModels.Contains(model.Key)))
             .ToArray();
     }
 
     public IReadOnlyList<ChatModelDefinition> Models => _chatModels;
 
     public bool Contains(string model) => _models.ContainsKey(model);
+
+    public bool IsTranslationModel(string model) => _translationModels.Contains(model);
 
     public IReadOnlyList<ProviderAccessSelection> Selections(string logicalModel) =>
         Model(logicalModel).Values.Select(value => value.Selection).OrderBy(value => value.AccessId, StringComparer.Ordinal).ToArray();

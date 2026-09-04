@@ -5,7 +5,17 @@ using System.Collections.Immutable;
 namespace SnowShot.Domain;
 
 public enum UsageKind { Translation, Chat, TableExtraction }
-public enum ReservationState { Reserved, Dispatched, Committed, Released, UnknownCost }
+public enum ReservationState { Reserved, Dispatched, Committed, Released, UnknownCost, EstimatedCost }
+
+public enum CostBasis
+{
+    /// <summary>Cost computed from verified units, or an exact zero-cost rejection.</summary>
+    Exact = 0,
+    /// <summary>Cost estimated from durable local evidence (transmitted payload, delivered content).</summary>
+    Estimated = 1,
+    /// <summary>No cost evidence; the operator reservation maximum is charged.</summary>
+    Unknown = 2,
+}
 
 public static class ReservationStates
 {
@@ -74,7 +84,8 @@ public static class ReservationRules
     public static bool CanTransition(ReservationState from, ReservationState to) => (from, to) switch
     {
         (ReservationState.Reserved, ReservationState.Dispatched or ReservationState.Released) => true,
-        (ReservationState.Dispatched, ReservationState.Committed or ReservationState.Released or ReservationState.UnknownCost) => true,
+        (ReservationState.Dispatched, ReservationState.Committed or ReservationState.Released or
+            ReservationState.UnknownCost or ReservationState.EstimatedCost) => true,
         _ => false,
     };
 
@@ -84,7 +95,7 @@ public static class ReservationRules
         NanoYuan reportedPublic,
         NanoYuan reportedOperator,
         bool delivered,
-        bool costKnown,
+        CostBasis basis,
         bool verifiableOverage,
         long inputUnits,
         long outputUnits,
@@ -96,19 +107,22 @@ public static class ReservationRules
         }
 
         var publicCost = delivered ? reportedPublic : NanoYuan.Zero;
-        var operatorCost = costKnown ? reportedOperator : snapshot.OperatorMaximum;
-        if (operatorCost > snapshot.OperatorMaximum && !verifiableOverage)
+        var operatorCost = basis == CostBasis.Unknown ? snapshot.OperatorMaximum : reportedOperator;
+        if (operatorCost > snapshot.OperatorMaximum && !(basis == CostBasis.Exact && verifiableOverage))
         {
             operatorCost = snapshot.OperatorMaximum;
         }
         var overage = operatorCost > snapshot.OperatorMaximum
             ? new NanoYuan(operatorCost.Value - snapshot.OperatorMaximum.Value)
             : NanoYuan.Zero;
-        var state = costKnown
-            ? (delivered ? ReservationState.Committed : ReservationState.Released)
-            : ReservationState.UnknownCost;
+        var state = basis switch
+        {
+            CostBasis.Exact => delivered ? ReservationState.Committed : ReservationState.Released,
+            CostBasis.Estimated => ReservationState.EstimatedCost,
+            _ => ReservationState.UnknownCost,
+        };
         var canonical = string.Join('|', state, publicCost.Value, operatorCost.Value, overage.Value,
-            delivered, costKnown, verifiableOverage, inputUnits, outputUnits, outcome);
+            delivered, (int)basis, verifiableOverage, inputUnits, outputUnits, outcome);
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
         return new(state, publicCost, operatorCost, overage, fingerprint);
     }

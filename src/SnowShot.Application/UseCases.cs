@@ -58,10 +58,10 @@ public sealed class ChatUseCase(
                     yield break;
                 }
                 var poolAttempt = new ProviderAttempt(poolPreparation.Value!.Id, scope.Handle.OperationId, attemptNumber,
-                    "provider-pool", request.Model, accessError.Detail, null, 0, 0, NanoYuan.Zero, true,
+                    "provider-pool", request.Model, accessError.Detail, null, 0, 0, NanoYuan.Zero, CostBasis.Exact,
                     AttemptDispatchState.NotDispatched, poolStartedAt, clock.UtcNow);
                 var poolSettlementError = await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, NanoYuan.Zero,
-                    false, true, true, 0, 0, accessError.Detail), poolAttempt);
+                    false, CostBasis.Exact, true, 0, 0, accessError.Detail), poolAttempt);
                 yield return new ChatApplicationEvent.Failed(poolSettlementError ?? accessError);
                 yield break;
             }
@@ -94,7 +94,7 @@ public sealed class ChatUseCase(
                 if (cancellationFailure is not null)
                 {
                     await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, NanoYuan.Zero,
-                        false, false, false, 0, 0, cancellationFailure.Detail));
+                        false, CostBasis.Unknown, false, 0, 0, cancellationFailure.Detail));
                     if (cancellationToken.IsCancellationRequested) cancellationToken.ThrowIfCancellationRequested();
                     yield return new ChatApplicationEvent.Failed(cancellationFailure);
                     yield break;
@@ -128,7 +128,7 @@ public sealed class ChatUseCase(
                 var usage = terminal.Usage;
                 var actual = usage is null ? NanoYuan.Zero : resourcePolicy.Price.Calculate(usage.PromptTokens, usage.CompletionTokens);
                 var settlement = await scope.CompleteAsync(new(scope.Handle, actual, terminal.Attempt.Cost,
-                    terminal.Delivered, terminal.CostKnown, terminal.CostKnown,
+                    terminal.Delivered, terminal.Attempt.Basis, terminal.Attempt.CostKnown,
                     usage?.PromptTokens ?? 0, usage?.CompletionTokens ?? 0, terminal.Outcome), terminal.Attempt);
                 if (settlement is not null) { yield return new ChatApplicationEvent.Failed(settlement); yield break; }
                 yield return new ChatApplicationEvent.Completed();
@@ -145,7 +145,7 @@ public sealed class ChatUseCase(
             }
 
             var failedSettlement = await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, failed.Attempt.Cost,
-                false, failed.Attempt.CostKnown, failed.Attempt.CostKnown,
+                false, failed.Attempt.Basis, failed.Attempt.CostKnown,
                 failed.Attempt.InputUnits, failed.Attempt.OutputUnits, failed.Category), failed.Attempt);
             yield return new ChatApplicationEvent.Failed(failedSettlement ??
                 new(ApplicationErrorCode.ProviderFailure, failed.Category));
@@ -154,12 +154,12 @@ public sealed class ChatUseCase(
             ChatProviderEvent.Failure SyntheticFailure(string outcome, bool retryable, AttemptDispatchState state) =>
                 new(outcome, retryable, new(prepared.Value!.Id, scope.Handle.OperationId, attemptNumber,
                     access.AttemptProvider, request.Model, outcome, null, 0, 0, NanoYuan.Zero,
-                    false, state, attemptStartedAt, clock.UtcNow));
+                    CostBasis.Unknown, state, attemptStartedAt, clock.UtcNow));
         }
 
         var deadlineError = new ApplicationError(ApplicationErrorCode.DeadlineExceeded, "chat_deadline");
         await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, NanoYuan.Zero,
-            false, false, false, 0, 0, deadlineError.Detail));
+            false, CostBasis.Unknown, false, 0, 0, deadlineError.Detail));
         yield return new ChatApplicationEvent.Failed(deadlineError);
     }
 
@@ -212,10 +212,10 @@ public sealed class TranslationUseCase(
             var local = await scope.PrepareAttemptAsync(1, "translation-local", Resources.Translation, localStarted, linked.Token);
             if (!local.IsSuccess) return ApplicationResult.Failure<TranslationResult>(local.Error!);
             var attempt = new ProviderAttempt(local.Value!.Id, scope.Handle.OperationId, 1, "translation-local",
-                Resources.Translation, "unchanged", null, 0, 0, NanoYuan.Zero, true,
+                Resources.Translation, "unchanged", null, 0, 0, NanoYuan.Zero, CostBasis.Exact,
                 AttemptDispatchState.NotDispatched, localStarted, clock.UtcNow);
             var localSettlementError = await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, NanoYuan.Zero,
-                true, true, true, 0, 0, "unchanged"), attempt);
+                true, CostBasis.Exact, true, 0, 0, "unchanged"), attempt);
             return localSettlementError is null
                 ? ApplicationResult.Success(new TranslationResult(content, request.From, request.To))
                 : ApplicationResult.Failure<TranslationResult>(localSettlementError);
@@ -251,7 +251,9 @@ public sealed class TranslationUseCase(
         var operatorCost = attempts.Aggregate(NanoYuan.Zero, (total, attempt) => total + attempt.Attempt.Cost);
         var operatorInput = attempts.Aggregate(0L, (total, attempt) => checked(total + attempt.OperatorInputCharacters));
         var operatorOutput = attempts.Aggregate(0L, (total, attempt) => checked(total + attempt.OperatorOutputCharacters));
-        var allKnown = attempts.All(attempt => attempt.CostKnown);
+        var basis = attempts.Any(attempt => attempt.Attempt.Basis == CostBasis.Unknown)
+            ? CostBasis.Unknown
+            : attempts.All(attempt => attempt.Attempt.Basis == CostBasis.Exact) ? CostBasis.Exact : CostBasis.Estimated;
 
         BatchFailure? failure = linked.IsCancellationRequested
             ? new(CancellationError(scope, deadline, cancellationToken), CancellationOutcome(scope, deadline, cancellationToken))
@@ -260,7 +262,7 @@ public sealed class TranslationUseCase(
         {
             failure ??= new(new(ApplicationErrorCode.ProviderFailure, "translation_incomplete"), "translation_incomplete");
             var settlementError = await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, operatorCost, false,
-                allKnown, allKnown, operatorInput, operatorOutput, failure.Outcome));
+                basis, basis == CostBasis.Exact, operatorInput, operatorOutput, failure.Outcome));
             if (cancellationToken.IsCancellationRequested) cancellationToken.ThrowIfCancellationRequested();
             return ApplicationResult.Failure<TranslationResult>(settlementError ?? failure.Error);
         }
@@ -269,8 +271,8 @@ public sealed class TranslationUseCase(
         var publicInput = successful.Aggregate(0L, (total, result) => checked(total + result.PublicInputCharacters));
         var publicOutput = successful.Aggregate(0L, (total, result) => checked(total + result.PublicOutputCharacters));
         var publicActual = resourcePolicy.Price.Calculate(publicInput, publicOutput);
-        var error = await scope.CompleteAsync(new(scope.Handle, publicActual, operatorCost, true, allKnown, allKnown,
-            operatorInput, operatorOutput, "success"));
+        var error = await scope.CompleteAsync(new(scope.Handle, publicActual, operatorCost, true, basis,
+            basis == CostBasis.Exact, operatorInput, operatorOutput, "success"));
         return error is null
             ? ApplicationResult.Success(new TranslationResult(successful.Select(result => result.Value).ToArray(), request.From, request.To))
             : ApplicationResult.Failure<TranslationResult>(error);
@@ -343,10 +345,10 @@ public sealed class TranslationUseCase(
                     }
                     if (!preparation.IsSuccess) return ItemWorkResult.Failed(preparation.Error!, preparation.Error!.Detail);
                     var poolAttempt = new ProviderAttempt(preparation.Value!.Id, scope.Handle.OperationId, attemptNumber,
-                        poolProvider, Resources.Translation, accessError.Detail, null, 0, 0, NanoYuan.Zero, true,
+                        poolProvider, Resources.Translation, accessError.Detail, null, 0, 0, NanoYuan.Zero, CostBasis.Exact,
                         AttemptDispatchState.NotDispatched, poolStartedAt, clock.UtcNow);
                     var poolResult = new TranslationProviderResult(false, [], 0, 0, 0, 0, accessError.Detail,
-                        true, accessLease.RejectionReason == ProviderAccessRejectionReason.Saturated,
+                        CostBasis.Exact, accessLease.RejectionReason == ProviderAccessRejectionReason.Saturated,
                         accessLease.RetryAfter, poolAttempt);
                     completedAttempts.Add(poolResult);
                     var poolCompletion = await scope.CompleteAttemptAsync(poolAttempt, CancellationToken.None);
@@ -402,17 +404,17 @@ public sealed class TranslationUseCase(
                 catch (HttpRequestException)
                 {
                     var attempt = new ProviderAttempt(prepared.Value!.Id, scope.Handle.OperationId, attemptNumber,
-                        access.AttemptProvider, Resources.Translation, "network", null, 0, 0, NanoYuan.Zero, false,
+                        access.AttemptProvider, Resources.Translation, "network", null, 0, 0, NanoYuan.Zero, CostBasis.Unknown,
                         AttemptDispatchState.Unknown, attemptStartedAt, clock.UtcNow);
-                    providerResult = new(false, [], 0, 0, 0, 0, "network", false, true, null, attempt);
+                    providerResult = new(false, [], 0, 0, 0, 0, "network", CostBasis.Unknown, true, null, attempt);
                 }
                 catch (OperationCanceledException)
                 {
                     const string outcome = "cancelled";
                     var attempt = new ProviderAttempt(prepared.Value!.Id, scope.Handle.OperationId, attemptNumber,
-                        access.AttemptProvider, Resources.Translation, outcome, null, 0, 0, NanoYuan.Zero, false,
+                        access.AttemptProvider, Resources.Translation, outcome, null, 0, 0, NanoYuan.Zero, CostBasis.Unknown,
                         AttemptDispatchState.Unknown, attemptStartedAt, clock.UtcNow);
-                    providerResult = new(false, [], 0, 0, 0, 0, outcome, false, true, null, attempt);
+                    providerResult = new(false, [], 0, 0, 0, 0, outcome, CostBasis.Unknown, true, null, attempt);
                 }
 
                 completedAttempts.Add(providerResult);
@@ -529,14 +531,15 @@ public sealed class TableUseCase(
             var error = scope.OwnershipLost.IsCancellationRequested
                 ? new ApplicationError(ApplicationErrorCode.LeaseLost, "ownership_lost")
                 : new ApplicationError(ApplicationErrorCode.DeadlineExceeded, "table_deadline");
-            await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, NanoYuan.Zero, false, false, false, 0, 0, error.Detail));
+            await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, NanoYuan.Zero, false, CostBasis.Unknown,
+                false, 0, 0, error.Detail));
             if (cancellationToken.IsCancellationRequested) cancellationToken.ThrowIfCancellationRequested();
             return ApplicationResult.Failure<TableExtractionResult>(error);
         }
 
         var success = result.Status == TableExtractionStatus.Success;
         var settlementError = await scope.CompleteAsync(new(scope.Handle, success ? price : NanoYuan.Zero,
-            result.Attempt.Cost, success, result.Attempt.CostKnown, result.Attempt.CostKnown,
+            result.Attempt.Cost, success, result.Attempt.Basis, result.Attempt.CostKnown,
             success ? 1 : 0, 0, result.Status.ToString().ToLowerInvariant()), result.Attempt);
         return settlementError is null
             ? ApplicationResult.Success(result)

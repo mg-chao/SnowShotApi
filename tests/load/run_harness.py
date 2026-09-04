@@ -189,7 +189,7 @@ def assert_crash_reconciliation() -> None:
     reset_provider()
     unknown_before = int(sql('SELECT count(*) FROM snowshot.usage_operations WHERE "State" = 4;'))
     chat = {
-        "model": "qwen-flash",
+        "model": "qwen3.8-flash",
         "messages": [{"role": "user", "content": "delay=120"}],
         "temperature": 0,
         "max_tokens": 512,

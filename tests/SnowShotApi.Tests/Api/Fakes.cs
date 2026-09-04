@@ -36,26 +36,21 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["ConnectionStrings:SnowShot"] = "Host=127.0.0.1;Database=unused;Username=unused;Password=unused",
             ["ConnectionStrings:Redis"] = "",
             ["Identity:HmacKeyBase64"] = Convert.ToBase64String(new byte[32]),
-            ["Providers:Translation:LogicalModels:0"] = "deepseek-v4-flash",
-            ["Providers:Translation:LogicalModels:1"] = "qwen-plus",
+            ["Providers:Translation:LogicalModels:0"] = "qwen-mt-flash",
             ["Providers:CloudProviders:aliyun:Endpoint"] = "https://provider.test/chat",
             ["Providers:CloudProviders:aliyun:ApiKey"] = "test-key",
-            ["Providers:CloudProviders:deepseek:Endpoint"] = "https://provider.test/chat",
-            ["Providers:CloudProviders:deepseek:ApiKey"] = "test-key",
             ["Providers:CloudProviders:test:Endpoint"] = "https://provider.test/chat",
             ["Providers:CloudProviders:test:ApiKey"] = "test-key",
-            ["Providers:Models:qwen-flash:Accesses:aliyun:Provider"] = "test",
-            ["Providers:Models:qwen-flash:Accesses:aliyun:UpstreamModel"] = "qwen-flash",
-            ["Providers:Models:qwen-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
-            ["Providers:Models:qwen-plus:Accesses:aliyun:Provider"] = "test",
-            ["Providers:Models:qwen-plus:Accesses:aliyun:UpstreamModel"] = "qwen-plus",
-            ["Providers:Models:qwen-plus:Accesses:aliyun:MaxConcurrentRequests"] = "16",
+            ["Providers:Models:qwen3.8-flash:Accesses:aliyun:Provider"] = "test",
+            ["Providers:Models:qwen3.8-flash:Accesses:aliyun:UpstreamModel"] = "qwen3.8-flash",
+            ["Providers:Models:qwen3.8-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:Provider"] = "test",
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:UpstreamModel"] = "qwen3-vl-flash",
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
-            ["Providers:Models:deepseek-v4-flash:Accesses:aliyun:Provider"] = "test",
-            ["Providers:Models:deepseek-v4-flash:Accesses:aliyun:UpstreamModel"] = "deepseek-v4-flash",
-            ["Providers:Models:deepseek-v4-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
+            ["Providers:Models:qwen-mt-flash:Thinking"] = "false",
+            ["Providers:Models:qwen-mt-flash:Accesses:aliyun:Provider"] = "test",
+            ["Providers:Models:qwen-mt-flash:Accesses:aliyun:UpstreamModel"] = "qwen-mt-flash",
+            ["Providers:Models:qwen-mt-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
             ["Providers:Table:BaseUrl"] = "http://table.test/",
         }));
         builder.ConfigureTestServices(services =>
@@ -191,7 +186,7 @@ internal sealed class FakeLedger : IOperationLedger
         Settlements.Enqueue(settlement);
         var operation = _operations[settlement.Handle.OperationId];
         var decision = ReservationRules.Settle(ReservationState.Dispatched, operation.Snapshot, settlement.ReportedPublicCost,
-            settlement.ReportedOperatorCost, settlement.Delivered, settlement.CostKnown, settlement.VerifiableOverage,
+            settlement.ReportedOperatorCost, settlement.Delivered, settlement.Basis, settlement.VerifiableOverage,
             settlement.InputUnits, settlement.OutputUnits, settlement.Outcome);
         SettlementCompleted = true;
         return Task.FromResult(new SettlementResult(true, decision));
@@ -201,6 +196,7 @@ internal sealed class FakeLedger : IOperationLedger
 internal sealed class FakeChatClient : IChatProviderClient
 {
     public bool ThrowAfterFrame { get; set; }
+    public bool TruncateAfterFrames { get; set; }
 
     public async IAsyncEnumerable<ChatProviderEvent> StreamAsync(ChatProviderCommand command,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
@@ -208,9 +204,18 @@ internal sealed class FakeChatClient : IChatProviderClient
         yield return new ChatProviderEvent.Frame(System.Text.Encoding.UTF8.GetBytes("{\"id\":\"chat-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"));
         await Task.Yield();
         if (ThrowAfterFrame) throw new InvalidOperationException("Simulated post-frame failure.");
-        yield return new ChatProviderEvent.Terminal(new ChatUsage(100, 20, 120), true, true, "success",
+        if (TruncateAfterFrames)
+        {
+            yield return new ChatProviderEvent.Failure("truncated_stream", false,
+                new(command.AttemptId, command.Operation.OperationId, command.AttemptNumber,
+                    command.Access.AttemptProvider, command.Request.Model, "truncated_stream", null, 40, 8,
+                    NanoYuan.Zero, CostBasis.Estimated, AttemptDispatchState.Dispatched,
+                    command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
+            yield break;
+        }
+        yield return new ChatProviderEvent.Terminal(new ChatUsage(100, 20, 120), true, CostBasis.Exact, "success",
             new(command.AttemptId, command.Operation.OperationId, command.AttemptNumber, command.Access.AttemptProvider, command.Request.Model, "success", 200, 100, 20,
-                new(36_000), true, AttemptDispatchState.Dispatched, command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
+                new(36_000), CostBasis.Exact, AttemptDispatchState.Dispatched, command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
     }
 }
 
@@ -244,14 +249,14 @@ internal sealed class FakeTranslationClient : ITranslationProviderClient
         bool retryable = false,
         TimeSpan? retryAfter = null,
         int? status = 200,
-        bool costKnown = true,
+        CostBasis basis = CostBasis.Exact,
         AttemptDispatchState dispatchState = AttemptDispatchState.Dispatched) =>
         new(success, success ? [value ?? $"translated:{command.Content}"] : [],
-            10, success ? 20 : 0, 10, 20, outcome, costKnown, retryable, retryAfter,
+            10, success ? 20 : 0, 10, 20, outcome, basis, retryable, retryAfter,
             new(command.AttemptId, command.Operation.OperationId, command.AttemptNumber, command.Access.AttemptProvider, Resources.Translation,
                 outcome, status, 10, 20,
-                costKnown && dispatchState == AttemptDispatchState.Dispatched ? new(180_000) : NanoYuan.Zero,
-                costKnown, dispatchState, command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
+                basis != CostBasis.Unknown && dispatchState == AttemptDispatchState.Dispatched ? new(180_000) : NanoYuan.Zero,
+                basis, dispatchState, command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
 }
 
 internal sealed class FakeTableClient : ITableWorkerClient
@@ -265,7 +270,7 @@ internal sealed class FakeTableClient : ITableWorkerClient
         return Task.FromResult(new TableExtractionResult(Status,
             Status == TableExtractionStatus.Success ? "<table><tr><td>ok</td></tr></table>" : null,
             new(command.AttemptId, command.Operation.OperationId, 1, "table-worker", Resources.TableExtraction, Status.ToString(), 200,
-                Status == TableExtractionStatus.Success ? 1 : 0, 0, cost, true, AttemptDispatchState.Dispatched,
+                Status == TableExtractionStatus.Success ? 1 : 0, 0, cost, CostBasis.Exact, AttemptDispatchState.Dispatched,
                 command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10))));
     }
 }

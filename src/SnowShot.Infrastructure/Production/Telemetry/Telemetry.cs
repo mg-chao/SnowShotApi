@@ -20,6 +20,7 @@ public static class SnowShotTelemetry
     public static readonly Counter<long> PublicCost = Meter.CreateCounter<long>("snowshot.cost.public.nanoyuan");
     public static readonly Counter<long> OperatorCost = Meter.CreateCounter<long>("snowshot.cost.operator.nanoyuan");
     public static readonly Counter<long> UnknownCost = Meter.CreateCounter<long>("snowshot.cost.unknown.operations");
+    public static readonly Counter<long> EstimatedCost = Meter.CreateCounter<long>("snowshot.cost.estimated.operations");
     public static readonly Counter<long> Overage = Meter.CreateCounter<long>("snowshot.cost.overage.nanoyuan");
     public static readonly Counter<long> Reconciliations = Meter.CreateCounter<long>("snowshot.reconciliations");
     public static readonly Counter<long> ReconciliationOutcomes = Meter.CreateCounter<long>("snowshot.reconciliation.outcomes");

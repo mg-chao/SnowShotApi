@@ -138,10 +138,14 @@ public sealed class PublicContractTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, document.RootElement.GetProperty("code").GetInt32());
         var models = document.RootElement.GetProperty("data");
-        Assert.Equal(["qwen-flash", "qwen-plus", "qwen3-vl-flash", "deepseek-v4-flash"],
+        Assert.Equal(["qwen3.8-flash", "qwen3-vl-flash", "qwen-mt-flash"],
             models.EnumerateArray().Select(value => value.GetProperty("model").GetString()!).ToArray());
-        Assert.Equal(["Qwen Flash", "Qwen Plus", "Qwen VL Flash", "DeepSeek V4 Flash"],
+        Assert.Equal(["Qwen Flash", "Qwen VL Flash", "Qwen MT Flash"],
             models.EnumerateArray().Select(value => value.GetProperty("name").GetString()!).ToArray());
+        Assert.Equal([false, false, true],
+            models.EnumerateArray().Select(value => value.GetProperty("translation").GetBoolean()).ToArray());
+        Assert.Equal([true, true, false],
+            models.EnumerateArray().Select(value => value.GetProperty("thinking").GetBoolean()).ToArray());
     }
 
     [Fact]
@@ -155,7 +159,7 @@ public sealed class PublicContractTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(["通义千问 Flash", "通义千问 Plus", "通义千问 VL Flash", "DeepSeek V4 Flash"],
+        Assert.Equal(["通义千问 Flash", "通义千问 VL Flash", "通义千问 MT Flash"],
             document.RootElement.GetProperty("data").EnumerateArray()
                 .Select(value => value.GetProperty("name").GetString()!).ToArray());
     }
@@ -192,7 +196,7 @@ public sealed class PublicContractTests
         Assert.Equal(2, factory.Ledger.Preparations.Count);
         Assert.Equal(2, factory.Ledger.Attempts.Count);
         var routedModel = Assert.Single(factory.Translation.Commands.Select(command => command.Access.LogicalModel).Distinct());
-        Assert.Contains(routedModel, new[] { Resources.DeepSeekV4, Resources.QwenPlus });
+        Assert.Equal(Resources.QwenMtFlash, routedModel);
         Assert.All(factory.Ledger.Attempts, attempt => Assert.Equal($"{routedModel}/test/aliyun", attempt.Provider));
     }
 
@@ -263,8 +267,9 @@ public sealed class PublicContractTests
         var retried = factory.Translation.Commands.Where(command => command.ItemIndex == 3)
             .OrderBy(command => command.ItemAttemptNumber).ToArray();
         Assert.Equal(2, retried.Length);
+        Assert.Equal(Resources.QwenMtFlash, initialModel);
         Assert.Equal(initialModel, retried[0].Access.LogicalModel);
-        Assert.NotEqual(initialModel, retried[1].Access.LogicalModel);
+        Assert.Equal(initialModel, retried[1].Access.LogicalModel);
         Assert.Equal(9, factory.Ledger.Preparations.Count);
         Assert.Equal(9, factory.Ledger.Attempts.Count);
         var settlement = Assert.Single(factory.Ledger.Settlements);
@@ -275,7 +280,7 @@ public sealed class PublicContractTests
     }
 
     [Fact]
-    public async Task TranslationSwitchesModelsWhenTheInitialModelPoolIsSaturated()
+    public async Task TranslationRetriesTheSameModelWhenThePoolIsSaturated()
     {
         await using var factory = new ApiFactory();
         var acquisition = 0;
@@ -296,7 +301,8 @@ public sealed class PublicContractTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var requests = factory.ProviderAccess.Requests.ToArray();
         Assert.Equal(2, requests.Length);
-        Assert.NotEqual(requests[0].LogicalModel, requests[1].LogicalModel);
+        Assert.Equal(Resources.QwenMtFlash, requests[0].LogicalModel);
+        Assert.Equal(requests[0].LogicalModel, requests[1].LogicalModel);
         var attempts = factory.Ledger.Attempts.OrderBy(attempt => attempt.AttemptNumber).ToArray();
         Assert.Equal(2, attempts.Length);
         Assert.Equal($"{requests[0].LogicalModel}/provider-pool", attempts[0].Provider);
@@ -351,9 +357,7 @@ public sealed class PublicContractTests
 
         await AssertProblemAsync(response, HttpStatusCode.BadGateway, "provider_failure", "/api/v2/translation/translate");
         Assert.Equal([1, 2, 3], factory.Translation.Commands.Select(command => command.ItemAttemptNumber).ToArray());
-        var attemptedModels = factory.Translation.Commands.Select(command => command.Access.LogicalModel).ToArray();
-        Assert.Equal(attemptedModels[0], attemptedModels[2]);
-        Assert.NotEqual(attemptedModels[0], attemptedModels[1]);
+        Assert.All(factory.Translation.Commands, command => Assert.Equal(Resources.QwenMtFlash, command.Access.LogicalModel));
         Assert.Equal([1, 2, 3], factory.Ledger.Attempts.Select(attempt => attempt.AttemptNumber).ToArray());
         Assert.Equal(factory.Ledger.Preparations.Count, factory.Ledger.Attempts.Count);
     }
@@ -419,7 +423,7 @@ public sealed class PublicContractTests
         await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
         using var response = await client.PostAsJsonAsync("/api/v1/chat/completions", new
         {
-            model = "qwen-flash",
+            model = "qwen3.8-flash",
             messages = new[] { new { role = "user", content = "hello" } },
             enable_thinking = false,
             temperature = 1,
@@ -434,7 +438,7 @@ public sealed class PublicContractTests
         Assert.True(factory.Ledger.SettlementCompleted);
         var expectedCost = factory.Policy.Get(Resources.QwenFlash).Price.Calculate(100, 20);
         Assert.Equal(expectedCost, Assert.Single(factory.Ledger.Settlements).ReportedPublicCost);
-        AssertCompletedAttempt(factory.Ledger, "qwen-flash/test/aliyun");
+        AssertCompletedAttempt(factory.Ledger, "qwen3.8-flash/test/aliyun");
     }
 
     [Fact]
@@ -444,7 +448,7 @@ public sealed class PublicContractTests
         using var client = factory.CreateAnonymousClient();
         using var response = await client.PostAsJsonAsync("/api/v1/chat/completions", new
         {
-            model = "qwen-flash",
+            model = "qwen3.8-flash",
             messages = "provider-defined-shape",
             temperature = "provider-defined-value",
             max_tokens = -1,
@@ -464,7 +468,7 @@ public sealed class PublicContractTests
 
         using var response = await client.PostAsJsonAsync("/api/v1/chat/completions", new
         {
-            model = "qwen-flash",
+            model = "qwen3.8-flash",
             messages = new[] { new { role = "user", content = "hello" } },
             enable_thinking = false,
             temperature = 1,
@@ -477,6 +481,35 @@ public sealed class PublicContractTests
         Assert.Contains("event: error\ndata: ", body, StringComparison.Ordinal);
         Assert.Contains("\"code\":\"internal_error\"", body, StringComparison.Ordinal);
         Assert.DoesNotContain("data: [DONE]", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatTruncatedStreamSettlesAtEstimatedCost()
+    {
+        await using var factory = new ApiFactory();
+        factory.Chat.TruncateAfterFrames = true;
+        using var client = factory.CreateAnonymousClient();
+
+        using var response = await client.PostAsJsonAsync("/api/v1/chat/completions", new
+        {
+            model = "qwen3.8-flash",
+            messages = new[] { new { role = "user", content = "hello" } },
+            enable_thinking = false,
+            temperature = 1,
+            max_tokens = 512,
+            thinking_budget_tokens = 1024,
+        }, TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("event: error\ndata: ", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("data: [DONE]", body, StringComparison.Ordinal);
+        var settlement = Assert.Single(factory.Ledger.Settlements);
+        Assert.False(settlement.Delivered);
+        Assert.Equal(CostBasis.Estimated, settlement.Basis);
+        Assert.Equal(40, settlement.InputUnits);
+        Assert.Equal(8, settlement.OutputUnits);
+        Assert.Equal(NanoYuan.Zero, settlement.ReportedPublicCost);
     }
 
     [Fact]
@@ -551,6 +584,23 @@ public sealed class PublicContractTests
             new { model = "unknown", messages = new[] { new { role = "user", content = "hello" } } }, TestContext.Current.CancellationToken);
         await AssertProblemAsync(translation, HttpStatusCode.BadRequest, "invalid_request", "/api/v2/translation/translate");
         await AssertProblemAsync(chat, HttpStatusCode.BadRequest, "model_not_found", "/api/v1/chat/completions");
+    }
+
+    [Fact]
+    public async Task TranslationDesignatedModelIsAcceptedForChat()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+
+        using var response = await client.PostAsJsonAsync("/api/v1/chat/completions",
+            new { model = Resources.QwenMtFlash, messages = new[] { new { role = "user", content = "hello" } } },
+            TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.EndsWith("data: [DONE]\n\n", body, StringComparison.Ordinal);
+        Assert.Equal(Resources.QwenMtFlash, Assert.Single(factory.Ledger.Reservations).Snapshot.Resource);
+        AssertCompletedAttempt(factory.Ledger, "qwen-mt-flash/test/aliyun");
     }
 
     [Theory]
@@ -716,7 +766,7 @@ public sealed class PublicContractTests
         {
             Content = JsonContent.Create(new
             {
-                model = "qwen-flash",
+                model = "qwen3.8-flash",
                 messages = new[] { new { role = "user", content = "hello" } },
                 max_tokens = 512,
                 thinking_budget_tokens = 1024,

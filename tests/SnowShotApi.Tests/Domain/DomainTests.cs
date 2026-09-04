@@ -37,7 +37,7 @@ public sealed class DomainTests
     [Fact]
     public void TranslationRoutingIsStableBalancedAndAlternatesRetries()
     {
-        var routing = new TranslationRouting([Resources.DeepSeekV4, Resources.QwenPlus], 4, 3,
+        var routing = new TranslationRouting([Resources.QwenFlash, Resources.QwenMtFlash], 4, 3,
             TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(2));
         var operation = Guid.Parse("019fc2f0-d649-73ad-a65e-4efcf336c49a");
         var initial = routing.InitialModelIndex(operation);
@@ -50,8 +50,20 @@ public sealed class DomainTests
         var counts = Enumerable.Range(0, 1_000)
             .Select(index => routing.LogicalModels[routing.InitialModelIndex(Guid.Parse($"00000000-0000-0000-0000-{index:x12}"))])
             .GroupBy(model => model).ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
-        Assert.InRange(counts[Resources.DeepSeekV4], 400, 600);
-        Assert.InRange(counts[Resources.QwenPlus], 400, 600);
+        Assert.InRange(counts[Resources.QwenFlash], 400, 600);
+        Assert.InRange(counts[Resources.QwenMtFlash], 400, 600);
+    }
+
+    [Fact]
+    public void SingleModelTranslationRoutingPinsEveryAttempt()
+    {
+        var routing = new TranslationRouting([Resources.QwenMtFlash], 4, 3,
+            TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(2));
+
+        Assert.Equal(0, routing.InitialModelIndex(Guid.NewGuid()));
+        Assert.Equal(Resources.QwenMtFlash, routing.ModelForAttempt(0, 1));
+        Assert.Equal(Resources.QwenMtFlash, routing.ModelForAttempt(0, 2));
+        Assert.Equal(Resources.QwenMtFlash, routing.ModelForAttempt(0, 3));
     }
 
     [Fact]
@@ -68,8 +80,8 @@ public sealed class DomainTests
 
         foreach (var resource in new[]
         {
-            Resources.Translation, Resources.QwenFlash, Resources.QwenPlus,
-            Resources.QwenVisionFlash, Resources.DeepSeekV4,
+            Resources.Translation, Resources.QwenFlash,
+            Resources.QwenVisionFlash, Resources.QwenMtFlash,
         })
         {
             var admission = policy.Get(resource).Admission;
@@ -93,12 +105,10 @@ public sealed class DomainTests
         Assert.Equal(8_000, policy.Get(Resources.Translation).Price.Output.Value);
         Assert.Equal(200, policy.Get(Resources.QwenFlash).Price.Input.Value);
         Assert.Equal(800, policy.Get(Resources.QwenFlash).Price.Output.Value);
-        Assert.Equal(2_000, policy.Get(Resources.QwenPlus).Price.Input.Value);
-        Assert.Equal(8_000, policy.Get(Resources.QwenPlus).Price.Output.Value);
         Assert.Equal(150, policy.Get(Resources.QwenVisionFlash).Price.Input.Value);
         Assert.Equal(1_500, policy.Get(Resources.QwenVisionFlash).Price.Output.Value);
-        Assert.Equal(1_000, policy.Get(Resources.DeepSeekV4).Price.Input.Value);
-        Assert.Equal(2_000, policy.Get(Resources.DeepSeekV4).Price.Output.Value);
+        Assert.Equal(700, policy.Get(Resources.QwenMtFlash).Price.Input.Value);
+        Assert.Equal(1_950, policy.Get(Resources.QwenMtFlash).Price.Output.Value);
         Assert.Equal(30_000_000, policy.Get(Resources.TableExtraction).Price.Input.Value);
         Assert.Equal(0, policy.Get(Resources.TableExtraction).Price.Output.Value);
     }
@@ -241,7 +251,7 @@ public sealed class DomainTests
         var snapshot = new ReservationSnapshot(1, new string('a', 64), Resources.QwenFlash,
             new(new(1), new(1)), NanoYuan.ThreeYuan, new(100), new(100));
         var decision = ReservationRules.Settle(ReservationState.Dispatched, snapshot, new(150), new(175), true,
-            costKnown: true, verifiableOverage: true, 1, 1, "success");
+            basis: CostBasis.Exact, verifiableOverage: true, 1, 1, "success");
         Assert.Equal(150, decision.PublicCost.Value);
         Assert.Equal(175, decision.OperatorCost.Value);
         Assert.Equal(75, decision.OperatorOverage.Value);
@@ -254,10 +264,92 @@ public sealed class DomainTests
         var snapshot = new ReservationSnapshot(1, new string('b', 64), Resources.Translation,
             new(new(1), new(1)), NanoYuan.ThreeYuan, new(100), new(200));
         var decision = ReservationRules.Settle(ReservationState.Dispatched, snapshot, NanoYuan.Zero, NanoYuan.Zero,
-            delivered: false, costKnown: false, verifiableOverage: false, 0, 0, "abandoned");
+            delivered: false, basis: CostBasis.Unknown, verifiableOverage: false, 0, 0, "abandoned");
         Assert.Equal(ReservationState.UnknownCost, decision.State);
         Assert.Equal(200, decision.OperatorCost.Value);
         Assert.Equal(0, decision.PublicCost.Value);
+    }
+
+    [Fact]
+    public void EstimatedCostCommitsReportedEstimateWithoutOverage()
+    {
+        var snapshot = new ReservationSnapshot(1, new string('c', 64), Resources.QwenFlash,
+            new(new(1), new(1)), NanoYuan.ThreeYuan, new(100), new(200));
+        var decision = ReservationRules.Settle(ReservationState.Dispatched, snapshot, NanoYuan.Zero, new(120),
+            delivered: false, basis: CostBasis.Estimated, verifiableOverage: true, 60, 12, "truncated_stream");
+        Assert.Equal(ReservationState.EstimatedCost, decision.State);
+        Assert.Equal(120, decision.OperatorCost.Value);
+        Assert.Equal(0, decision.OperatorOverage.Value);
+        Assert.Equal(0, decision.PublicCost.Value);
+    }
+
+    [Fact]
+    public void EstimatedCostAboveTheCapIsClampedWithoutOverage()
+    {
+        var snapshot = new ReservationSnapshot(1, new string('d', 64), Resources.QwenFlash,
+            new(new(1), new(1)), NanoYuan.ThreeYuan, new(100), new(200));
+        var decision = ReservationRules.Settle(ReservationState.Dispatched, snapshot, NanoYuan.Zero, new(400),
+            delivered: false, basis: CostBasis.Estimated, verifiableOverage: true, 300, 40, "truncated_stream");
+        Assert.Equal(ReservationState.EstimatedCost, decision.State);
+        Assert.Equal(200, decision.OperatorCost.Value);
+        Assert.Equal(0, decision.OperatorOverage.Value);
+    }
+
+    [Fact]
+    public void EstimatedDeliveredSettlementStillChargesExactPublicCost()
+    {
+        var snapshot = new ReservationSnapshot(1, new string('e', 64), Resources.Translation,
+            new(new(1), new(1)), NanoYuan.ThreeYuan, new(100), new(200));
+        var decision = ReservationRules.Settle(ReservationState.Dispatched, snapshot, new(30), new(120),
+            delivered: true, basis: CostBasis.Estimated, verifiableOverage: false, 30, 6, "success");
+        Assert.Equal(ReservationState.EstimatedCost, decision.State);
+        Assert.Equal(30, decision.PublicCost.Value);
+        Assert.Equal(120, decision.OperatorCost.Value);
+    }
+
+    [Fact]
+    public void EstimationRatiosCeilAndClampToTheAccountingEnvelope()
+    {
+        var ratios = new EstimationRatios(3, 2);
+        Assert.Equal(0, ratios.EstimateInputTokens(0));
+        Assert.Equal(1, ratios.EstimateInputTokens(1));
+        Assert.Equal(1, ratios.EstimateInputTokens(3));
+        Assert.Equal(2, ratios.EstimateInputTokens(4));
+        Assert.Equal(1, ratios.EstimateOutputTokens(1));
+        Assert.Equal(1, ratios.EstimateOutputTokens(2));
+        Assert.Equal(4, ratios.EstimateOutputTokens(7));
+        Assert.Equal(AccountingLimits.MaximumUnitsPerDimension, ratios.EstimateInputTokens(long.MaxValue));
+        Assert.Equal(AccountingLimits.MaximumUnitsPerDimension, ratios.EstimateOutputTokens(long.MaxValue));
+    }
+
+    [Fact]
+    public void PolicyRejectsNonPositiveEstimationRatios()
+    {
+        var defaults = ServicePolicy.Defaults();
+        Assert.Throws<PolicyValidationException>(() => new ServicePolicy(defaults.Revision, defaults.ResourcePolicies,
+            defaults.PrincipalDailyAllowance, defaults.DailyOperatorBudget, defaults.MonthlyOperatorBudget,
+            defaults.ActiveLeaseTtl, defaults.LeaseRenewalInterval, estimation: new EstimationRatios(0, 2)));
+        Assert.Throws<PolicyValidationException>(() => new ServicePolicy(defaults.Revision, defaults.ResourcePolicies,
+            defaults.PrincipalDailyAllowance, defaults.DailyOperatorBudget, defaults.MonthlyOperatorBudget,
+            defaults.ActiveLeaseTtl, defaults.LeaseRenewalInterval, estimation: new EstimationRatios(3, 0)));
+    }
+
+    [Theory]
+    [InlineData(1025, 2)]
+    [InlineData(2, 1025)]
+    public void PolicyRejectsEstimationRatiosAboveTheConfiguredBound(long bytesPerInputToken, long charsPerOutputToken)
+    {
+        var options = new PolicyOptions
+        {
+            Pricing = DefaultPricing(),
+            Estimation = new EstimationOptions
+            {
+                BytesPerInputToken = bytesPerInputToken,
+                CharsPerOutputToken = charsPerOutputToken,
+            },
+        };
+
+        Assert.Throws<PolicyValidationException>(() => options.Build());
     }
 
     [Fact]
@@ -274,6 +366,7 @@ public sealed class DomainTests
     [InlineData(ReservationState.Reserved, ReservationState.Released, true)]
     [InlineData(ReservationState.Dispatched, ReservationState.Committed, true)]
     [InlineData(ReservationState.Dispatched, ReservationState.UnknownCost, true)]
+    [InlineData(ReservationState.Dispatched, ReservationState.EstimatedCost, true)]
     [InlineData(ReservationState.Committed, ReservationState.Released, false)]
     [InlineData(ReservationState.Released, ReservationState.Dispatched, false)]
     public void ReservationTransitionsAreExplicit(
@@ -299,9 +392,8 @@ public sealed class DomainTests
     {
         [Resources.Translation] = new() { InputRateNanoYuan = 2_000, OutputRateNanoYuan = 8_000 },
         [Resources.QwenFlash] = new() { InputRateNanoYuan = 200, OutputRateNanoYuan = 800 },
-        [Resources.QwenPlus] = new() { InputRateNanoYuan = 2_000, OutputRateNanoYuan = 8_000 },
         [Resources.QwenVisionFlash] = new() { InputRateNanoYuan = 150, OutputRateNanoYuan = 1_500 },
-        [Resources.DeepSeekV4] = new() { InputRateNanoYuan = 1_000, OutputRateNanoYuan = 2_000 },
+        [Resources.QwenMtFlash] = new() { InputRateNanoYuan = 700, OutputRateNanoYuan = 1_950 },
         [Resources.TableExtraction] = new() { InputRateNanoYuan = 30_000_000, OutputRateNanoYuan = 0 },
     };
 }

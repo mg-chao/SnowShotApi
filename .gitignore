@@ -138,3 +138,7 @@ __pycache__/
 .artifacts-review
 
 ./deployment/*.md
+
+# Agents
+.codex
+.zcode

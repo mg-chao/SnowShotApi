@@ -12,7 +12,6 @@ $env:ConnectionStrings__SnowShot = "Host=127.0.0.1;Database=unused;Username=unus
 $env:ConnectionStrings__Redis = " "
 $env:Identity__HmacKeyBase64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 ${env:Providers__CloudProviders__aliyun__ApiKey} = "openapi"
-${env:Providers__CloudProviders__deepseek__ApiKey} = "openapi"
 $env:Providers__Table__BaseUrl = "http://127.0.0.1:18080/"
 $env:ContractGeneration = "true"
 

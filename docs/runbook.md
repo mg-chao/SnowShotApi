@@ -14,13 +14,22 @@ policy convergence, and error counters from a fresh metric window. Roll back
 again if replicas disagree on the policy fingerprint or reservations are being
 rejected for a stale policy.
 
-Temporary policy revision 5 raises the principal daily allowance to 6 CNY and
-the daily operator budget to 100 CNY. Revision 6 restores those values to 3 CNY
-and 50 CNY at the next Asia/Shanghai day boundary. Both revisions preserve the
-500 CNY monthly operator budget and the 0.03 CNY maximum for every operation.
-The production host mounts `runtime/appsettings.Production.json`; the restore
-job runs `Restore-TemporaryBudgets.sh`, keeps a rollback copy, recreates only
-the API container, and fails back if liveness does not recover.
+Historical policy revision 5 temporarily raised the principal daily allowance
+to 6 CNY and the daily operator budget to 100 CNY. Revision 6 restored those
+values to 3 CNY and 50 CNY. Revision 7 retains those daily limits and raises
+the monthly operator budget from 500 CNY to 1000 CNY. Revision 8 preserves
+every allowance, budget, and operation maximum while retiring the qwen-flash,
+qwen-plus, and deepseek-v4-flash models. Revision 9 preserves every limit and
+price and adds the cost estimation ratios
+(3 payload bytes per input token, 2 delivered characters per output token)
+used to settle abnormal operations from local evidence. The chat model list is
+served by qwen3.8-flash, qwen3-vl-flash, and qwen-mt-flash; qwen-mt-flash
+remains the translation model and is exposed for chat with the
+`translation` flag set to true.
+The production host mounts
+`runtime/appsettings.Production.json`; the policy deployment job runs
+`Restore-TemporaryBudgets.sh`, keeps a rollback copy, recreates only the API
+container, and fails back if liveness does not recover.
 
 ## Readiness and dependency outage
 
@@ -35,12 +44,16 @@ operator headroom, viable provider routes, and the table-worker mTLS probe.
 Detailed `/health/components` output is available only over API loopback and is
 not proxied by nginx.
 
-Translation starts each batch on one of the configured logical models and
-switches models only for retryable failures. Use the model/provider/access
-identity on provider attempts to distinguish model degradation from an access
-or network failure. The nginx API read timeout must remain greater than every
-application execution deadline so the application can settle the operation and
-return its structured timeout response.
+Translation is served exclusively by the qwen-mt-flash logical model. Models
+listed under `Providers:Translation:LogicalModels` also appear in the chat
+model catalog flagged as `translation: true`, and the chat provider merges
+their system prompts into the first user turn because the models reject the
+system role. Chat and translation share the same provider access pool, so
+use the model/provider/access identity on provider attempts to distinguish
+model degradation from an access or network failure. The nginx API read
+timeout must remain greater than every application execution deadline so the
+application can settle the operation and return its structured timeout
+response.
 
 Provider circuits are shared in Redis by logical model, provider, and access.
 Five consecutive transient failures or a 50 percent failure ratio over at least
@@ -58,11 +71,18 @@ Do not replay a request until its idempotency and settlement state are known.
 
 ## Reconciliation and cost
 
-Inspect the reconciliation backlog age, outcomes, provider checkpoints, and
-unknown-cost counters. Verify the operation, attempt, usage-event, and budget
-rows in PostgreSQL before retrying a provider call. Unknown cost is settled at
-the policy maximum until durable evidence is available; never overwrite the
-original event to make totals appear correct.
+Inspect the reconciliation backlog age, outcomes, provider checkpoints, and the
+unknown-cost and estimated-cost counters. Verify the operation, attempt, usage-event,
+and budget rows in PostgreSQL before retrying a provider call. Operator cost settles
+gradually from durable evidence: exact usage first, then an estimate recorded on the
+attempt when a dispatched request never returned usable usage (truncated streams bill
+the transmitted payload plus delivered content; provider 408/5xx bill the transmitted
+payload or characters; rejected 4xx responses bill zero), and only the truly unevidenced
+cases — unresolved dispatch, crash, abandoned preparation — fall back to the policy
+maximum. Estimation ratios live in the fingerprinted policy (`Policy:Estimation`).
+Estimated and capped settlements are clamped to the per-operation operator maximum and
+never qualify for verifiable overage. Never overwrite the original event to make totals
+appear correct.
 
 ## Identity, budgets, and retention
 

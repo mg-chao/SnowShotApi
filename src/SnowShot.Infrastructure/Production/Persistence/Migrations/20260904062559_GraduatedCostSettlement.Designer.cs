@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SnowShot.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using SnowShot.Infrastructure.Persistence;
 namespace SnowShot.Infrastructure.Production.Persistence.Migrations
 {
     [DbContext(typeof(SnowShotDbContext))]
-    partial class SnowShotDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904062559_GraduatedCostSettlement")]
+    partial class GraduatedCostSettlement
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
