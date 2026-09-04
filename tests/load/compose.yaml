@@ -6,6 +6,8 @@ x-api-environment: &api-environment
   ConnectionStrings__Redis: redis:6379,abortConnect=false
   Identity__HmacKeyBase64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
   Providers__Translation__LogicalModels__0: qwen-mt-flash
+  Providers__Translation__LogicalModels__1: ""
+  Providers__Translation__MaximumConcurrentConversations: "4"
   Providers__CloudProviders__aliyun__Endpoint: http://fake-provider:8080/v1/chat/completions
   Providers__CloudProviders__aliyun__ApiKey: fault-test
   Providers__Models__qwen3.8-flash__Accesses__aliyun__Provider: aliyun
@@ -20,8 +22,8 @@ x-api-environment: &api-environment
   Policy__LeaseRenewalSeconds: 2
   Policy__Pricing__translation__InputRateNanoYuan: 2000
   Policy__Pricing__translation__OutputRateNanoYuan: 8000
-  Policy__Pricing__qwen3.8-flash__InputRateNanoYuan: 200
-  Policy__Pricing__qwen3.8-flash__OutputRateNanoYuan: 800
+  Policy__Pricing__qwen3.8-flash__InputRateNanoYuan: 800
+  Policy__Pricing__qwen3.8-flash__OutputRateNanoYuan: 2700
   Policy__Pricing__qwen3-vl-flash__InputRateNanoYuan: 150
   Policy__Pricing__qwen3-vl-flash__OutputRateNanoYuan: 1500
   Policy__Pricing__qwen-mt-flash__InputRateNanoYuan: 700

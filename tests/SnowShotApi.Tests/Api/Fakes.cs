@@ -19,6 +19,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeProviderAccessPool ProviderAccess { get; } = new();
     public FakeTableClient Table { get; } = new();
     public ServicePolicy Policy => Services.GetRequiredService<ServicePolicy>();
+    public Dictionary<string, string?> ExtraConfiguration { get; } = [];
 
     public HttpClient CreateAnonymousClient()
     {
@@ -37,6 +38,8 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["ConnectionStrings:Redis"] = "",
             ["Identity:HmacKeyBase64"] = Convert.ToBase64String(new byte[32]),
             ["Providers:Translation:LogicalModels:0"] = "qwen-mt-flash",
+            ["Providers:Translation:LogicalModels:1"] = "",
+            ["Providers:Translation:MaximumConcurrentConversations"] = "4",
             ["Providers:CloudProviders:aliyun:Endpoint"] = "https://provider.test/chat",
             ["Providers:CloudProviders:aliyun:ApiKey"] = "test-key",
             ["Providers:CloudProviders:test:Endpoint"] = "https://provider.test/chat",
@@ -48,11 +51,13 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:UpstreamModel"] = "qwen3-vl-flash",
             ["Providers:Models:qwen3-vl-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
             ["Providers:Models:qwen-mt-flash:Thinking"] = "false",
+            ["Providers:Models:qwen-mt-flash:NativeTranslationOptions"] = "true",
             ["Providers:Models:qwen-mt-flash:Accesses:aliyun:Provider"] = "test",
             ["Providers:Models:qwen-mt-flash:Accesses:aliyun:UpstreamModel"] = "qwen-mt-flash",
             ["Providers:Models:qwen-mt-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
             ["Providers:Table:BaseUrl"] = "http://table.test/",
         }));
+        builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(ExtraConfiguration));
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IHostedService>();

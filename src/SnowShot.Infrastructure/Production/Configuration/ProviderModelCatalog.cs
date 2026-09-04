@@ -20,6 +20,8 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
 {
     private readonly Dictionary<string, CloudProviderDefinition> _providers;
     private readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, ProviderAccessDefinition>> _models;
+    private readonly Dictionary<string, bool> _mergesSystemIntoUser;
+    private readonly Dictionary<string, bool> _nativeTranslationOptions;
     private readonly HashSet<string> _translationModels;
     private readonly ChatModelDefinition[] _chatModels;
 
@@ -41,10 +43,10 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
 
         if (options.Models.Count == 0)
             throw new InvalidOperationException("Providers:Models must configure at least one public chat model.");
-        if (translation.LogicalModels.Count == 0 ||
-            translation.LogicalModels.Any(string.IsNullOrWhiteSpace) ||
-            translation.LogicalModels.Distinct(StringComparer.Ordinal).Count() != translation.LogicalModels.Count ||
-            translation.LogicalModels.Any(model => !options.Models.ContainsKey(model)))
+        var logicalModels = translation.ConfiguredLogicalModels;
+        if (logicalModels.Count == 0 ||
+            logicalModels.Distinct(StringComparer.Ordinal).Count() != logicalModels.Count ||
+            logicalModels.Any(model => !options.Models.ContainsKey(model)))
             throw new InvalidOperationException(
                 "Providers:Translation:LogicalModels must contain unique configured models.");
 
@@ -72,10 +74,14 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
                     provider.TranslationEnableThinking);
             }, StringComparer.Ordinal);
         }, StringComparer.Ordinal);
+        _mergesSystemIntoUser = options.Models.ToDictionary(
+            model => model.Key, model => model.Value?.MergesSystemIntoUser == true, StringComparer.Ordinal);
+        _nativeTranslationOptions = options.Models.ToDictionary(
+            model => model.Key, model => model.Value?.NativeTranslationOptions == true, StringComparer.Ordinal);
 
         // Models designated for the translation service are also offered for chat,
         // flagged so clients can present them as translation-specialized.
-        _translationModels = translation.LogicalModels.ToHashSet(StringComparer.Ordinal);
+        _translationModels = logicalModels.ToHashSet(StringComparer.Ordinal);
         _chatModels = options.Models
             .OrderBy(model => model.Value.Order).ThenBy(model => model.Key, StringComparer.Ordinal)
             .Select(model => new ChatModelDefinition(model.Key, model.Value.Thinking, model.Value.SupportVision,
@@ -88,6 +94,12 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
     public bool Contains(string model) => _models.ContainsKey(model);
 
     public bool IsTranslationModel(string model) => _translationModels.Contains(model);
+
+    public bool MergesSystemIntoUser(string model) =>
+        _mergesSystemIntoUser.TryGetValue(model, out var merges) && merges;
+
+    public bool UsesNativeTranslationOptions(string model) =>
+        _nativeTranslationOptions.TryGetValue(model, out var native) && native;
 
     public IReadOnlyList<ProviderAccessSelection> Selections(string logicalModel) =>
         Model(logicalModel).Values.Select(value => value.Selection).OrderBy(value => value.AccessId, StringComparer.Ordinal).ToArray();

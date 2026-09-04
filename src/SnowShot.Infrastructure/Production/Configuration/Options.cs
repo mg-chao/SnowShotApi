@@ -138,6 +138,10 @@ public sealed class TranslationProviderOptions
 {
     public const string SectionName = "Providers:Translation";
     [Required, MinLength(1)] public List<string> LogicalModels { get; init; } = [];
+    // Layered configuration cannot shrink an array, so overriding sources park an
+    // unused slot with an empty entry; every consumer must use the filtered view.
+    public IReadOnlyList<string> ConfiguredLogicalModels =>
+        LogicalModels.Where(model => !string.IsNullOrWhiteSpace(model)).ToArray();
     [Range(1024, 4_194_304)] public int MaximumResponseBytes { get; init; } = 1_048_576;
     [Range(1, 32)] public int MaximumConcurrentConversations { get; init; } = 4;
     [Range(1, 5)] public int MaximumAttemptsPerConversation { get; init; } = 3;
@@ -182,6 +186,8 @@ public sealed class ProviderModelOptions
     [Range(0, int.MaxValue)] public int Order { get; init; } = int.MaxValue;
     public bool Thinking { get; init; } = true;
     public bool SupportVision { get; init; }
+    public bool MergesSystemIntoUser { get; init; }
+    public bool NativeTranslationOptions { get; init; }
     public Dictionary<string, ProviderAccessOptions> Accesses { get; init; } = [];
 }
 

@@ -32,7 +32,7 @@ public sealed class OpenAiChatClient(
         if (command.AttemptNumber > 1) SnowShotTelemetry.ProviderRetries.Add(1,
             new("kind", "chat"), new("model", request.Model), new("provider", access.Selection.Provider));
         var payload = RewritePayload(request.Utf8Json.Span, access.Selection.UpstreamModel,
-            catalog.IsTranslationModel(command.Access.LogicalModel));
+            catalog.MergesSystemIntoUser(command.Access.LogicalModel));
         using var message = new HttpRequestMessage(HttpMethod.Post, access.Endpoint)
         {
             Content = new ByteArrayContent(payload),
@@ -207,8 +207,9 @@ public sealed class OpenAiChatClient(
         return output.ToArray();
     }
 
-    // Translation models such as qwen-mt-flash reject the system role; system text
-    // is merged into the first user turn so ordinary chat prompts keep working.
+    // Models whose upstream rejects the system role (such as qwen-mt-flash) are flagged
+    // with MergesSystemIntoUser; system text is merged into the first user turn so
+    // ordinary chat prompts keep working on those models.
     // System messages whose content is not a plain string are forwarded unchanged.
     private static void WriteMergedMessages(Utf8JsonWriter writer, JsonElement messages)
     {

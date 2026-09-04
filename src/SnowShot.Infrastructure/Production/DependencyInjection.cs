@@ -51,10 +51,9 @@ public static class DependencyInjection
             options => options.InitialBreakSeconds <= options.MaximumBreakSeconds,
             "Invalid provider circuit breaker configuration.");
         Configure<TranslationProviderOptions>(services, configuration, TranslationProviderOptions.SectionName,
-            options => options.InitialRetryDelayMilliseconds <= options.MaximumRetryDelayMilliseconds &&
-                options.LogicalModels.Count > 0 &&
-                options.LogicalModels.All(model => !string.IsNullOrWhiteSpace(model)) &&
-                options.LogicalModels.Distinct(StringComparer.Ordinal).Count() == options.LogicalModels.Count,
+        options => options.InitialRetryDelayMilliseconds <= options.MaximumRetryDelayMilliseconds &&
+            options.ConfiguredLogicalModels.Count > 0 &&
+            options.ConfiguredLogicalModels.Distinct(StringComparer.Ordinal).Count() == options.ConfiguredLogicalModels.Count,
             "Invalid translation provider limits or retry delays.");
         services.AddOptions<ProviderModelsOptions>().Bind(configuration.GetSection(ProviderModelsOptions.SectionName))
             .Validate(options =>
@@ -96,7 +95,7 @@ public static class DependencyInjection
         services.AddSingleton(sp =>
         {
             var options = sp.GetRequiredService<TranslationProviderOptions>();
-            return new TranslationRouting(options.LogicalModels.ToArray(), options.MaximumConcurrentConversations,
+            return new TranslationRouting(options.ConfiguredLogicalModels, options.MaximumConcurrentConversations,
                 options.MaximumAttemptsPerConversation, TimeSpan.FromSeconds(options.AttemptTimeoutSeconds),
                 TimeSpan.FromMilliseconds(options.InitialRetryDelayMilliseconds),
                 TimeSpan.FromMilliseconds(options.MaximumRetryDelayMilliseconds));

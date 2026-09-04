@@ -16,6 +16,7 @@ COMPOSE_COMMAND = [
 ADMIN_PASSWORD = "recovery-admin"
 MIGRATOR_PASSWORD = "recovery-migrator"
 API_PASSWORD = "recovery-api"
+EXPECTED_ACCOUNTING_EVIDENCE = "1|1|1|1|1|1|10|0|20|0|1|1"
 
 
 def compose(
@@ -118,6 +119,13 @@ def main() -> int:
         if ddl.returncode == 0:
             raise AssertionError("runtime role unexpectedly created a table")
 
+        source = psql("snowshot", "snowshot_api", API_PASSWORD, verify)
+        source_evidence = source.stdout.decode("utf-8").strip()
+        accounting_evidence, separator, migration_count = source_evidence.rpartition("|")
+        if (accounting_evidence != EXPECTED_ACCOUNTING_EVIDENCE or not separator
+                or not migration_count.isdecimal() or int(migration_count) < 1):
+            raise AssertionError(f"source accounting evidence is invalid: {source_evidence!r}")
+
         dump = compose(
             "exec", "-e", f"PGPASSWORD={MIGRATOR_PASSWORD}", "-T", "postgres",
             "pg_dump", "-Fc", "-U", "snowshot_migrator", "-d", "snowshot",
@@ -143,8 +151,10 @@ def main() -> int:
         psql("snowshot_restore", "postgres", ADMIN_PASSWORD, grants, "database_name=snowshot_restore")
         restored = psql("snowshot_restore", "snowshot_api", API_PASSWORD, verify)
         evidence = restored.stdout.decode("utf-8").strip()
-        if evidence != "1|1|1|1|1|1|10|0|20|0|1|1|2":
-            raise AssertionError(f"restored accounting evidence is invalid: {evidence!r}")
+        if evidence != source_evidence:
+            raise AssertionError(
+                f"restored evidence differs from source: source={source_evidence!r}, restored={evidence!r}"
+            )
         run_migrator("snowshot_restore")
         print("Encrypted PostgreSQL backup, restore, accounting, and least-privilege harness passed.")
         return 0

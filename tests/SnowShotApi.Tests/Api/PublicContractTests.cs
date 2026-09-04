@@ -201,6 +201,33 @@ public sealed class PublicContractTests
     }
 
     [Fact]
+    public async Task TranslationSplitsOperationsAcrossDesignatedModels()
+    {
+        await using var factory = new ApiFactory();
+        factory.ExtraConfiguration["Providers:Translation:LogicalModels:0"] = Resources.QwenFlash;
+        factory.ExtraConfiguration["Providers:Translation:LogicalModels:1"] = Resources.QwenMtFlash;
+        using var client = factory.CreateAnonymousClient();
+
+        for (var index = 0; index < 20; index++)
+        {
+            using var response = await client.PostAsJsonAsync("/api/v2/translation/translate", new
+            {
+                type = 0,
+                content = new[] { $"item-{index}" },
+                from = "en",
+                to = "zh-CHS",
+                domain = "general",
+            }, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        Assert.Equal(
+            new[] { Resources.QwenFlash, Resources.QwenMtFlash }.OrderBy(model => model, StringComparer.Ordinal).ToArray(),
+            factory.Translation.Commands.Select(command => command.Access.LogicalModel).Distinct()
+                .OrderBy(model => model, StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
     public async Task TranslationRunsAtMostFourIndependentConversationsAndPreservesOrdering()
     {
         await using var factory = new ApiFactory();

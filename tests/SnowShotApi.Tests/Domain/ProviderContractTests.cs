@@ -148,6 +148,47 @@ public sealed class ProviderContractTests
     }
 
     [Fact]
+    public void EmptyLogicalModelEntriesAreIgnoredSoOverlaysCanShrinkTheList()
+    {
+        var providers = new ProviderModelsOptions
+        {
+            CloudProviders = new Dictionary<string, CloudProviderOptions>(StringComparer.Ordinal)
+            {
+                ["test"] = new() { Endpoint = "https://provider.test/chat", ApiKey = "key" },
+            },
+            Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
+            {
+                [Resources.QwenFlash] = new()
+                {
+                    Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
+                    {
+                        ["test"] = new() { Provider = "test", UpstreamModel = "qwen3.8-flash", MaxConcurrentRequests = 1 },
+                    },
+                },
+                [Resources.QwenMtFlash] = new()
+                {
+                    Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
+                    {
+                        ["test"] = new() { Provider = "test", UpstreamModel = "qwen-mt-flash", MaxConcurrentRequests = 1 },
+                    },
+                },
+            },
+        };
+
+        var shrunk = new ProviderModelCatalog(providers,
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash, ""] }, requireHttps: true);
+
+        Assert.Equal([Resources.QwenMtFlash], shrunk.Selections(Resources.QwenMtFlash)
+            .Select(selection => selection.LogicalModel).ToArray());
+        Assert.True(shrunk.IsTranslationModel(Resources.QwenMtFlash));
+        Assert.False(shrunk.IsTranslationModel(Resources.QwenFlash));
+
+        Assert.Equal([Resources.QwenMtFlash],
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash, ""] }.ConfiguredLogicalModels);
+        Assert.Empty(new TranslationProviderOptions { LogicalModels = ["", " "] }.ConfiguredLogicalModels);
+    }
+
+    [Fact]
     public async Task TranslationForwardsOnlyTheInternalOperationId()
     {
         const string payload = "{\"choices\":[{\"message\":{\"content\":\"{\\\"translations\\\":[{\\\"index\\\":0,\\\"content\\\":\\\"hola\\\"}]}\"}}]}";
@@ -190,6 +231,97 @@ public sealed class ProviderContractTests
         Assert.True(result.Success);
         using var request = JsonDocument.Parse(handler.RequestBody!);
         Assert.False(request.RootElement.GetProperty("enable_thinking").GetBoolean());
+    }
+
+    [Fact]
+    public async Task NativeTranslationSendsRawContentWithTranslationOptions()
+    {
+        const string payload = "{\"choices\":[{\"message\":{\"content\":\"hola\"}}]}";
+        var handler = new ResponseHandler(payload, "application/json");
+        var client = new OpenAiTranslationClient(new SingleClientRegistry(new HttpClient(handler)),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, Catalog(),
+            ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(NativeTranslationCommand(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.Equal(["hola"], result.Results);
+        Assert.True(handler.SawOperationId);
+        Assert.False(handler.SawClientRequestId);
+        using var request = JsonDocument.Parse(handler.RequestBody!);
+        var root = request.RootElement;
+        Assert.Equal("test-mt", root.GetProperty("model").GetString());
+        Assert.False(root.TryGetProperty("enable_thinking", out _));
+        Assert.False(root.TryGetProperty("response_format", out _));
+        Assert.Equal(0, root.GetProperty("temperature").GetInt32());
+        Assert.False(root.GetProperty("stream").GetBoolean());
+        var message = Assert.Single(root.GetProperty("messages").EnumerateArray());
+        Assert.Equal("user", message.GetProperty("role").GetString());
+        Assert.Equal("hello", message.GetProperty("content").GetString());
+        var options = root.GetProperty("translation_options");
+        Assert.Equal("en", options.GetProperty("source_lang").GetString());
+        Assert.Equal("es", options.GetProperty("target_lang").GetString());
+        Assert.False(options.TryGetProperty("domains", out _));
+    }
+
+    [Fact]
+    public async Task NativeTranslationEmitsProviderThinkingSetting()
+    {
+        const string payload = "{\"choices\":[{\"message\":{\"content\":\"hola\"}}]}";
+        var handler = new ResponseHandler(payload, "application/json");
+        var client = new OpenAiTranslationClient(new SingleClientRegistry(new HttpClient(handler)),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, Catalog(false),
+            ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(NativeTranslationCommand(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        using var request = JsonDocument.Parse(handler.RequestBody!);
+        Assert.False(request.RootElement.GetProperty("enable_thinking").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("zh-CHS", "zh", "zh-CHT", "zh_tw", "computers", "IT domain")]
+    [InlineData("zh-CHT", "zh_tw", "en", "en", "medicine", "medical domain")]
+    [InlineData("en", "en", "zh-CHS", "zh", "finance", "finance domain")]
+    [InlineData("en", "en", "zh-CHT", "zh_tw", "game", "game domain")]
+    public async Task NativeTranslationMapsLanguagesAndDomains(
+        string from, string sourceLang, string to, string targetLang, string domain, string domainPrompt)
+    {
+        const string payload = "{\"choices\":[{\"message\":{\"content\":\"hola\"}}]}";
+        var handler = new ResponseHandler(payload, "application/json");
+        var client = new OpenAiTranslationClient(new SingleClientRegistry(new HttpClient(handler)),
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, Catalog(),
+            ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(NativeTranslationCommand() with
+        {
+            From = from, To = to, Domain = domain,
+        }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        using var request = JsonDocument.Parse(handler.RequestBody!);
+        var options = request.RootElement.GetProperty("translation_options");
+        Assert.Equal(sourceLang, options.GetProperty("source_lang").GetString());
+        Assert.Equal(targetLang, options.GetProperty("target_lang").GetString());
+        Assert.Contains(domainPrompt, options.GetProperty("domains").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NativeTranslationRejectsEmptyCompletionsAsInvalidOutput()
+    {
+        const string payload = "{\"choices\":[{\"message\":{\"content\":\"\"}}]}";
+        var registry = new SingleClientRegistry(new HttpClient(new ResponseHandler(payload, "application/json")));
+        var client = new OpenAiTranslationClient(registry,
+            new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, Catalog(),
+            ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+
+        var result = await client.TranslateAsync(NativeTranslationCommand(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.True(result.Retryable);
+        Assert.Equal("invalid_output", result.Outcome);
+        Assert.Equal([ProviderCircuitOutcome.TransientFailure], registry.Outcomes);
     }
 
     [Theory]
@@ -599,7 +731,7 @@ public sealed class ProviderContractTests
     }
 
     [Fact]
-    public async Task ChatMergesSystemMessagesIntoTheUserTurnForTranslationModelsOnly()
+    public async Task ChatMergesSystemMessagesIntoTheUserTurnForConfiguredModelsOnly()
     {
         const string response = "data: {\"id\":\"one\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n" +
             "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n" +
@@ -640,10 +772,53 @@ public sealed class ProviderContractTests
         Assert.Equal("user", verbatim[1].GetProperty("role").GetString());
     }
 
-    private static async Task<JsonElement> ForwardedMessagesAsync(ResponseHandler handler, string model, byte[] payload)
+    [Fact]
+    public async Task TranslationDesignationDoesNotForceSystemMergeWithoutTheModelFlag()
+    {
+        const string response = "data: {\"id\":\"one\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n" +
+            "data: [DONE]\n\n";
+        ProviderModelOptions Model(string upstream, bool mergesSystemIntoUser = false) => new()
+        {
+            MergesSystemIntoUser = mergesSystemIntoUser,
+            Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
+            {
+                ["test"] = new() { Provider = "test", UpstreamModel = upstream, MaxConcurrentRequests = 16 },
+            },
+        };
+        var catalog = new ProviderModelCatalog(new ProviderModelsOptions
+        {
+            CloudProviders = new Dictionary<string, CloudProviderOptions>(StringComparer.Ordinal)
+            {
+                ["test"] = new() { Endpoint = "https://provider.test/chat", ApiKey = "test" },
+            },
+            Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
+            {
+                [Resources.QwenFlash] = Model("test-model"),
+                [Resources.QwenMtFlash] = Model("test-mt", mergesSystemIntoUser: true),
+            },
+        }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash, Resources.QwenMtFlash] }, requireHttps: true);
+
+        Assert.True(catalog.IsTranslationModel(Resources.QwenFlash));
+        Assert.False(catalog.MergesSystemIntoUser(Resources.QwenFlash));
+        Assert.True(catalog.MergesSystemIntoUser(Resources.QwenMtFlash));
+
+        var verbatim = await ForwardedMessagesAsync(new ResponseHandler(response), Resources.QwenFlash, """
+            {"model":"qwen3.8-flash","messages":[
+                {"role":"system","content":"instructions"},
+                {"role":"user","content":"hello"}]}
+            """u8.ToArray(), catalog);
+        Assert.Equal(2, verbatim.GetArrayLength());
+        Assert.Equal("system", verbatim[0].GetProperty("role").GetString());
+        Assert.Equal("instructions", verbatim[0].GetProperty("content").GetString());
+        Assert.Equal("user", verbatim[1].GetProperty("role").GetString());
+    }
+
+    private static async Task<JsonElement> ForwardedMessagesAsync(ResponseHandler handler, string model, byte[] payload,
+        ProviderModelCatalog? catalog = null)
     {
         var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
-            Catalog(), ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+            catalog ?? Catalog(), ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
         var command = Command() with
         {
             Request = new ChatCommand(model, payload),
@@ -701,9 +876,18 @@ public sealed class ProviderContractTests
             policy.PrincipalDailyAllowance, new NanoYuan(1_000_000), resource.OperatorMaximum);
         var handle = new OperationHandle(Guid.CreateVersion7(), new byte[32], 1,
             DateTimeOffset.UtcNow.AddMinutes(1), snapshot);
-        var access = new ProviderAccessSelection(Resources.QwenMtFlash, "test", "test", "test-model");
+        var access = new ProviderAccessSelection(Resources.QwenFlash, "test", "test", "test-model");
         return new("hello", "en", "es", "general", access, handle, "request-1", "trace-1", 1,
             0, 1, 1, Guid.CreateVersion7(), DateTimeOffset.UtcNow, TimeSpan.FromSeconds(30));
+    }
+
+    private static TranslationProviderCommand NativeTranslationCommand()
+    {
+        var command = TranslationCommand();
+        return command with
+        {
+            Access = new ProviderAccessSelection(Resources.QwenMtFlash, "test", "test", "test-mt"),
+        };
     }
 
     private static OpenAiTranslationClient TranslationClient(ResponseHandler handler, TimeProvider? timeProvider = null)
@@ -722,8 +906,10 @@ public sealed class ProviderContractTests
 
     private static ProviderModelCatalog Catalog(bool? translationEnableThinking = null)
     {
-        ProviderModelOptions Model(string upstream) => new()
+        ProviderModelOptions Model(string upstream, bool mergesSystemIntoUser = false, bool nativeTranslationOptions = false) => new()
         {
+            MergesSystemIntoUser = mergesSystemIntoUser,
+            NativeTranslationOptions = nativeTranslationOptions,
             Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
             {
                 ["test"] = new() { Provider = "test", UpstreamModel = upstream, MaxConcurrentRequests = 16 },
@@ -744,7 +930,7 @@ public sealed class ProviderContractTests
             {
                 [Resources.QwenFlash] = Model("test-model"),
                 [Resources.QwenVisionFlash] = Model("test-vision"),
-                [Resources.QwenMtFlash] = Model("test-mt"),
+                [Resources.QwenMtFlash] = Model("test-mt", mergesSystemIntoUser: true, nativeTranslationOptions: true),
             },
         }, new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, requireHttps: true);
     }
