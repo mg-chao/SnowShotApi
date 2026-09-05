@@ -149,6 +149,27 @@ public sealed class PublicContractTests
     }
 
     [Fact]
+    public async Task V2ModelListExposesTranslationCapabilities()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US");
+        using var response = await client.GetAsync("/api/v2/chat/models", TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var models = document.RootElement.GetProperty("data").EnumerateArray().ToArray();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["qwen3.8-flash", "qwen3-vl-flash", "qwen-mt-flash"],
+            models.Select(value => value.GetProperty("model").GetString()!).ToArray());
+        Assert.Equal([true, true, false],
+            models.Select(value => value.GetProperty("supports_reasoning").GetBoolean()).ToArray());
+        Assert.Equal(["default", "default", "qwen-mt"],
+            models.Select(value => value.GetProperty("translation_mode").GetString()!).ToArray());
+        Assert.Equal([false, true, false],
+            models.Select(value => value.GetProperty("supports_vision").GetBoolean()).ToArray());
+    }
+
+    [Fact]
     public async Task ChineseModelNamesUseUnifiedPublicLocalization()
     {
         await using var factory = new ApiFactory();

@@ -84,14 +84,18 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
         _translationModels = logicalModels.ToHashSet(StringComparer.Ordinal);
         _chatModels = options.Models
             .OrderBy(model => model.Value.Order).ThenBy(model => model.Key, StringComparer.Ordinal)
-            .Select(model => new ChatModelDefinition(model.Key, model.Value.Thinking, model.Value.SupportVision,
-                _translationModels.Contains(model.Key)))
+            .Select(model => new ChatModelDefinition(model.Key, model.Value.Thinking,
+                string.IsNullOrWhiteSpace(model.Value.TranslationMode) ? "default" : model.Value.TranslationMode,
+                model.Value.SupportVision, _translationModels.Contains(model.Key)))
             .ToArray();
     }
 
     public IReadOnlyList<ChatModelDefinition> Models => _chatModels;
 
     public bool Contains(string model) => _models.ContainsKey(model);
+
+    public string TranslationMode(string model) =>
+        Models.FirstOrDefault(value => value.Model == model)?.TranslationMode ?? "default";
 
     public bool IsTranslationModel(string model) => _translationModels.Contains(model);
 

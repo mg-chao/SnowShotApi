@@ -54,9 +54,34 @@ public sealed class ChatRequest
     [JsonPropertyName("thinking_budget_tokens")]
     public int ThinkingBudgetTokens { get; init; } = 4096;
 
+    [JsonPropertyName("translation_options")]
+    public ChatTranslationOptions? TranslationOptions { get; init; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
 }
+
+public sealed class ChatTranslationOptions
+{
+    [JsonPropertyName("source_lang")]
+    public string? SourceLanguage { get; init; }
+
+    [JsonPropertyName("target_lang")]
+    public string? TargetLanguage { get; init; }
+
+    [JsonPropertyName("domains")]
+    public string? Domains { get; init; }
+
+    [JsonPropertyName("terms")]
+    public List<ChatTranslationTerm>? Terms { get; init; }
+
+    [JsonPropertyName("tm_list")]
+    public List<ChatTranslationTerm>? TranslationMemory { get; init; }
+}
+
+public sealed record ChatTranslationTerm(
+    [property: JsonPropertyName("source")] string Source,
+    [property: JsonPropertyName("target")] string Target);
 
 public sealed class ChatMessage
 {
@@ -73,6 +98,13 @@ public sealed record ChatModelDescriptor(
     [property: JsonPropertyName("thinking")] bool Thinking,
     [property: JsonPropertyName("support_vision")] bool SupportVision,
     [property: JsonPropertyName("translation")] bool Translation);
+
+public sealed record ChatModelV2Descriptor(
+    [property: JsonPropertyName("model")] string Model,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("supports_reasoning")] bool SupportsReasoning,
+    [property: JsonPropertyName("translation_mode")] string TranslationMode,
+    [property: JsonPropertyName("supports_vision")] bool SupportsVision);
 
 public sealed record ChatUsage(
     [property: JsonPropertyName("prompt_tokens")] long PromptTokens,

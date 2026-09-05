@@ -15,14 +15,20 @@ public static class ApplicationResources
 
 public sealed record ChatModelDefinition(
     string Model,
-    bool Thinking,
-    bool SupportVision,
-    bool Translation);
+    bool SupportsReasoning,
+    string TranslationMode,
+    bool SupportsVision,
+    bool Translation)
+{
+    public bool Thinking => SupportsReasoning;
+    public bool SupportVision => SupportsVision;
+}
 
 public interface IChatModelCatalog
 {
     IReadOnlyList<ChatModelDefinition> Models { get; }
     bool Contains(string model);
+    string TranslationMode(string model);
 }
 
 public sealed record TranslationRouting(

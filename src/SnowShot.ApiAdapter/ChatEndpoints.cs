@@ -26,6 +26,8 @@ internal static class ChatEndpoints
             .Produces<PublicProblem>(StatusCodes.Status504GatewayTimeout, "application/problem+json");
         endpoints.MapGet("/api/v1/chat/models", Models).WithName("ChatModels").WithTags("Chat")
             .Produces<AppEnvelope>(StatusCodes.Status200OK);
+        endpoints.MapGet("/api/v2/chat/models", ModelsV2).WithName("ChatModelsV2").WithTags("Chat")
+            .Produces<AppEnvelope>(StatusCodes.Status200OK);
         return endpoints;
     }
 
@@ -33,7 +35,14 @@ internal static class ChatEndpoints
     {
         return ApiResponse.Success(modelCatalog.Models.Select(model =>
             new ChatModelDescriptor(model.Model,
-                messages[model.Model], model.Thinking, model.SupportVision, model.Translation)).ToArray(), messages);
+                messages[model.Model], model.SupportsReasoning, model.SupportsVision, model.Translation)).ToArray(), messages);
+    }
+
+    private static IResult ModelsV2(IChatModelCatalog modelCatalog, PublicMessages messages)
+    {
+        return ApiResponse.Success(modelCatalog.Models.Select(model =>
+            new ChatModelV2Descriptor(model.Model, messages[model.Model], model.SupportsReasoning,
+                model.TranslationMode, model.SupportsVision)).ToArray(), messages);
     }
 
     private static async Task CompleteAsync(

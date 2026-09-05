@@ -185,6 +185,7 @@ public sealed class ProviderModelOptions
 {
     [Range(0, int.MaxValue)] public int Order { get; init; } = int.MaxValue;
     public bool Thinking { get; init; } = true;
+    public string TranslationMode { get; init; } = "default";
     public bool SupportVision { get; init; }
     public bool MergesSystemIntoUser { get; init; }
     public bool NativeTranslationOptions { get; init; }

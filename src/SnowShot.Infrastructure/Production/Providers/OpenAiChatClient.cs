@@ -32,7 +32,8 @@ public sealed class OpenAiChatClient(
         if (command.AttemptNumber > 1) SnowShotTelemetry.ProviderRetries.Add(1,
             new("kind", "chat"), new("model", request.Model), new("provider", access.Selection.Provider));
         var payload = RewritePayload(request.Utf8Json.Span, access.Selection.UpstreamModel,
-            catalog.MergesSystemIntoUser(command.Access.LogicalModel));
+            catalog.MergesSystemIntoUser(command.Access.LogicalModel),
+            catalog.TranslationMode(command.Access.LogicalModel));
         using var message = new HttpRequestMessage(HttpMethod.Post, access.Endpoint)
         {
             Content = new ByteArrayContent(payload),
@@ -174,7 +175,8 @@ public sealed class OpenAiChatClient(
         }
     }
 
-    private static byte[] RewritePayload(ReadOnlySpan<byte> utf8Json, string upstreamModel, bool mergeSystemIntoUser)
+    private static byte[] RewritePayload(ReadOnlySpan<byte> utf8Json, string upstreamModel,
+        bool mergeSystemIntoUser, string translationMode)
     {
         using var document = JsonDocument.Parse(utf8Json.ToArray());
         using var output = new MemoryStream();
@@ -185,7 +187,13 @@ public sealed class OpenAiChatClient(
             foreach (var property in document.RootElement.EnumerateObject())
             {
                 if (property.NameEquals("model") || property.NameEquals("stream")) continue;
+                if (translationMode == "qwen-mt" && property.NameEquals("enable_thinking")) continue;
                 if (property.NameEquals("stream_options")) { streamOptions = property.Value; continue; }
+                if (property.NameEquals("messages") && translationMode == "qwen-mt")
+                {
+                    WriteQwenMtMessages(writer, property.Value);
+                    continue;
+                }
                 if (mergeSystemIntoUser && property.NameEquals("messages"))
                 {
                     WriteMergedMessages(writer, property.Value);
@@ -205,6 +213,22 @@ public sealed class OpenAiChatClient(
             writer.WriteEndObject();
         }
         return output.ToArray();
+    }
+
+    private static void WriteQwenMtMessages(Utf8JsonWriter writer, JsonElement messages)
+    {
+        writer.WritePropertyName("messages");
+        writer.WriteStartArray();
+        if (messages.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var message in messages.EnumerateArray())
+            {
+                if (!IsStringMessage(message, "user", out _)) continue;
+                message.WriteTo(writer);
+                break;
+            }
+        }
+        writer.WriteEndArray();
     }
 
     // Models whose upstream rejects the system role (such as qwen-mt-flash) are flagged

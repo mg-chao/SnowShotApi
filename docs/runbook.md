@@ -23,9 +23,11 @@ qwen-plus, and deepseek-v4-flash models. Revision 9 preserves every limit and
 price and adds the cost estimation ratios
 (3 payload bytes per input token, 2 delivered characters per output token)
 used to settle abnormal operations from local evidence. The chat model list is
-served by qwen3.8-flash, qwen3-vl-flash, and qwen-mt-flash; translation traffic
-is split evenly between qwen3.8-flash and qwen-mt-flash, and both are exposed
-for chat with the `translation` flag set to true. Admission limits were
+served by qwen3.8-flash, qwen3-vl-flash, and qwen-mt-flash. The legacy
+`/api/v1/chat/models` response remains available, while `/api/v2/chat/models`
+exposes `supports_reasoning`, `translation_mode`, and `supports_vision`.
+Translation traffic is split evenly between qwen3.8-flash and qwen-mt-flash.
+Admission limits were
 realigned to the Alibaba Cloud Model Studio lowest spending tier (qwen3.8-flash
 and qwen3-vl-flash: 60 requests per minute per principal and 64 global
 concurrent slots; qwen-mt-flash and translation: 30 requests per minute per
