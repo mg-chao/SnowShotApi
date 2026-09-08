@@ -731,6 +731,40 @@ public sealed class ProviderContractTests
     }
 
     [Fact]
+    public async Task VisionChatPreservesImagePartsWhileRewritingOnlyRoutingAndStreamOptions()
+    {
+        const string response = "data: {\"choices\":[{\"delta\":{\"content\":\"# Result\"}}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":20,\"total_tokens\":120}}\n\n" +
+            "data: [DONE]\n\n";
+        var handler = new ResponseHandler(response);
+        var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
+            Catalog(), ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var payload = """
+            {"model":"qwen3-vl-flash","messages":[
+              {"role":"system","content":"Convert to Markdown."},
+              {"role":"user","content":[{"type":"text","text":"Convert this image."},
+                {"type":"image_url","image_url":{"url":"data:image/webp;base64,UklGRgAAAABXRUJQ"}}]}],
+              "stream":true,"temperature":0,"max_tokens":8192,"enable_thinking":false}
+            """u8.ToArray();
+        var command = Command() with
+        {
+            Request = new ChatCommand(Resources.QwenVisionFlash, payload),
+            Access = new ProviderAccessSelection(Resources.QwenVisionFlash, "test", "test", "test-vision"),
+        };
+        var events = new List<ChatProviderEvent>();
+        await foreach (var item in client.StreamAsync(command, TestContext.Current.CancellationToken)) events.Add(item);
+        var terminal = Assert.IsType<ChatProviderEvent.Terminal>(events[^1]);
+        Assert.Equal(new ChatUsage(100, 20, 120), terminal.Usage);
+        using var original = System.Text.Json.JsonDocument.Parse(payload);
+        using var forwarded = System.Text.Json.JsonDocument.Parse(handler.RequestBody!);
+        Assert.True(System.Text.Json.JsonElement.DeepEquals(original.RootElement.GetProperty("messages"),
+            forwarded.RootElement.GetProperty("messages")));
+        Assert.Equal("test-vision", forwarded.RootElement.GetProperty("model").GetString());
+        Assert.True(forwarded.RootElement.GetProperty("stream_options").GetProperty("include_usage").GetBoolean());
+        Assert.False(forwarded.RootElement.GetProperty("enable_thinking").GetBoolean());
+    }
+
+    [Fact]
     public async Task ChatMergesSystemMessagesIntoTheUserTurnForConfiguredModelsOnly()
     {
         const string response = "data: {\"id\":\"one\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n" +

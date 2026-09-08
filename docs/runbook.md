@@ -83,6 +83,35 @@ envelope. Chat clients that call qwen-mt-flash directly can pass
 `translation_options` in their own request body — the chat path forwards
 unknown fields verbatim.
 
+Image conversion clients use the same chat endpoint. Select a model whose
+`supports_vision` is true in `/api/v2/chat/models`, then send the image as a
+multimodal user message. The full JSON body, including base64, must fit within
+2 MiB. For example (replace the abbreviated image with actual WebP base64):
+
+```json
+{
+  "model": "qwen3-vl-flash",
+  "stream": true,
+  "enable_thinking": false,
+  "temperature": 0,
+  "max_tokens": 8192,
+  "messages": [
+    {"role": "system", "content": "Convert the image into semantic HTML. Return only an HTML fragment."},
+    {"role": "user", "content": [
+      {"type": "text", "text": "Convert this image faithfully."},
+      {"type": "image_url", "image_url": {"url": "data:image/webp;base64,..."}}
+    ]}
+  ]
+}
+```
+
+Markdown conversion changes the instruction to request GitHub-flavored Markdown.
+Image content parts are forwarded intact; provider routing and streaming usage
+options are applied as for other chat requests. A successful stream ends with
+`[DONE]` only after settlement. Clients must also inspect provider finish reasons
+and reject truncated or empty conversions. No conversion-specific deployment or
+database migration is required.
+
 Chat and
 translation share the same provider access pool, so
 use the model/provider/access identity on provider attempts to distinguish

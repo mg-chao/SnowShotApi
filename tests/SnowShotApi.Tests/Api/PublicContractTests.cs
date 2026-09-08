@@ -489,6 +489,59 @@ public sealed class PublicContractTests
         AssertCompletedAttempt(factory.Ledger, "qwen3.8-flash/test/aliyun");
     }
 
+    [Theory]
+    [InlineData("Markdown")]
+    [InlineData("HTML")]
+    public async Task VisionConversionForwardsImageContentAndSettlesBeforeCompletion(string format)
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        const string image = "data:image/webp;base64,UklGRgAAAABXRUJQ";
+        var body = new
+        {
+            model = Resources.QwenVisionFlash,
+            stream = true,
+            enable_thinking = false,
+            temperature = 0,
+            max_tokens = 8192,
+            messages = new object[]
+            {
+                new { role = "system", content = $"Convert the image into {format}." },
+                new { role = "user", content = new object[]
+                {
+                    new { type = "text", text = "Convert this image faithfully." },
+                    new { type = "image_url", image_url = new { url = image } },
+                } },
+            },
+        };
+        using var response = await client.PostAsJsonAsync("/api/v1/chat/completions", body,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.EndsWith("data: [DONE]\n\n", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        var command = Assert.Single(factory.Chat.Commands);
+        using var forwarded = JsonDocument.Parse(command.Request.Utf8Json);
+        var messages = forwarded.RootElement.GetProperty("messages");
+        Assert.Equal($"Convert the image into {format}.", messages[0].GetProperty("content").GetString());
+        Assert.Equal(image, messages[1].GetProperty("content")[1].GetProperty("image_url").GetProperty("url").GetString());
+        Assert.Equal(Resources.QwenVisionFlash, command.Request.Model);
+        Assert.True(factory.Ledger.SettlementCompleted);
+    }
+
+    [Fact]
+    public async Task VisionConversionHonorsTheExistingChatBodyLimit()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        using var response = await client.PostAsJsonAsync("/api/v1/chat/completions", new
+        {
+            model = Resources.QwenVisionFlash,
+            messages = new[] { new { role = "user", content = new string('x', 2 * 1024 * 1024) } },
+        }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Empty(factory.Chat.Commands);
+        Assert.Empty(factory.Ledger.Reservations);
+    }
+
     [Fact]
     public async Task ChatDoesNotValidateForwardedProviderParameters()
     {

@@ -200,12 +200,14 @@ internal sealed class FakeLedger : IOperationLedger
 
 internal sealed class FakeChatClient : IChatProviderClient
 {
+    public ConcurrentQueue<ChatProviderCommand> Commands { get; } = new();
     public bool ThrowAfterFrame { get; set; }
     public bool TruncateAfterFrames { get; set; }
 
     public async IAsyncEnumerable<ChatProviderEvent> StreamAsync(ChatProviderCommand command,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        Commands.Enqueue(command);
         yield return new ChatProviderEvent.Frame(System.Text.Encoding.UTF8.GetBytes("{\"id\":\"chat-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"));
         await Task.Yield();
         if (ThrowAfterFrame) throw new InvalidOperationException("Simulated post-frame failure.");
