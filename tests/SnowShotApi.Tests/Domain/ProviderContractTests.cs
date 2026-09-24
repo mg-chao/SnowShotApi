@@ -31,12 +31,11 @@ public sealed class ProviderContractTests
     {
         var catalog = Catalog();
 
-        Assert.Equal([Resources.QwenMtFlash, Resources.QwenVisionFlash, Resources.QwenFlash],
+        Assert.Equal([Resources.QwenMtFlash, Resources.QwenFlash],
             catalog.Models.Select(model => model.Model).ToArray());
-        Assert.Equal([true, false, false],
+        Assert.Equal([true, false],
             catalog.Models.Select(model => model.Translation).ToArray());
         Assert.True(catalog.Contains(Resources.QwenFlash));
-        Assert.True(catalog.Contains(Resources.QwenVisionFlash));
         Assert.True(catalog.Contains(Resources.QwenMtFlash));
         Assert.True(catalog.IsTranslationModel(Resources.QwenMtFlash));
         Assert.False(catalog.IsTranslationModel(Resources.QwenFlash));
@@ -87,13 +86,13 @@ public sealed class ProviderContractTests
             },
             Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
             {
-                [Resources.QwenVisionFlash] = new()
+                [Resources.QwenFlash] = new()
                 {
                     SupportVision = true,
                     Accesses = new Dictionary<string, ProviderAccessOptions>(StringComparer.Ordinal)
                     {
-                        ["primary"] = new() { Provider = "primary", UpstreamModel = "qwen3-vl-flash", MaxConcurrentRequests = 16 },
-                        ["secondary"] = new() { Provider = "secondary", UpstreamModel = "qwen3-vl-flash", MaxConcurrentRequests = 16 },
+                        ["primary"] = new() { Provider = "primary", UpstreamModel = "qwen3.8-flash", MaxConcurrentRequests = 16 },
+                        ["secondary"] = new() { Provider = "secondary", UpstreamModel = "qwen3.8-flash", MaxConcurrentRequests = 16 },
                     },
                 },
                 [Resources.QwenMtFlash] = new()
@@ -106,14 +105,14 @@ public sealed class ProviderContractTests
             },
         }, new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, requireHttps: true);
 
-        var primary = catalog.Get(Resources.QwenVisionFlash, "primary");
-        var secondary = catalog.Get(Resources.QwenVisionFlash, "secondary");
+        var primary = catalog.Get(Resources.QwenFlash, "primary");
+        var secondary = catalog.Get(Resources.QwenFlash, "secondary");
 
         Assert.Equal("https://primary.test/chat", primary.Endpoint.ToString());
         Assert.Equal("primary-key", primary.ApiKey);
         Assert.Equal("https://secondary.test/chat", secondary.Endpoint.ToString());
         Assert.Equal("secondary-key", secondary.ApiKey);
-        var model = Assert.Single(catalog.Models, definition => definition.Model == Resources.QwenVisionFlash);
+        var model = Assert.Single(catalog.Models, definition => definition.Model == Resources.QwenFlash);
         Assert.True(model.SupportVision);
         Assert.False(model.Translation);
     }
@@ -740,7 +739,7 @@ public sealed class ProviderContractTests
         var client = new OpenAiChatClient(new SingleClientRegistry(new HttpClient(handler)), new ChatProviderOptions(),
             Catalog(), ServicePolicy.Defaults(), new DependencyHealth(TimeProvider.System), TimeProvider.System);
         var payload = """
-            {"model":"qwen3-vl-flash","messages":[
+            {"model":"qwen3.8-flash","messages":[
               {"role":"system","content":"Convert to Markdown."},
               {"role":"user","content":[{"type":"text","text":"Convert this image."},
                 {"type":"image_url","image_url":{"url":"data:image/webp;base64,UklGRgAAAABXRUJQ"}}]}],
@@ -748,8 +747,8 @@ public sealed class ProviderContractTests
             """u8.ToArray();
         var command = Command() with
         {
-            Request = new ChatCommand(Resources.QwenVisionFlash, payload),
-            Access = new ProviderAccessSelection(Resources.QwenVisionFlash, "test", "test", "test-vision"),
+            Request = new ChatCommand(Resources.QwenFlash, payload),
+            Access = new ProviderAccessSelection(Resources.QwenFlash, "test", "test", "test-model"),
         };
         var events = new List<ChatProviderEvent>();
         await foreach (var item in client.StreamAsync(command, TestContext.Current.CancellationToken)) events.Add(item);
@@ -759,7 +758,7 @@ public sealed class ProviderContractTests
         using var forwarded = System.Text.Json.JsonDocument.Parse(handler.RequestBody!);
         Assert.True(System.Text.Json.JsonElement.DeepEquals(original.RootElement.GetProperty("messages"),
             forwarded.RootElement.GetProperty("messages")));
-        Assert.Equal("test-vision", forwarded.RootElement.GetProperty("model").GetString());
+        Assert.Equal("test-model", forwarded.RootElement.GetProperty("model").GetString());
         Assert.True(forwarded.RootElement.GetProperty("stream_options").GetProperty("include_usage").GetBoolean());
         Assert.False(forwarded.RootElement.GetProperty("enable_thinking").GetBoolean());
     }
@@ -963,7 +962,6 @@ public sealed class ProviderContractTests
             Models = new Dictionary<string, ProviderModelOptions>(StringComparer.Ordinal)
             {
                 [Resources.QwenFlash] = Model("test-model"),
-                [Resources.QwenVisionFlash] = Model("test-vision"),
                 [Resources.QwenMtFlash] = Model("test-mt", mergesSystemIntoUser: true, nativeTranslationOptions: true),
             },
         }, new TranslationProviderOptions { LogicalModels = [Resources.QwenMtFlash] }, requireHttps: true);

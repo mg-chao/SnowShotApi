@@ -67,14 +67,18 @@ $arguments = @(
 ) -join " "
 $action = New-ScheduledTaskAction -Execute $powerShell -Argument $arguments
 $trigger = New-ScheduledTaskTrigger -AtStartup
+$recoveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval ([TimeSpan]::FromMinutes(1))
 $settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -RestartCount 999 `
     -RestartInterval ([TimeSpan]::FromMinutes(1)) `
     -StartWhenAvailable `
     -MultipleInstances IgnoreNew
 $principalSettings = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principalSettings -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($trigger, $recoveryTrigger) -Settings $settings -Principal $principalSettings -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 Start-Sleep -Seconds 3
 $task = Get-ScheduledTask -TaskName $TaskName

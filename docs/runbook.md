@@ -23,22 +23,29 @@ qwen-plus, and deepseek-v4-flash models. Revision 9 preserves every limit and
 price and adds the cost estimation ratios
 (3 payload bytes per input token, 2 delivered characters per output token)
 used to settle abnormal operations from local evidence. The chat model list is
-served by qwen3.8-flash, qwen3-vl-flash, and qwen-mt-flash. The legacy
+served by qwen3.8-flash and qwen-mt-flash. The legacy
 `/api/v1/chat/models` response remains available, while `/api/v2/chat/models`
 exposes `supports_reasoning`, `translation_mode`, and `supports_vision`.
 Translation traffic is split evenly between qwen3.8-flash and qwen-mt-flash.
 Admission limits were
-realigned to the Alibaba Cloud Model Studio lowest spending tier (qwen3.8-flash
-and qwen3-vl-flash: 60 requests per minute per principal and 64 global
-concurrent slots; qwen-mt-flash and translation: 30 requests per minute per
+realigned to the Alibaba Cloud Model Studio lowest spending tier (qwen3.8-flash:
+60 requests per minute per principal and 64 global concurrent slots;
+qwen-mt-flash and translation: 30 requests per minute per
 principal). Revision 10 keeps those limits and updates the qwen3.8-flash price
 to the current Model Studio rate - 0.8 CNY per million input tokens and 2.7 CNY
 per million output tokens (800/2700 NanoYuan per token) after the 2026-08-27
 price reduction - while every allowance, budget, and operation maximum stays
-unchanged. The production host mounts
+unchanged. Revision 11 retires qwen3-vl-flash and exposes vision support on
+qwen3.8-flash. Its pricing and limits remain at revision 10 values. Clients
+using qwen3-vl-flash must select qwen3.8-flash for image requests. The
+production host mounts
 `runtime/appsettings.Production.json`; the policy deployment job runs
 `Restore-TemporaryBudgets.sh`, keeps a rollback copy, recreates only the API
-container, and fails back if liveness does not recover.
+container, and fails back if liveness does not recover. Before rolling out
+revision 11, remove any qwen3-vl-flash entries from the mounted configuration
+or environment overrides. After rollout, confirm policy convergence and verify
+that `/api/v2/chat/models` lists qwen3.8-flash with `supports_vision: true`
+and omits qwen3-vl-flash.
 
 ## Readiness and dependency outage
 
@@ -90,7 +97,7 @@ multimodal user message. The full JSON body, including base64, must fit within
 
 ```json
 {
-  "model": "qwen3-vl-flash",
+  "model": "qwen3.8-flash",
   "stream": true,
   "enable_thinking": false,
   "temperature": 0,

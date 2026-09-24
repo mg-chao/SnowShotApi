@@ -747,7 +747,6 @@ public sealed class DistributedIntegrationTests
             {
                 [Resources.QwenFlash] = Model("flash"),
                 [Resources.QwenMtFlash] = Model("mt"),
-                [Resources.QwenVisionFlash] = Model("vision"),
             },
         }, new TranslationProviderOptions { LogicalModels = [Resources.QwenFlash] }, requireHttps: true);
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<RedisProviderAccessPool>.Instance;

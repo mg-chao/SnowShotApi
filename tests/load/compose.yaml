@@ -12,8 +12,6 @@ x-api-environment: &api-environment
   Providers__CloudProviders__aliyun__ApiKey: fault-test
   Providers__Models__qwen3.8-flash__Accesses__aliyun__Provider: aliyun
   Providers__Models__qwen3.8-flash__Accesses__aliyun__UpstreamModel: qwen3.8-flash
-  Providers__Models__qwen3-vl-flash__Accesses__aliyun__Provider: aliyun
-  Providers__Models__qwen3-vl-flash__Accesses__aliyun__UpstreamModel: qwen3-vl-flash
   Providers__Models__qwen-mt-flash__Accesses__aliyun__Provider: aliyun
   Providers__Models__qwen-mt-flash__Accesses__aliyun__UpstreamModel: qwen-mt-flash
   Providers__Table__BaseUrl: http://fake-provider:8080/
@@ -24,8 +22,6 @@ x-api-environment: &api-environment
   Policy__Pricing__translation__OutputRateNanoYuan: 8000
   Policy__Pricing__qwen3.8-flash__InputRateNanoYuan: 800
   Policy__Pricing__qwen3.8-flash__OutputRateNanoYuan: 2700
-  Policy__Pricing__qwen3-vl-flash__InputRateNanoYuan: 150
-  Policy__Pricing__qwen3-vl-flash__OutputRateNanoYuan: 1500
   Policy__Pricing__qwen-mt-flash__InputRateNanoYuan: 700
   Policy__Pricing__qwen-mt-flash__OutputRateNanoYuan: 1950
   Policy__Pricing__table-extraction__InputRateNanoYuan: 30000000

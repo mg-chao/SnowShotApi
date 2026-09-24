@@ -81,7 +81,7 @@ public sealed class DomainTests
         foreach (var resource in new[]
         {
             Resources.Translation, Resources.QwenFlash,
-            Resources.QwenVisionFlash, Resources.QwenMtFlash,
+            Resources.QwenMtFlash,
         })
         {
             var admission = policy.Get(resource).Admission;
@@ -105,8 +105,6 @@ public sealed class DomainTests
         Assert.Equal(8_000, policy.Get(Resources.Translation).Price.Output.Value);
         Assert.Equal(200, policy.Get(Resources.QwenFlash).Price.Input.Value);
         Assert.Equal(800, policy.Get(Resources.QwenFlash).Price.Output.Value);
-        Assert.Equal(150, policy.Get(Resources.QwenVisionFlash).Price.Input.Value);
-        Assert.Equal(1_500, policy.Get(Resources.QwenVisionFlash).Price.Output.Value);
         Assert.Equal(700, policy.Get(Resources.QwenMtFlash).Price.Input.Value);
         Assert.Equal(1_950, policy.Get(Resources.QwenMtFlash).Price.Output.Value);
         Assert.Equal(30_000_000, policy.Get(Resources.TableExtraction).Price.Input.Value);
@@ -392,7 +390,6 @@ public sealed class DomainTests
     {
         [Resources.Translation] = new() { InputRateNanoYuan = 2_000, OutputRateNanoYuan = 8_000 },
         [Resources.QwenFlash] = new() { InputRateNanoYuan = 200, OutputRateNanoYuan = 800 },
-        [Resources.QwenVisionFlash] = new() { InputRateNanoYuan = 150, OutputRateNanoYuan = 1_500 },
         [Resources.QwenMtFlash] = new() { InputRateNanoYuan = 700, OutputRateNanoYuan = 1_950 },
         [Resources.TableExtraction] = new() { InputRateNanoYuan = 30_000_000, OutputRateNanoYuan = 0 },
     };

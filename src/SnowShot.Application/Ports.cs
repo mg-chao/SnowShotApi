@@ -8,7 +8,6 @@ public static class ApplicationResources
 {
     public const string Translation = Resources.Translation;
     public const string QwenFlash = Resources.QwenFlash;
-    public const string QwenVisionFlash = Resources.QwenVisionFlash;
     public const string QwenMtFlash = Resources.QwenMtFlash;
     public const string TableExtraction = Resources.TableExtraction;
 }

@@ -138,13 +138,13 @@ public sealed class PublicContractTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, document.RootElement.GetProperty("code").GetInt32());
         var models = document.RootElement.GetProperty("data");
-        Assert.Equal(["qwen3.8-flash", "qwen3-vl-flash", "qwen-mt-flash"],
+        Assert.Equal(["qwen3.8-flash", "qwen-mt-flash"],
             models.EnumerateArray().Select(value => value.GetProperty("model").GetString()!).ToArray());
-        Assert.Equal(["Qwen Flash", "Qwen VL Flash", "Qwen MT Flash"],
+        Assert.Equal(["Qwen Flash", "Qwen MT Flash"],
             models.EnumerateArray().Select(value => value.GetProperty("name").GetString()!).ToArray());
-        Assert.Equal([false, false, true],
+        Assert.Equal([false, true],
             models.EnumerateArray().Select(value => value.GetProperty("translation").GetBoolean()).ToArray());
-        Assert.Equal([true, true, false],
+        Assert.Equal([true, false],
             models.EnumerateArray().Select(value => value.GetProperty("thinking").GetBoolean()).ToArray());
     }
 
@@ -159,13 +159,13 @@ public sealed class PublicContractTests
         var models = document.RootElement.GetProperty("data").EnumerateArray().ToArray();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(["qwen3.8-flash", "qwen3-vl-flash", "qwen-mt-flash"],
+        Assert.Equal(["qwen3.8-flash", "qwen-mt-flash"],
             models.Select(value => value.GetProperty("model").GetString()!).ToArray());
-        Assert.Equal([true, true, false],
+        Assert.Equal([true, false],
             models.Select(value => value.GetProperty("supports_reasoning").GetBoolean()).ToArray());
-        Assert.Equal(["default", "default", "qwen-mt"],
+        Assert.Equal(["default", "qwen-mt"],
             models.Select(value => value.GetProperty("translation_mode").GetString()!).ToArray());
-        Assert.Equal([false, true, false],
+        Assert.Equal([true, false],
             models.Select(value => value.GetProperty("supports_vision").GetBoolean()).ToArray());
     }
 
@@ -180,7 +180,7 @@ public sealed class PublicContractTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(["通义千问 Flash", "通义千问 VL Flash", "通义千问 MT Flash"],
+        Assert.Equal(["通义千问 Flash", "通义千问 MT Flash"],
             document.RootElement.GetProperty("data").EnumerateArray()
                 .Select(value => value.GetProperty("name").GetString()!).ToArray());
     }
@@ -499,7 +499,7 @@ public sealed class PublicContractTests
         const string image = "data:image/webp;base64,UklGRgAAAABXRUJQ";
         var body = new
         {
-            model = Resources.QwenVisionFlash,
+            model = Resources.QwenFlash,
             stream = true,
             enable_thinking = false,
             temperature = 0,
@@ -523,7 +523,7 @@ public sealed class PublicContractTests
         var messages = forwarded.RootElement.GetProperty("messages");
         Assert.Equal($"Convert the image into {format}.", messages[0].GetProperty("content").GetString());
         Assert.Equal(image, messages[1].GetProperty("content")[1].GetProperty("image_url").GetProperty("url").GetString());
-        Assert.Equal(Resources.QwenVisionFlash, command.Request.Model);
+        Assert.Equal(Resources.QwenFlash, command.Request.Model);
         Assert.True(factory.Ledger.SettlementCompleted);
     }
 
@@ -534,7 +534,7 @@ public sealed class PublicContractTests
         using var client = factory.CreateAnonymousClient();
         using var response = await client.PostAsJsonAsync("/api/v1/chat/completions", new
         {
-            model = Resources.QwenVisionFlash,
+            model = Resources.QwenFlash,
             messages = new[] { new { role = "user", content = new string('x', 2 * 1024 * 1024) } },
         }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
@@ -685,6 +685,21 @@ public sealed class PublicContractTests
             new { model = "unknown", messages = new[] { new { role = "user", content = "hello" } } }, TestContext.Current.CancellationToken);
         await AssertProblemAsync(translation, HttpStatusCode.BadRequest, "invalid_request", "/api/v2/translation/translate");
         await AssertProblemAsync(chat, HttpStatusCode.BadRequest, "model_not_found", "/api/v1/chat/completions");
+    }
+
+    [Fact]
+    public async Task RetiredVisionModelIsRejectedBeforeReservation()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+
+        using var response = await client.PostAsJsonAsync("/api/v1/chat/completions",
+            new { model = "qwen3-vl-flash", messages = new[] { new { role = "user", content = "hello" } } },
+            TestContext.Current.CancellationToken);
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "model_not_found", "/api/v1/chat/completions");
+        Assert.Empty(factory.Ledger.Reservations);
+        Assert.Empty(factory.Chat.Commands);
     }
 
     [Fact]

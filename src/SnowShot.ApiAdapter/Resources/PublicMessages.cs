@@ -47,7 +47,6 @@ public sealed class PublicMessages
         ["Service Unavailable"] = ("Service Unavailable", "服务不可用"),
         ["Gateway Timeout"] = ("Gateway Timeout", "网关超时"),
         ["qwen3.8-flash"] = ("Qwen Flash", "通义千问 Flash"),
-        ["qwen3-vl-flash"] = ("Qwen VL Flash", "通义千问 VL Flash"),
         ["qwen-mt-flash"] = ("Qwen MT Flash", "通义千问 MT Flash"),
     };
 
