@@ -30,7 +30,7 @@ $knownHosts = Join-Path $SshDirectory "known_hosts"
 $runner = Join-Path $SshDirectory "Run-LatexReverseTunnel.ps1"
 $logPath = Join-Path $SshDirectory "latex-tunnel.log"
 if (-not (Test-Path -LiteralPath $privateKey -PathType Leaf)) {
-    & ssh-keygen.exe -q -t ed25519 -N "" -C "snowshot-latex-tunnel" -f $privateKey
+    & ssh-keygen.exe -q -t ed25519 -N '""' -C "snowshot-latex-tunnel" -f $privateKey
     if ($LASTEXITCODE -ne 0) { throw "Failed to generate the latex tunnel SSH key." }
 }
 
@@ -42,14 +42,14 @@ if ($hostKeyParts.Length -lt 2 -or $hostKeyParts[0] -notmatch '^ssh-') {
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Run-LatexReverseTunnel.ps1") -Destination $runner -Force
 
 foreach ($path in @($privateKey, $publicKey, $knownHosts, $runner)) {
-    & icacls.exe $path /setowner "NT AUTHORITY\SYSTEM" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Failed to set the SSH tunnel file owner: $path" }
     & icacls.exe $path /inheritance:r | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Failed to disable inherited SSH tunnel file permissions: $path" }
-    & icacls.exe $path /remove:g $identity.Name | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Failed to remove the deployment user from the SSH tunnel file: $path" }
     & icacls.exe $path /grant:r "NT AUTHORITY\SYSTEM:F" "BUILTIN\Administrators:F" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Failed to secure SSH tunnel file permissions: $path" }
+    & icacls.exe $path /remove:g $identity.Name | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Failed to remove the deployment user from the SSH tunnel file: $path" }
+    & icacls.exe $path /setowner "NT AUTHORITY\SYSTEM" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Failed to set the SSH tunnel file owner: $path" }
 }
 
 $powerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
