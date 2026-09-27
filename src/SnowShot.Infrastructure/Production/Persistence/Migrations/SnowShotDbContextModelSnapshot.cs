@@ -496,7 +496,7 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_usage_operation_hashes", "octet_length(\"IdempotencyHash\") = 32 AND octet_length(\"OwnerToken\") = 32 AND octet_length(\"PolicyFingerprint\") = 32 AND \"PolicyRevision\" > 0 AND (\"SettlementFingerprint\" IS NULL OR octet_length(\"SettlementFingerprint\") = 32)");
 
-                            t.HasCheckConstraint("ck_usage_operation_kind", "\"Kind\" IN (0, 1, 2)");
+                            t.HasCheckConstraint("ck_usage_operation_kind", "\"Kind\" IN (0, 1, 2, 3)");
 
                             t.HasCheckConstraint("ck_usage_operation_state", "\"State\" BETWEEN 0 AND 5");
 

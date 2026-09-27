@@ -5,7 +5,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace SnowShot.Api;
 
-internal static class TableMultipartReader
+internal static class ImageMultipartReader
 {
     internal const long MultipartOverheadBytes = 1024 * 1024;
 
@@ -14,17 +14,17 @@ internal static class TableMultipartReader
         long maximumImageBytes,
         CancellationToken cancellationToken)
     {
-        if (maximumImageBytes is <= 0 or > int.MaxValue) throw new InvalidOperationException("Table upload limit must fit in a managed buffer.");
+        if (maximumImageBytes is <= 0 or > int.MaxValue) throw new InvalidOperationException("Image upload limit must fit in a managed buffer.");
         var maximumRequestBytes = checked(maximumImageBytes + MultipartOverheadBytes);
-        if (request.ContentLength > maximumRequestBytes) throw new TablePayloadTooLargeException();
+        if (request.ContentLength > maximumRequestBytes) throw new ImagePayloadTooLargeException();
 
         var sizeFeature = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = maximumRequestBytes;
         if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType) ||
             !mediaType.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase))
-            throw new TableMultipartException();
+            throw new ImageMultipartException();
         var boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).Value;
-        if (string.IsNullOrWhiteSpace(boundary) || boundary.Length > 256) throw new TableMultipartException();
+        if (string.IsNullOrWhiteSpace(boundary) || boundary.Length > 256) throw new ImageMultipartException();
 
         var countingBody = new MaximumLengthReadStream(request.Body, maximumRequestBytes);
         var reader = new MultipartReader(boundary, countingBody)
@@ -37,14 +37,14 @@ internal static class TableMultipartReader
         try
         {
             var section = await reader.ReadNextSectionAsync(cancellationToken);
-            if (section is null || !IsImageFile(section.ContentDisposition)) throw new TableMultipartException();
+            if (section is null || !IsImageFile(section.ContentDisposition)) throw new ImageMultipartException();
             accepted = await PooledImageBuffer.ReadAsync(section.Body, (int)maximumImageBytes, cancellationToken);
-            if (accepted.Length == 0 || !HasWebpSignature(accepted.Memory.Span)) throw new TableMultipartException();
-            if (await reader.ReadNextSectionAsync(cancellationToken) is not null) throw new TableMultipartException();
+            if (accepted.Length == 0 || !HasWebpSignature(accepted.Memory.Span)) throw new ImageMultipartException();
+            if (await reader.ReadNextSectionAsync(cancellationToken) is not null) throw new ImageMultipartException();
             await DrainAsync(countingBody, cancellationToken);
             return accepted;
         }
-        catch (TablePayloadTooLargeException)
+        catch (ImagePayloadTooLargeException)
         {
             accepted?.Dispose();
             throw;
@@ -52,12 +52,12 @@ internal static class TableMultipartReader
         catch (InvalidDataException exception) when (IsLimitFailure(exception))
         {
             accepted?.Dispose();
-            throw new TablePayloadTooLargeException(exception);
+            throw new ImagePayloadTooLargeException(exception);
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or FormatException)
         {
             accepted?.Dispose();
-            throw new TableMultipartException(exception);
+            throw new ImageMultipartException(exception);
         }
         catch
         {
@@ -112,7 +112,7 @@ internal sealed class PooledImageBuffer : IDisposable
                 if (read == 0) return new(buffer, length);
                 length += read;
             }
-            if (await stream.ReadAsync(new byte[1], cancellationToken) != 0) throw new TablePayloadTooLargeException();
+            if (await stream.ReadAsync(new byte[1], cancellationToken) != 0) throw new ImagePayloadTooLargeException();
             return new(buffer, length);
         }
         catch
@@ -146,7 +146,7 @@ internal sealed class MaximumLengthReadStream(Stream inner, long maximumBytes) :
     private int Count(int value)
     {
         _read = checked(_read + value);
-        if (_read > maximumBytes) throw new TablePayloadTooLargeException();
+        if (_read > maximumBytes) throw new ImagePayloadTooLargeException();
         return value;
     }
     public override void Flush() => throw new NotSupportedException();
@@ -155,5 +155,5 @@ internal sealed class MaximumLengthReadStream(Stream inner, long maximumBytes) :
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
 
-internal sealed class TableMultipartException(Exception? inner = null) : Exception("Invalid table multipart request.", inner);
-internal sealed class TablePayloadTooLargeException(Exception? inner = null) : Exception("Table upload exceeds its configured limit.", inner);
+internal sealed class ImageMultipartException(Exception? inner = null) : Exception("Invalid image multipart request.", inner);
+internal sealed class ImagePayloadTooLargeException(Exception? inner = null) : Exception("Image upload exceeds its configured limit.", inner);

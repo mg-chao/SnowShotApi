@@ -142,3 +142,10 @@ __pycache__/
 # Agents
 .codex
 .zcode
+# RapidLaTeXOCR runtime
+services/RapidLaTeXOCR/venv/
+services/RapidLaTeXOCR/.venv/
+services/RapidLaTeXOCR/models/
+services/RapidLaTeXOCR/rapid_latex_ocr/models/
+services/RapidLaTeXOCR/logs/
+services/RapidLaTeXOCR/*.exe

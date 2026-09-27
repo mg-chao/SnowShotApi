@@ -13,6 +13,7 @@ $env:ConnectionStrings__Redis = " "
 $env:Identity__HmacKeyBase64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 ${env:Providers__CloudProviders__aliyun__ApiKey} = "openapi"
 $env:Providers__Table__BaseUrl = "http://127.0.0.1:18080/"
+$env:Providers__Latex__BaseUrl = "http://127.0.0.1:18081/"
 $env:ContractGeneration = "true"
 
 $process = Start-Process dotnet -ArgumentList @(

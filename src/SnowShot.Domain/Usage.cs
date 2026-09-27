@@ -4,7 +4,7 @@ using System.Collections.Immutable;
 
 namespace SnowShot.Domain;
 
-public enum UsageKind { Translation, Chat, TableExtraction }
+public enum UsageKind { Translation, Chat, TableExtraction, LatexExtraction = 3 }
 public enum ReservationState { Reserved, Dispatched, Committed, Released, UnknownCost, EstimatedCost }
 
 public enum CostBasis

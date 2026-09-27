@@ -1,0 +1,15 @@
+name: snowshot
+
+services:
+  api:
+    env_file:
+      - ./.secrets/deployment/latex-communication/api/snowshot-api-latex.env
+    environment:
+      Providers__Latex__BaseUrl: https://snowshot-latex-rec:18081/
+    extra_hosts:
+      - snowshot-latex-rec:host-gateway
+    volumes:
+      - type: bind
+        source: ./.secrets/deployment/latex-communication/api
+        target: /run/secrets/latex-communication
+        read_only: true

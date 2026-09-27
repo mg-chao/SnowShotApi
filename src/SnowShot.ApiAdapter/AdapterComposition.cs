@@ -14,5 +14,5 @@ public static class AdapterComposition
         application.UseMiddleware<ExceptionMiddleware>();
 
     public static IEndpointRouteBuilder MapSnowShotEndpoints(this IEndpointRouteBuilder endpoints) =>
-        endpoints.MapHealthEndpoints().MapChatEndpoints().MapTranslationEndpoints().MapTableEndpoints();
+        endpoints.MapHealthEndpoints().MapChatEndpoints().MapTranslationEndpoints().MapTableEndpoints().MapLatexEndpoints();
 }

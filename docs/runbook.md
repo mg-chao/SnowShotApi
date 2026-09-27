@@ -166,6 +166,10 @@ all referenced identities remain protected.
 
 ## Worker recovery
 
+The recognition capacity alert groups `snowshot.worker.busy` by resource.
+Infrastructure routes table incidents to the Table worker owner and
+`latex-extraction` incidents to the LaTeX worker owner (see the section below).
+
 Verify the Windows service account, process restart count, model files, mTLS
 certificate chain, and loopback listener. Confirm the reverse tunnel or
 Tailscale route before changing firewall rules. Restart the worker through
@@ -175,3 +179,13 @@ For the reverse SSH topology, the `SnowShotTableTunnel` scheduled task must stay
 `Running`. Its persistent runner and rotated logs are under
 `C:\ProgramData\SnowShot\ssh`; a `Ready` task with exit result 255 means the old
 one-shot action is still installed or the runner itself failed.
+
+## LaTeX worker recovery
+
+Check `RapidLaTeXOCRService`, `SnowShotLatexTunnel`, and port 18081. Verify the
+separate LaTeX certificate bundle and all four model hashes, then run the
+authenticated readiness probe described in [LaTeX deployment](latex-deployment.md).
+Inspect watchdog exit code 70, restart counts, and `snowshot.worker.busy` filtered
+to resource `latex-extraction`. Check contention with table inference before
+raising concurrency. Keep one worker process until GPU capacity has been measured.
+Never include uploaded images or recognized formulas in incident logs.

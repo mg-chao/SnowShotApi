@@ -143,12 +143,12 @@
       "runbookSection": "Queue and lease incidents"
     },
     {
-      "id": "table-worker-capacity-degraded",
+        "id": "recognition-worker-capacity-degraded",
       "signals": ["snowshot.worker.busy"],
-      "condition": "rate exceeds 5 percent of table requests",
+        "condition": "per-resource rate exceeds 5 percent of the corresponding extraction requests",
       "windowSeconds": 600,
       "severity": "page",
-      "owner": "Table worker",
+        "owner": "Infrastructure",
       "runbookSection": "Worker recovery"
     }
   ],

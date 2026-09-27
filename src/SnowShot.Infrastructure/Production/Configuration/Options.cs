@@ -210,6 +210,17 @@ public sealed class TableWorkerOptions
     public string? ServerCaCertificatePath { get; init; }
 }
 
+public sealed class LatexWorkerOptions
+{
+    public const string SectionName = "Providers:Latex";
+    [Required, Url] public string BaseUrl { get; init; } = string.Empty;
+    [Range(1, 800 * 1024)] public long MaximumUploadBytes { get; init; } = 800 * 1024;
+    [Range(1024, 16_777_216)] public int MaximumResponseBytes { get; init; } = 2 * 1024 * 1024;
+    public string? ClientCertificatePath { get; init; }
+    public string? ClientCertificatePassword { get; init; }
+    public string? ServerCaCertificatePath { get; init; }
+}
+
 public sealed class RetentionOptions
 {
     public const string SectionName = "Retention";

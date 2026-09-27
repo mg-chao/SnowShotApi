@@ -12,4 +12,5 @@
 .env*
 .secrets
 .runlogs
+.artifacts-review
 TestResults

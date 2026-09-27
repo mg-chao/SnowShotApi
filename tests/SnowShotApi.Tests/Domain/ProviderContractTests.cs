@@ -295,7 +295,9 @@ public sealed class ProviderContractTests
 
         var result = await client.TranslateAsync(NativeTranslationCommand() with
         {
-            From = from, To = to, Domain = domain,
+            From = from,
+            To = to,
+            Domain = domain,
         }, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);

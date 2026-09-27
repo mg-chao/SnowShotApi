@@ -11,3 +11,4 @@ in the incident timeline.
 | Domain | Accounting, cost, budgets, and policy semantics | Confirm durable accounting state and approve reconciliation or policy changes. |
 | API adapter | Public request validation, identity mapping, and provider request translation | Protect the public contract and investigate duplicate or malformed requests. |
 | Table worker | Table recognition service lifecycle and provider capacity | Restore the Windows worker, verify mTLS, and validate worker capacity. |
+| LaTeX worker | Formula recognition service lifecycle and shared GPU capacity | Restore RapidLaTeXOCRService, verify mTLS and model preflight, and inspect contention with the table worker. |

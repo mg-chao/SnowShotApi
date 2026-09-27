@@ -547,3 +547,58 @@ public sealed class TableUseCase(
     }
 
 }
+
+public sealed class LatexUseCase(
+    OperationCoordinator operations,
+    ILatexWorkerClient worker,
+    ISystemClock clock,
+    ServicePolicy policy)
+{
+    public async Task<ApplicationResult<LatexExtractionResult>> ExecuteAsync(
+        RequestContext context,
+        LatexCommand request,
+        CancellationToken cancellationToken)
+    {
+        var resourcePolicy = policy.Get(Resources.LatexExtraction);
+        var price = resourcePolicy.Price.Input;
+        var started = await operations.StartAsync(Resources.LatexExtraction, UsageKind.LatexExtraction,
+            context, new(1), resourcePolicy.OperatorMaximum, cancellationToken);
+        if (!started.IsSuccess) return ApplicationResult.Failure<LatexExtractionResult>(started.Error!);
+
+        await using var scope = started.Value!;
+        var dispatchError = await scope.DispatchAsync(cancellationToken);
+        if (dispatchError is not null) return ApplicationResult.Failure<LatexExtractionResult>(dispatchError);
+        var attemptStartedAt = clock.UtcNow;
+        var prepared = await scope.PrepareAttemptAsync(1, "latex-worker", Resources.LatexExtraction,
+            attemptStartedAt, cancellationToken);
+        if (!prepared.IsSuccess) return ApplicationResult.Failure<LatexExtractionResult>(prepared.Error!);
+        using var deadline = new CancellationTokenSource(scope.Handle.AbsoluteDeadline <= clock.UtcNow
+            ? TimeSpan.Zero : scope.Handle.AbsoluteDeadline - clock.UtcNow);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, scope.OwnershipLost, deadline.Token);
+        LatexExtractionResult result;
+        try
+        {
+            result = await worker.ExtractAsync(new(scope.Handle, request, context.ClientRequestId, context.TraceId,
+                prepared.Value!.Id, attemptStartedAt), linked.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            var error = scope.OwnershipLost.IsCancellationRequested
+                ? new ApplicationError(ApplicationErrorCode.LeaseLost, "ownership_lost")
+                : new ApplicationError(ApplicationErrorCode.DeadlineExceeded, "latex_deadline");
+            await scope.CompleteAsync(new(scope.Handle, NanoYuan.Zero, NanoYuan.Zero, false, CostBasis.Unknown,
+                false, 0, 0, error.Detail));
+            if (cancellationToken.IsCancellationRequested) cancellationToken.ThrowIfCancellationRequested();
+            return ApplicationResult.Failure<LatexExtractionResult>(error);
+        }
+
+        var success = result.Status == LatexExtractionStatus.Success;
+        var settlementError = await scope.CompleteAsync(new(scope.Handle, success ? price : NanoYuan.Zero,
+            result.Attempt.Cost, success, result.Attempt.Basis, result.Attempt.CostKnown,
+            success ? 1 : 0, 0, result.Status.ToString().ToLowerInvariant()), result.Attempt);
+        return settlementError is null
+            ? ApplicationResult.Success(result)
+            : ApplicationResult.Failure<LatexExtractionResult>(settlementError);
+    }
+
+}

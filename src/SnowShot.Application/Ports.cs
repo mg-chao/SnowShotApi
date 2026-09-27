@@ -10,6 +10,7 @@ public static class ApplicationResources
     public const string QwenFlash = Resources.QwenFlash;
     public const string QwenMtFlash = Resources.QwenMtFlash;
     public const string TableExtraction = Resources.TableExtraction;
+    public const string LatexExtraction = Resources.LatexExtraction;
 }
 
 public sealed record ChatModelDefinition(
@@ -48,6 +49,7 @@ public sealed record TranslationRouting(
         LogicalModels[(initialModelIndex + itemAttemptNumber - 1) % LogicalModels.Count];
 }
 public sealed record TableRequestLimits(long MaximumUploadBytes);
+public sealed record LatexRequestLimits(long MaximumUploadBytes);
 public sealed record LifecycleTimeouts(TimeSpan Cleanup, TimeSpan AttemptRecording, TimeSpan Settlement)
 {
     public static LifecycleTimeouts Defaults { get; } = new(
@@ -65,6 +67,7 @@ public sealed record TranslationCommand(
     string Domain);
 public sealed record TranslationResult(IReadOnlyList<string> Results, string From, string To);
 public sealed record TableCommand(ReadOnlyMemory<byte> WebpData);
+public sealed record LatexCommand(ReadOnlyMemory<byte> WebpData);
 
 public sealed record AnonymousPrincipal(Guid Id, string AdmissionKey);
 
@@ -313,6 +316,16 @@ public sealed record TableExtractionResult(TableExtractionStatus Status, string?
 public interface ITableWorkerClient
 {
     Task<TableExtractionResult> ExtractAsync(TableProviderCommand command, CancellationToken cancellationToken);
+}
+
+public enum LatexExtractionStatus { Success, InvalidRequest, NoFormula, InferenceFailed, Unavailable, Busy, Timeout }
+public sealed record LatexProviderCommand(OperationHandle Operation, LatexCommand Request, string RequestId, string TraceId,
+    Guid AttemptId, DateTimeOffset AttemptStartedAt);
+public sealed record LatexExtractionResult(LatexExtractionStatus Status, string? Latex, ProviderAttempt Attempt);
+
+public interface ILatexWorkerClient
+{
+    Task<LatexExtractionResult> ExtractAsync(LatexProviderCommand command, CancellationToken cancellationToken);
 }
 
 public sealed record ReadinessReport(

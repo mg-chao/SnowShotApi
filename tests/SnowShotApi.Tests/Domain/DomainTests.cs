@@ -109,6 +109,8 @@ public sealed class DomainTests
         Assert.Equal(1_950, policy.Get(Resources.QwenMtFlash).Price.Output.Value);
         Assert.Equal(30_000_000, policy.Get(Resources.TableExtraction).Price.Input.Value);
         Assert.Equal(0, policy.Get(Resources.TableExtraction).Price.Output.Value);
+        Assert.Equal(15_000_000, policy.Get(Resources.LatexExtraction).Price.Input.Value);
+        Assert.Equal(0, policy.Get(Resources.LatexExtraction).Price.Output.Value);
     }
 
     [Fact]
@@ -392,5 +394,6 @@ public sealed class DomainTests
         [Resources.QwenFlash] = new() { InputRateNanoYuan = 200, OutputRateNanoYuan = 800 },
         [Resources.QwenMtFlash] = new() { InputRateNanoYuan = 700, OutputRateNanoYuan = 1_950 },
         [Resources.TableExtraction] = new() { InputRateNanoYuan = 30_000_000, OutputRateNanoYuan = 0 },
+        [Resources.LatexExtraction] = new() { InputRateNanoYuan = 15_000_000, OutputRateNanoYuan = 0 },
     };
 }

@@ -60,7 +60,8 @@ public sealed class ProviderReadinessProbeService(
             .ToHashSet(StringComparer.Ordinal);
         health.Report("chat_provider", catalog.Models.All(value => healthy.Contains(value.Model)));
         health.Report("translation_provider", translation.ConfiguredLogicalModels.Any(healthy.Contains));
-        health.Report("table_worker", await ProbeTableAsync(cancellationToken));
+        health.Report("table_worker", await ProbeWorkerAsync("table", cancellationToken));
+        health.Report("latex_worker", await ProbeWorkerAsync("latex", cancellationToken));
     }
 
     private async Task<bool> ProbeProviderAsync(ProviderAccessDefinition access, CancellationToken cancellationToken)
@@ -80,13 +81,13 @@ public sealed class ProviderReadinessProbeService(
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException) { return false; }
     }
 
-    private async Task<bool> ProbeTableAsync(CancellationToken cancellationToken)
+    private async Task<bool> ProbeWorkerAsync(string worker, CancellationToken cancellationToken)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
-            using var response = await clients.CreateClient("table").GetAsync("health/ready",
+            using var response = await clients.CreateClient(worker).GetAsync("health/ready",
                 HttpCompletionOption.ResponseHeadersRead, linked.Token);
             return response.IsSuccessStatusCode;
         }

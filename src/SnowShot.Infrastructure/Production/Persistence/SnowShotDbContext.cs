@@ -62,7 +62,7 @@ public sealed class SnowShotDbContext(DbContextOptions<SnowShotDbContext> option
         {
             entity.ToTable("usage_operations", table =>
             {
-                table.HasCheckConstraint("ck_usage_operation_kind", "\"Kind\" IN (0, 1, 2)");
+                table.HasCheckConstraint("ck_usage_operation_kind", "\"Kind\" IN (0, 1, 2, 3)");
                 table.HasCheckConstraint("ck_usage_operation_state", "\"State\" BETWEEN 0 AND 5");
                 table.HasCheckConstraint("ck_usage_operation_hashes", "octet_length(\"IdempotencyHash\") = 32 AND octet_length(\"OwnerToken\") = 32 AND octet_length(\"PolicyFingerprint\") = 32 AND \"PolicyRevision\" > 0 AND (\"SettlementFingerprint\" IS NULL OR octet_length(\"SettlementFingerprint\") = 32)");
                 table.HasCheckConstraint("ck_usage_operation_fence", "\"Fence\" > 0");

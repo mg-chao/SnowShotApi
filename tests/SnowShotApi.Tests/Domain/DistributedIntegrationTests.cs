@@ -23,6 +23,43 @@ namespace SnowShotApi.Tests.Domain;
 public sealed class DistributedIntegrationTests
 {
     [Fact, Trait("Category", "Integration")]
+    public async Task LatexUsageKindPersistsAndSettlesExactlyOnce()
+    {
+        SkipUnlessEnabled();
+        var token = TestContext.Current.CancellationToken;
+        var options = DatabaseOptions(Environment.GetEnvironmentVariable("ConnectionStrings__SnowShot")!);
+        var policy = ServicePolicy.Defaults();
+        var principalId = await AddPrincipalAsync(options, token);
+        var price = new NanoYuan(15_000_000);
+        var operation = new ReserveOperation(Guid.CreateVersion7(), principalId, UsageKind.LatexExtraction,
+            new(policy.Revision, policy.Fingerprint, Resources.LatexExtraction, new(price, NanoYuan.Zero),
+                policy.PrincipalDailyAllowance, price, new(30_000_000)),
+            RandomNumberGenerator.GetBytes(32), RandomNumberGenerator.GetBytes(32),
+            TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(30));
+        var ledger = new PostgresOperationLedger(new ContextFactory(options), policy);
+        var handle = await ReserveDispatchedAsync(ledger, operation, token);
+        var duplicate = await ledger.ReserveAsync(operation, token);
+        Assert.False(duplicate.Accepted);
+        var started = DateTimeOffset.UtcNow;
+        var preparation = new ProviderAttemptPreparation(Guid.CreateVersion7(), handle, 1,
+            "latex-worker", Resources.LatexExtraction, started);
+        Assert.Equal(OwnershipMutationResult.Applied, await ledger.PrepareAttemptAsync(preparation, token));
+        var attempt = new ProviderAttempt(preparation.Id, handle.OperationId, 1, "latex-worker",
+            Resources.LatexExtraction, "success", 200, 1, 0, price, CostBasis.Exact,
+            AttemptDispatchState.Dispatched, started, DateTimeOffset.UtcNow);
+        var completion = new OperationCompletion(new(handle, price, price, true, CostBasis.Exact, true, 1, 0, "success"), attempt);
+        Assert.True((await ledger.CompleteAsync(completion, token)).Accepted);
+        Assert.True((await ledger.CompleteAsync(completion, token)).Accepted);
+        await using var context = new SnowShotDbContext(options);
+        var persisted = await context.UsageOperations.SingleAsync(value => value.Id == handle.OperationId, token);
+        Assert.Equal(UsageKind.LatexExtraction, persisted.Kind);
+        Assert.Equal(15_000_000, persisted.ActualPublicNanoYuan);
+        var usage = Assert.Single(await context.UsageEvents.Where(value => value.OperationId == handle.OperationId).ToListAsync(token));
+        Assert.Equal(UsageKind.LatexExtraction, usage.Kind);
+        Assert.Equal(15_000_000, usage.PublicCostNanoYuan);
+    }
+
+    [Fact, Trait("Category", "Integration")]
     public async Task PolicyActivationIsDatabaseAuthoredAndIdempotent()
     {
         SkipUnlessEnabled();

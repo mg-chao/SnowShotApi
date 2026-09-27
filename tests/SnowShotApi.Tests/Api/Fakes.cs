@@ -18,6 +18,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeTranslationClient Translation { get; } = new();
     public FakeProviderAccessPool ProviderAccess { get; } = new();
     public FakeTableClient Table { get; } = new();
+    public FakeLatexClient Latex { get; } = new();
     public ServicePolicy Policy => Services.GetRequiredService<ServicePolicy>();
     public Dictionary<string, string?> ExtraConfiguration { get; } = [];
 
@@ -53,6 +54,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["Providers:Models:qwen-mt-flash:Accesses:aliyun:UpstreamModel"] = "qwen-mt-flash",
             ["Providers:Models:qwen-mt-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
             ["Providers:Table:BaseUrl"] = "http://table.test/",
+            ["Providers:Latex:BaseUrl"] = "http://latex.test/",
         }));
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(ExtraConfiguration));
         builder.ConfigureTestServices(services =>
@@ -65,6 +67,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IChatProviderClient>();
             services.RemoveAll<ITranslationProviderClient>();
             services.RemoveAll<ITableWorkerClient>();
+            services.RemoveAll<ILatexWorkerClient>();
             services.RemoveAll<IReadinessService>();
             services.AddSingleton<IPrincipalIdentity, FakeIdentity>();
             services.AddSingleton<IAdmissionController, FakeAdmission>();
@@ -73,6 +76,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             services.AddSingleton<IChatProviderClient>(Chat);
             services.AddSingleton<ITranslationProviderClient>(Translation);
             services.AddSingleton<ITableWorkerClient>(Table);
+            services.AddSingleton<ILatexWorkerClient>(Latex);
             services.AddSingleton<IReadinessService, FakeReadiness>();
         });
     }
@@ -284,4 +288,20 @@ internal sealed class FakeReadiness(ServicePolicy policy) : IReadinessService
     public Task<ReadinessReport> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(
         new ReadinessReport(true, policy.Revision, policy.Fingerprint, policy.Revision, policy.Fingerprint,
             new Dictionary<string, bool> { ["postgresql"] = true, ["admission"] = true, ["policy"] = true }));
+}
+
+internal sealed class FakeLatexClient : ILatexWorkerClient
+{
+    public LatexExtractionStatus Status { get; set; } = LatexExtractionStatus.Success;
+    public int Invocations { get; private set; }
+    public Task<LatexExtractionResult> ExtractAsync(LatexProviderCommand command, CancellationToken cancellationToken)
+    {
+        Invocations++;
+        var cost = Status == LatexExtractionStatus.Success ? new NanoYuan(15_000_000) : NanoYuan.Zero;
+        return Task.FromResult(new LatexExtractionResult(Status,
+            Status == LatexExtractionStatus.Success ? "x^{2}" : null,
+            new(command.AttemptId, command.Operation.OperationId, 1, "latex-worker", Resources.LatexExtraction, Status.ToString(), 200,
+                Status == LatexExtractionStatus.Success ? 1 : 0, 0, cost, CostBasis.Exact, AttemptDispatchState.Dispatched,
+                command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10))));
+    }
 }

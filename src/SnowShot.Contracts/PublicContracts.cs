@@ -149,3 +149,6 @@ public sealed record TranslationTypeOption(
 
 public sealed record TableExtractionData(
     [property: JsonPropertyName("html")] string Html);
+
+public sealed record LatexExtractionData(
+    [property: JsonPropertyName("latex")] string Latex);

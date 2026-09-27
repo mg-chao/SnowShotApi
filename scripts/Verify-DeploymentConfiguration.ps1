@@ -1,7 +1,7 @@
 param(
     [string]$ApplicationSettingsPath = "src/SnowShotApi/appsettings.json",
     [string]$NginxConfigurationPath = "deployment/nginx/snowshot.top.conf",
-    [string]$RestorePolicyPath = "deployment/policy/policy-revision-11.json"
+    [string]$RestorePolicyPath = "deployment/policy/policy-revision-12.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,8 +20,8 @@ $settings = Get-Content -LiteralPath $ApplicationSettingsPath -Raw | ConvertFrom
 $nginx = Get-Content -LiteralPath $NginxConfigurationPath -Raw
 $restore = Get-Content -LiteralPath $RestorePolicyPath -Raw | ConvertFrom-Json
 
-if ([long]$settings.Policy.Revision -ne 11) {
-    throw "The active policy revision must be 11."
+if ([long]$settings.Policy.Revision -ne 12) {
+    throw "The active policy revision must be 12."
 }
 if ([long]$settings.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000) {
     throw "The per-user daily allowance must be 3000000000 NanoYuan (3 yuan)."
@@ -45,26 +45,26 @@ if ([long]$settings.Policy.Pricing.'qwen3.8-flash'.InputRateNanoYuan -ne 800 -or
     [long]$settings.Policy.Pricing.'qwen3.8-flash'.OutputRateNanoYuan -ne 2700) {
     throw "The qwen3.8-flash price must match the Model Studio rate of 0.8 yuan input and 2.7 yuan output per million tokens."
 }
-if ([long]$restore.Policy.Revision -ne 11 -or
+if ([long]$restore.Policy.Revision -ne 12 -or
     [long]$restore.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000 -or
     [long]$restore.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000 -or
     [long]$restore.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
-    throw "Revision 11 must preserve the 3 yuan user allowance, 50 yuan daily operator budget, and 1000 yuan monthly budget."
+    throw "Revision 12 must preserve the 3 yuan user allowance, 50 yuan daily operator budget, and 1000 yuan monthly budget."
 }
 $restoreMaximums = @($restore.Policy.Resources.PSObject.Properties | ForEach-Object {
     [long]$_.Value.OperatorMaximumNanoYuan
 })
 if ($restoreMaximums.Count -ne $operatorMaximums.Count -or
     @($restoreMaximums | Where-Object { $_ -ne 30000000 }).Count -ne 0) {
-    throw "Revision 11 must preserve every resource OperatorMaximumNanoYuan at 30000000."
+    throw "Revision 12 must preserve every resource OperatorMaximumNanoYuan at 30000000."
 }
 
-$expectedResources = @("translation", "qwen3.8-flash", "qwen-mt-flash", "table-extraction")
+$expectedResources = @("translation", "qwen3.8-flash", "qwen-mt-flash", "table-extraction", "latex-extraction")
 $configuredResources = @($settings.Policy.Resources.PSObject.Properties.Name | Sort-Object)
 $restoredResources = @($restore.Policy.Resources.PSObject.Properties.Name | Sort-Object)
 if (($configuredResources -join "`n") -ne (($expectedResources | Sort-Object) -join "`n") -or
     ($restoredResources -join "`n") -ne (($expectedResources | Sort-Object) -join "`n")) {
-    throw "Revision 11 must include only the active resources; qwen3-vl-flash is retired."
+    throw "Revision 12 must include only the active resources; qwen3-vl-flash is retired."
 }
 if (@($settings.Policy.Pricing.PSObject.Properties.Name | Sort-Object) -join "`n" -ne (($expectedResources | Sort-Object) -join "`n")) {
     throw "Pricing must include only the active resources."
@@ -145,3 +145,5 @@ if ([regex]::IsMatch($nginx, "(?m)^\s*location\s+[^\r\n]*health/components")) {
 }
 
 Write-Host "Deployment configuration verified: models=$($models -join ','), app=${maximumDeadline}s, nginx=${readTimeout}s."
+
+if ([long]$settings.Policy.Pricing.'latex-extraction'.InputRateNanoYuan -ne 15000000 -or [long]$settings.Policy.Pricing.'latex-extraction'.OutputRateNanoYuan -ne 0) { throw "LaTeX extraction must cost 0.015 yuan per successful request." }

@@ -33,15 +33,15 @@ internal static class TableEndpoints
         PooledImageBuffer? image = null;
         try
         {
-            image = await TableMultipartReader.ReadAsync(context.Request, limits.MaximumUploadBytes, cancellationToken);
+            image = await ImageMultipartReader.ReadAsync(context.Request, limits.MaximumUploadBytes, cancellationToken);
         }
-        catch (TablePayloadTooLargeException)
+        catch (ImagePayloadTooLargeException)
         {
             await ApiResponse.Problem(context, StatusCodes.Status413PayloadTooLarge, "payload_too_large",
                 messages["Invalid table image request"]).ExecuteAsync(context);
             return;
         }
-        catch (TableMultipartException)
+        catch (ImageMultipartException)
         {
             await ApiResponse.Problem(context, StatusCodes.Status400BadRequest, "invalid_request",
                 messages["Invalid table image request"]).ExecuteAsync(context);

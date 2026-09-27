@@ -71,6 +71,10 @@ public static class DependencyInjection
             Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps &&
             Existing(options.ClientCertificatePath) && Existing(options.ServerCaCertificatePath),
             "Table worker requires HTTPS, a client certificate, and an explicit server CA outside Development.");
+        Configure<LatexWorkerOptions>(services, configuration, LatexWorkerOptions.SectionName, options => !secureEnvironment ||
+            Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps &&
+            Existing(options.ClientCertificatePath) && Existing(options.ServerCaCertificatePath),
+            "Latex worker requires HTTPS, a client certificate, and an explicit server CA outside Development.");
         Configure<RetentionOptions>(services, configuration, RetentionOptions.SectionName,
             options => options.HasValidHierarchy(),
             "Aggregate retention must cover operation retention, and identity retention must cover aggregate retention.");
@@ -88,6 +92,7 @@ public static class DependencyInjection
             sp.GetRequiredService<TranslationProviderOptions>(), secureEnvironment));
         services.AddSingleton<IChatModelCatalog>(sp => sp.GetRequiredService<ProviderModelCatalog>());
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<TableWorkerOptions>>().Value);
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<LatexWorkerOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<RetentionOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<MaintenanceOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<PolicyOptions>().Build(
@@ -101,6 +106,7 @@ public static class DependencyInjection
                 TimeSpan.FromMilliseconds(options.MaximumRetryDelayMilliseconds));
         });
         services.AddSingleton(sp => new TableRequestLimits(sp.GetRequiredService<TableWorkerOptions>().MaximumUploadBytes));
+        services.AddSingleton(sp => new LatexRequestLimits(sp.GetRequiredService<LatexWorkerOptions>().MaximumUploadBytes));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISystemClock, SystemClock>();
         services.AddSingleton(LifecycleTimeouts.Defaults);
@@ -142,13 +148,20 @@ public static class DependencyInjection
             client.BaseAddress = new Uri(provider.GetRequiredService<TableWorkerOptions>().BaseUrl.TrimEnd('/') + "/");
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).ConfigurePrimaryHttpMessageHandler(provider => CreateTableHandler(provider.GetRequiredService<TableWorkerOptions>()));
+        services.AddHttpClient("latex", (provider, client) =>
+        {
+            client.BaseAddress = new Uri(provider.GetRequiredService<LatexWorkerOptions>().BaseUrl.TrimEnd('/') + "/");
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        }).ConfigurePrimaryHttpMessageHandler(provider => CreateLatexHandler(provider.GetRequiredService<LatexWorkerOptions>()));
         services.AddSingleton<IChatProviderClient, OpenAiChatClient>();
         services.AddSingleton<ITranslationProviderClient, OpenAiTranslationClient>();
         services.AddSingleton<ITableWorkerClient, TableWorkerClient>();
+        services.AddSingleton<ILatexWorkerClient, LatexWorkerClient>();
         services.AddSingleton<OperationCoordinator>();
         services.AddSingleton<ChatUseCase>();
         services.AddSingleton<TranslationUseCase>();
         services.AddSingleton<TableUseCase>();
+        services.AddSingleton<LatexUseCase>();
         services.AddSingleton<IReadinessService, ReadinessService>();
         services.AddHostedService<ProviderCircuitInitializationService>();
         services.AddHostedService<ProviderReadinessProbeService>();
@@ -162,7 +175,13 @@ public static class DependencyInjection
         .ValidateDataAnnotations().Validate(validation, message).ValidateOnStart();
 
     private static bool Existing(string? path) => !string.IsNullOrWhiteSpace(path) && File.Exists(path);
-    private static SocketsHttpHandler CreateTableHandler(TableWorkerOptions options)
+    private static SocketsHttpHandler CreateTableHandler(TableWorkerOptions options) =>
+        CreateWorkerHandler(options.ClientCertificatePath, options.ClientCertificatePassword, options.ServerCaCertificatePath);
+
+    private static SocketsHttpHandler CreateLatexHandler(LatexWorkerOptions options) =>
+        CreateWorkerHandler(options.ClientCertificatePath, options.ClientCertificatePassword, options.ServerCaCertificatePath);
+
+    private static SocketsHttpHandler CreateWorkerHandler(string? clientCertificatePath, string? clientCertificatePassword, string? serverCaCertificatePath)
     {
         var handler = new SocketsHttpHandler
         {
@@ -171,20 +190,20 @@ public static class DependencyInjection
             PooledConnectionLifetime = TimeSpan.FromMinutes(10),
             UseCookies = false
         };
-        if (!string.IsNullOrWhiteSpace(options.ClientCertificatePath))
+        if (!string.IsNullOrWhiteSpace(clientCertificatePath))
         {
             handler.SslOptions = new SslClientAuthenticationOptions
             {
                 ClientCertificates = new X509CertificateCollection
                 {
-                    X509CertificateLoader.LoadPkcs12FromFile(options.ClientCertificatePath, options.ClientCertificatePassword),
+                    X509CertificateLoader.LoadPkcs12FromFile(clientCertificatePath, clientCertificatePassword),
                 },
                 RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
                 {
-                    if (errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch) || certificate is null || string.IsNullOrWhiteSpace(options.ServerCaCertificatePath)) return false;
+                    if (errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch) || certificate is null || string.IsNullOrWhiteSpace(serverCaCertificatePath)) return false;
                     using var customChain = new X509Chain();
                     customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-                    customChain.ChainPolicy.CustomTrustStore.Add(X509CertificateLoader.LoadCertificateFromFile(options.ServerCaCertificatePath));
+                    customChain.ChainPolicy.CustomTrustStore.Add(X509CertificateLoader.LoadCertificateFromFile(serverCaCertificatePath));
                     customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
                     return customChain.Build(new X509Certificate2(certificate));
                 },

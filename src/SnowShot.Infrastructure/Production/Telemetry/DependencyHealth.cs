@@ -10,6 +10,7 @@ public sealed class DependencyHealth(TimeProvider timeProvider) : IDependencyHea
         ["chat_provider"] = new(false, DateTimeOffset.MinValue),
         ["translation_provider"] = new(false, DateTimeOffset.MinValue),
         ["table_worker"] = new(false, DateTimeOffset.MinValue),
+        ["latex_worker"] = new(false, DateTimeOffset.MinValue),
     };
 
     public void Report(string component, bool healthy) => _components[component] = new(healthy, timeProvider.GetUtcNow());

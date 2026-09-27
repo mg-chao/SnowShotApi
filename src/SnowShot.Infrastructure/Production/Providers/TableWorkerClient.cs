@@ -73,7 +73,7 @@ public sealed class TableWorkerClient(
         TableExtractionResult Result(TableExtractionStatus status, string? html, string outcome, bool known, int? httpStatus,
             AttemptDispatchState dispatchState)
         {
-            if (status == TableExtractionStatus.Busy) SnowShotTelemetry.WorkerBusy.Add(1);
+            if (status == TableExtractionStatus.Busy) SnowShotTelemetry.WorkerBusy.Add(1, new KeyValuePair<string, object?>("resource", Resources.TableExtraction));
             if (outcome != "request_too_large")
                 dependencyHealth.Report("table_worker", status is TableExtractionStatus.Success or TableExtractionStatus.NoTable or
                     TableExtractionStatus.InvalidRequest or TableExtractionStatus.Busy);

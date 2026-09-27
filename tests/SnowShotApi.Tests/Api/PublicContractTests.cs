@@ -14,6 +14,52 @@ public sealed class PublicContractTests
 {
     private const int MaximumTableImageBytes = 800 * 1024;
 
+    [Theory]
+    [InlineData(LatexExtractionStatus.InvalidRequest, HttpStatusCode.BadRequest, "invalid_request")]
+    [InlineData(LatexExtractionStatus.NoFormula, HttpStatusCode.UnprocessableEntity, "no_formula")]
+    [InlineData(LatexExtractionStatus.InferenceFailed, HttpStatusCode.BadGateway, "inference_failed")]
+    [InlineData(LatexExtractionStatus.Unavailable, HttpStatusCode.ServiceUnavailable, "latex_worker_unavailable")]
+    [InlineData(LatexExtractionStatus.Timeout, HttpStatusCode.GatewayTimeout, "deadline_exceeded")]
+    public async Task LatexFailuresHaveStableProblemsAndZeroPublicCost(LatexExtractionStatus status, HttpStatusCode httpStatus, string code)
+    {
+        await using var factory = new ApiFactory();
+        factory.Latex.Status = status;
+        using var client = factory.CreateAnonymousClient();
+        using var form = new MultipartFormDataContent();
+        form.Add(new ByteArrayContent("RIFF0000WEBP"u8.ToArray()), "image", "formula.webp");
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+        Assert.Equal(httpStatus, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(code, json.RootElement.GetProperty("code").GetString());
+        Assert.Equal(NanoYuan.Zero, Assert.Single(factory.Ledger.Settlements).ReportedPublicCost);
+    }
+
+    [Fact]
+    public async Task LatexDuplicateRequestIsRejectedBeforeInference()
+    {
+        await using var factory = new ApiFactory();
+        factory.Ledger.RejectWith = ReservationRejectionReason.DuplicateRequest;
+        using var client = factory.CreateAnonymousClient();
+        using var form = new MultipartFormDataContent();
+        form.Add(new ByteArrayContent("RIFF0000WEBP"u8.ToArray()), "image", "formula.webp");
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        AssertNoLatexExecution(factory);
+    }
+
+    [Fact]
+    public async Task LatexLeaseLossPreventsDeliveringAnUnsettledSuccess()
+    {
+        await using var factory = new ApiFactory();
+        factory.Ledger.RejectSettlementWith = SettlementRejectionReason.LeaseLost;
+        using var client = factory.CreateAnonymousClient();
+        using var form = new MultipartFormDataContent();
+        form.Add(new ByteArrayContent("RIFF0000WEBP"u8.ToArray()), "image", "formula.webp");
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Empty(factory.Ledger.Settlements);
+    }
+
     [Fact]
     public async Task EnglishIsTheDefaultResponseLanguage()
     {
@@ -630,6 +676,22 @@ public sealed class PublicContractTests
     }
 
     [Fact]
+    public async Task LatexSuccessPreservesMultipartEnvelopeAndOnePointFiveFenCost()
+    {
+        await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
+        using var form = new MultipartFormDataContent("boundary");
+        using var image = new ByteArrayContent("RIFF0000WEBP"u8.ToArray());
+        image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/webp");
+        form.Add(image, "image", "latex.webp");
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("x^{2}", json.RootElement.GetProperty("data").GetProperty("latex").GetString());
+        Assert.Equal(15_000_000, Assert.Single(factory.Ledger.Settlements).ReportedPublicCost.Value);
+        AssertCompletedAttempt(factory.Ledger, "latex-worker");
+    }
+
+    [Fact]
     public async Task OversizedRequestIdIsRejectedWithoutExecution()
     {
         await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
@@ -873,6 +935,138 @@ public sealed class PublicContractTests
     }
 
     [Fact]
+    public async Task LatexOversizedMultipartUsesPayloadTooLargeStatus()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        using var form = new MultipartFormDataContent("boundary");
+        using var image = new ByteArrayContent(new byte[MaximumTableImageBytes + 1]);
+        image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/webp");
+        form.Add(image, "image", "large.webp");
+
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+
+        await AssertProblemAsync(response, HttpStatusCode.RequestEntityTooLarge, "payload_too_large",
+            "/api/v1/latex/extract");
+        Assert.Empty(factory.Ledger.Reservations);
+        AssertNoLatexExecution(factory);
+    }
+
+    [Fact]
+    public async Task LatexExactImageLimitIsAccepted()
+    {
+        await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
+        var payload = new byte[MaximumTableImageBytes];
+        "RIFF"u8.CopyTo(payload); "WEBP"u8.CopyTo(payload.AsSpan(8));
+        using var form = new MultipartFormDataContent("exact-boundary");
+        using var image = new ByteArrayContent(payload);
+        image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/webp");
+        form.Add(image, "image", "exact.webp");
+
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Single(factory.Ledger.Reservations);
+        Assert.Equal(1, factory.Latex.Invocations);
+    }
+
+    [Fact]
+    public async Task LatexChunkedImageOverLimitIsRejectedBeforeExecution()
+    {
+        await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
+        const string boundary = "chunked-boundary";
+        var prefix = Encoding.ASCII.GetBytes($"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"x.webp\"\r\nContent-Type: image/webp\r\n\r\n");
+        var image = new byte[MaximumTableImageBytes + 1];
+        "RIFF"u8.CopyTo(image); "WEBP"u8.CopyTo(image.AsSpan(8));
+        var suffix = Encoding.ASCII.GetBytes($"\r\n--{boundary}--\r\n");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/latex/extract")
+        {
+            Content = new ChunkedTestContent([prefix, image, suffix], $"multipart/form-data; boundary={boundary}"),
+        };
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        await AssertProblemAsync(response, HttpStatusCode.RequestEntityTooLarge, "payload_too_large", "/api/v1/latex/extract");
+        AssertNoLatexExecution(factory);
+    }
+
+    [Fact]
+    public async Task LatexMultipartOverheadOverLimitIsRejectedBeforeExecution()
+    {
+        await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
+        const string boundary = "overhead-boundary";
+        var prefix = Encoding.ASCII.GetBytes($"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"x.webp\"\r\n\r\n");
+        var suffix = Encoding.ASCII.GetBytes($"\r\n--{boundary}--\r\n");
+        var epilogue = new byte[MaximumTableImageBytes + (1024 * 1024)];
+        using var content = new ByteArrayContent([.. prefix, .. "RIFF0000WEBP"u8.ToArray(), .. suffix, .. epilogue]);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/form-data; boundary={boundary}");
+
+        using var response = await client.PostAsync("/api/v1/latex/extract", content, TestContext.Current.CancellationToken);
+
+        await AssertProblemAsync(response, HttpStatusCode.RequestEntityTooLarge, "payload_too_large", "/api/v1/latex/extract");
+        AssertNoLatexExecution(factory);
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("wrong_field")]
+    [InlineData("duplicate_file")]
+    [InlineData("extra_field")]
+    [InlineData("non_webp")]
+    public async Task LatexInvalidMultipartVariantsAreRejectedBeforeExecution(string variant)
+    {
+        await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
+        using var form = new MultipartFormDataContent("invalid-boundary");
+        var valid = "RIFF0000WEBP"u8.ToArray();
+        if (variant == "extra_field")
+        {
+            form.Add(new ByteArrayContent(valid), "image", "first.webp");
+            form.Add(new StringContent("unexpected"), "metadata");
+        }
+        else
+        {
+            var payload = variant switch { "empty" => [], "non_webp" => "not-a-webp"u8.ToArray(), _ => valid };
+            form.Add(new ByteArrayContent(payload), variant == "wrong_field" ? "other" : "image", "first.webp");
+            if (variant == "duplicate_file") form.Add(new ByteArrayContent(valid), "image", "second.webp");
+        }
+
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "invalid_request", "/api/v1/latex/extract");
+        AssertNoLatexExecution(factory);
+    }
+
+    [Fact]
+    public async Task LatexMalformedMultipartBoundaryIsRejectedBeforeExecution()
+    {
+        await using var factory = new ApiFactory(); using var client = factory.CreateAnonymousClient();
+        using var content = new ByteArrayContent("--missing\r\nContent-Disposition: form-data; name=\"image\"; filename=\"x.webp\"\r\n\r\nRIFF0000WEBP"u8.ToArray());
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse("multipart/form-data; boundary=missing");
+
+        using var response = await client.PostAsync("/api/v1/latex/extract", content, TestContext.Current.CancellationToken);
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "invalid_request", "/api/v1/latex/extract");
+        AssertNoLatexExecution(factory);
+    }
+
+    [Fact]
+    public async Task LatexWorkerBusyKeepsPublicEnvelopeAndUsesServiceUnavailable()
+    {
+        await using var factory = new ApiFactory();
+        factory.Latex.Status = LatexExtractionStatus.Busy;
+        using var client = factory.CreateAnonymousClient();
+        using var form = new MultipartFormDataContent("boundary");
+        using var image = new ByteArrayContent("RIFF0000WEBP"u8.ToArray());
+        image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/webp");
+        form.Add(image, "image", "latex.webp");
+
+        using var response = await client.PostAsync("/api/v1/latex/extract", form, TestContext.Current.CancellationToken);
+        await AssertProblemAsync(response, HttpStatusCode.ServiceUnavailable, "worker_busy",
+            "/api/v1/latex/extract", retryable: true);
+        Assert.Equal(NanoYuan.Zero, Assert.Single(factory.Ledger.Settlements).ReportedOperatorCost);
+    }
+
+    [Fact]
     public async Task FailedDurableSettlementNeverEmitsDone()
     {
         await using var factory = new ApiFactory();
@@ -964,4 +1158,14 @@ public sealed class PublicContractTests
         if (retryable) Assert.True(retryAfter.GetInt32() >= 1);
         return problem.Clone();
     }
+    private static void AssertNoLatexExecution(ApiFactory factory)
+    {
+        Assert.Empty(factory.Ledger.Reservations);
+        Assert.Empty(factory.Ledger.Preparations);
+        Assert.Empty(factory.Ledger.Attempts);
+        Assert.Empty(factory.Ledger.Settlements);
+        Assert.Equal(0, factory.Latex.Invocations);
+    }
+
+
 }

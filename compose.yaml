@@ -10,6 +10,7 @@ services:
       SNOWSHOT_SECRETS_DIRECTORY: /run/secrets/snowshot
       ConnectionStrings__Redis: redis:6379,abortConnect=false
       Providers__Table__BaseUrl: ${TABLE_WORKER_URL:-http://host.docker.internal:18080/}
+      Providers__Latex__BaseUrl: ${LATEX_WORKER_URL:-http://host.docker.internal:18081/}
     volumes:
       - type: bind
         source: ${SNOWSHOT_API_SECRETS_DIRECTORY:-./.secrets/development/api}

@@ -1,0 +1,18 @@
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Providers__Latex__BaseUrl: https://snowshot-latex-rec:18081/
+      Providers__Latex__ClientCertificatePath: /run/secrets/latex-communication/api-client.pfx
+      Providers__Latex__ServerCaCertificatePath: /run/secrets/latex-communication/worker-server-ca.pem
+      Providers__Latex__MaximumUploadBytes: 819200
+      Providers__Latex__MaximumResponseBytes: 2097152
+    env_file:
+      - ${SNOWSHOT_LATEX_API_PKI_DIRECTORY:?Set SNOWSHOT_LATEX_API_PKI_DIRECTORY}/snowshot-api-latex.env
+    volumes:
+      - type: bind
+        source: ${SNOWSHOT_LATEX_API_PKI_DIRECTORY:?Set SNOWSHOT_LATEX_API_PKI_DIRECTORY}
+        target: /run/secrets/latex-communication
+        read_only: true
+    extra_hosts:
+      - snowshot-latex-rec:${LATEX_WORKER_TAILSCALE_IP:?Set LATEX_WORKER_TAILSCALE_IP}

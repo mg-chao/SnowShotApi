@@ -9,11 +9,12 @@ public static class Resources
     public const string QwenFlash = "qwen3.8-flash";
     public const string QwenMtFlash = "qwen-mt-flash";
     public const string TableExtraction = "table-extraction";
+    public const string LatexExtraction = "latex-extraction";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         Translation, QwenFlash,
-        QwenMtFlash, TableExtraction,
+        QwenMtFlash, TableExtraction, LatexExtraction,
     };
 }
 
@@ -206,6 +207,7 @@ public sealed class ServicePolicy
             new(SnowShot.Domain.Resources.QwenFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
             new(SnowShot.Domain.Resources.QwenMtFlash, new(NanoYuan.Zero, NanoYuan.Zero), new(20, 16, 64, 64, TimeSpan.FromSeconds(30)), TimeSpan.FromMinutes(5), new(30_000_000)),
             new(SnowShot.Domain.Resources.TableExtraction, new(NanoYuan.Zero, NanoYuan.Zero), new(10, 3, 6, 12, TimeSpan.FromSeconds(30)), TimeSpan.FromSeconds(60), new(30_000_000)),
+            new(SnowShot.Domain.Resources.LatexExtraction, new(NanoYuan.Zero, NanoYuan.Zero), new(6, 1, 1, 8, TimeSpan.FromSeconds(30)), TimeSpan.FromSeconds(60), new(30_000_000)),
         ],
         NanoYuan.ThreeYuan,
         new NanoYuan(50_000_000_000),

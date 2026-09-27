@@ -10,7 +10,9 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
 $sourceRoots = @(
     (Join-Path $RepositoryRoot "scripts"),
     (Join-Path $RepositoryRoot "services\TableStructureRec\scripts"),
-    (Join-Path $RepositoryRoot "services\TableStructureRec\tests")
+    (Join-Path $RepositoryRoot "services\TableStructureRec\tests"),
+    (Join-Path $RepositoryRoot "services\RapidLaTeXOCR\scripts"),
+    (Join-Path $RepositoryRoot "services\RapidLaTeXOCR\tests")
 )
 $failures = [System.Collections.Generic.List[string]]::new()
 $files = @(

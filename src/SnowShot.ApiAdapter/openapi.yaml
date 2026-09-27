@@ -105,6 +105,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/chat/models:
+    get:
+      tags:
+      - Chat
+      operationId: ChatModelsV2
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
   /api/v2/translation/translate:
     post:
       tags:
@@ -259,6 +271,80 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/PublicProblem'
+  /api/v1/latex/extract:
+    post:
+      tags:
+      - Latex
+      operationId: LatexExtraction
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/IFormFile'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
 components:
   schemas:
     AppEnvelope:
@@ -314,6 +400,47 @@ components:
           - integer
           - string
           format: int32
+        translation_options:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/ChatTranslationOptions'
+    ChatTranslationOptions:
+      type: object
+      properties:
+        source_lang:
+          type:
+          - 'null'
+          - string
+        target_lang:
+          type:
+          - 'null'
+          - string
+        domains:
+          type:
+          - 'null'
+          - string
+        terms:
+          type:
+          - 'null'
+          - array
+          items:
+            $ref: '#/components/schemas/ChatTranslationTerm'
+        tm_list:
+          type:
+          - 'null'
+          - array
+          items:
+            $ref: '#/components/schemas/ChatTranslationTerm'
+    ChatTranslationTerm:
+      required:
+      - source
+      - target
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
     IFormFile:
       type: string
       format: binary
@@ -376,3 +503,4 @@ tags:
 - name: Chat
 - name: Translation
 - name: Table
+- name: Latex

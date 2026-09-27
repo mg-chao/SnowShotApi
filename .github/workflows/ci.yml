@@ -43,6 +43,11 @@ jobs:
         run: scripts/Verify-DotnetVulnerabilities.ps1 -ReportPath dotnet-vulnerabilities.json
       - run: dotnet list SnowShotApi.sln package --include-transitive --format json > dotnet-dependencies.json
       - run: python -m pytest -q -W error services/TableStructureRec/tests
+      - run: python -m venv services/RapidLaTeXOCR/venv
+      - run: services/RapidLaTeXOCR/venv/Scripts/python.exe -m pip install --require-hashes -r services/RapidLaTeXOCR/requirements-test.lock
+      - run: services/RapidLaTeXOCR/venv/Scripts/python.exe -m pytest -q -W error services/RapidLaTeXOCR/tests
+      - run: .\.audit-venv\Scripts\pip-audit.exe -r services/RapidLaTeXOCR/requirements-windows.lock --format json --output latex-vulnerabilities.json
+      - run: .\.audit-venv\Scripts\cyclonedx-py.exe requirements services/RapidLaTeXOCR/requirements-windows.lock -o latex-sbom.json
       - run: .\.audit-venv\Scripts\pip-audit.exe -r services/TableStructureRec/requirements-windows.lock --format json --output python-vulnerabilities.json
       - run: .\.audit-venv\Scripts\cyclonedx-py.exe requirements services/TableStructureRec/requirements-windows.lock -o python-sbom.json
       - run: dotnet publish src/SnowShotApi/SnowShotApi.csproj -c Release --no-restore -o artifacts/api
@@ -65,6 +70,8 @@ jobs:
             migrator-sbom-validation.json
             python-sbom.json
             python-vulnerabilities.json
+            latex-vulnerabilities.json
+            latex-sbom.json
 
   containers:
     runs-on: ubuntu-24.04
@@ -142,3 +149,5 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - shell: pwsh
         run: services/TableStructureRec/tests/run_winsw_service_harness.ps1
+      - shell: pwsh
+        run: services/RapidLaTeXOCR/tests/run_winsw_service_harness.ps1
