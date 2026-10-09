@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import requests
@@ -27,11 +28,13 @@ def download_file(url: str, destination: Path, expected_sha256: str) -> None:
 
 
 def prefetch(model_dir: Path, manifest_path: Path) -> None:
+    execution_provider = os.environ.get("TABLE_REC_EXECUTION_PROVIDER", "DmlExecutionProvider").strip()
+    cpu_threads = int(os.environ.get("TABLE_REC_CPU_THREADS", "0"))
     model_dir.mkdir(parents=True, exist_ok=True)
     for item in load_manifest(manifest_path):
         download_file(item.url, model_dir / item.path, item.sha256)
     verify_models(model_dir, manifest_path)
-    EngineBundle.load(model_dir)
+    EngineBundle.load(model_dir, execution_provider, cpu_threads)
     print(f"All models downloaded, verified, and preflighted in {model_dir}")
 
 

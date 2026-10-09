@@ -19,6 +19,14 @@ def test_defaults_are_local_and_one_process() -> None:
     assert settings.log_level == "info"
     assert settings.watchdog_seconds == 55
     assert not settings.tls_enabled
+    assert settings.execution_provider == "DmlExecutionProvider"
+
+
+def test_cpu_inference_is_explicitly_configurable() -> None:
+    settings = ServiceSettings.from_environment(
+        {"LATEX_REC_EXECUTION_PROVIDER": "CPUExecutionProvider"}
+    )
+    assert settings.execution_provider == "CPUExecutionProvider"
 
 
 def test_valid_environment_and_tls_files(tmp_path: Path) -> None:
@@ -56,6 +64,7 @@ def test_valid_environment_and_tls_files(tmp_path: Path) -> None:
         ("LATEX_REC_WORKERS", "0"),
         ("LATEX_REC_LOG_LEVEL", "verbose"),
         ("LATEX_REC_ENVIRONMENT", "unknown"),
+        ("LATEX_REC_EXECUTION_PROVIDER", "CUDAExecutionProvider"),
     ],
 )
 def test_invalid_scalar_settings_fail_with_variable_name(name: str, value: str) -> None:
@@ -123,3 +132,22 @@ def test_secure_environment_allows_configured_workers_and_requires_client_certif
     assert options["ssl_keyfile"] == str(private_key)
     assert options["ssl_ca_certs"] == str(client_ca)
     assert options["ssl_cert_reqs"] == ssl.CERT_REQUIRED
+
+
+@pytest.mark.parametrize("value", ["-1", "257", "many"])
+def test_invalid_cpu_thread_count_is_rejected(value):
+    with pytest.raises(ValueError, match="LATEX_REC_CPU_THREADS"):
+        ServiceSettings.from_environment({"LATEX_REC_CPU_THREADS": value})
+
+
+@pytest.mark.parametrize("threads", [0, 1, 4])
+def test_cpu_thread_count_is_configurable(monkeypatch, threads):
+    monkeypatch.setattr("latex_rec_service.config.os.cpu_count", lambda: 4)
+    settings = ServiceSettings.from_environment({"LATEX_REC_CPU_THREADS": str(threads)})
+    assert settings.cpu_threads == threads
+
+
+def test_cpu_thread_count_cannot_exceed_host_capacity(monkeypatch):
+    monkeypatch.setattr("latex_rec_service.config.os.cpu_count", lambda: 4)
+    with pytest.raises(ValueError, match="LATEX_REC_CPU_THREADS"):
+        ServiceSettings.from_environment({"LATEX_REC_CPU_THREADS": "5"})

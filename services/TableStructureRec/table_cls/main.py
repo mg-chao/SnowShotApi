@@ -33,16 +33,17 @@ class TableCls:
         model_type=ModelType.YOLO_CLS.value,
         model_path=None,
         use_dml=False,
+        num_threads=-1,
     ):
         model_path = self.get_model_path(model_type, model_path)
         if model_type == ModelType.YOLO_CLS.value:
-            self.table_engine = YoloCls(model_path, use_dml=use_dml)
+            self.table_engine = YoloCls(model_path, use_dml=use_dml, num_threads=num_threads)
         elif model_type == ModelType.YOLO_CLS_X.value:
-            self.table_engine = YoloCls(model_path, use_dml=use_dml)
+            self.table_engine = YoloCls(model_path, use_dml=use_dml, num_threads=num_threads)
         elif model_type == ModelType.PADDLE_CLS.value:
-            self.table_engine = PaddleCls(model_path, use_dml=use_dml)
+            self.table_engine = PaddleCls(model_path, use_dml=use_dml, num_threads=num_threads)
         else:
-            self.table_engine = QanythingCls(model_path, use_dml=use_dml)
+            self.table_engine = QanythingCls(model_path, use_dml=use_dml, num_threads=num_threads)
         self.load_img = LoadImage()
 
     def __call__(self, content: InputType):
@@ -77,8 +78,8 @@ class TableCls:
 
 
 class PaddleCls:
-    def __init__(self, model_path, use_dml=False):
-        self.table_cls = OrtInferSession(model_path, use_dml=use_dml)
+    def __init__(self, model_path, use_dml=False, num_threads=-1):
+        self.table_cls = OrtInferSession(model_path, use_dml=use_dml, num_threads=num_threads)
         self.inp_h = 224
         self.inp_w = 224
         self.resize_short = 256
@@ -118,8 +119,8 @@ class PaddleCls:
 
 
 class QanythingCls:
-    def __init__(self, model_path, use_dml=False):
-        self.table_cls = OrtInferSession(model_path, use_dml=use_dml)
+    def __init__(self, model_path, use_dml=False, num_threads=-1):
+        self.table_cls = OrtInferSession(model_path, use_dml=use_dml, num_threads=num_threads)
         self.inp_h = 224
         self.inp_w = 224
         self.mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -148,8 +149,8 @@ class QanythingCls:
 
 
 class YoloCls:
-    def __init__(self, model_path, use_dml=False):
-        self.table_cls = OrtInferSession(model_path, use_dml=use_dml)
+    def __init__(self, model_path, use_dml=False, num_threads=-1):
+        self.table_cls = OrtInferSession(model_path, use_dml=use_dml, num_threads=num_threads)
         self.cls = {0: "wireless", 1: "wired"}
 
     def preprocess(self, img):

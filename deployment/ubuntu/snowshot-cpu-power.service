@@ -1,0 +1,13 @@
+[Unit]
+Description=SnowShot recognition CPU power policy
+ConditionPathExists=/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+Before=snowshot-cpu-worker@table.service snowshot-cpu-worker@latex.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/snowshot-cpu-power @CPU_POWER_MODE@
+ExecStop=/usr/local/libexec/snowshot-cpu-power stock
+
+[Install]
+WantedBy=multi-user.target

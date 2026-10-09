@@ -65,9 +65,34 @@ and a successful preflight exercising all inference stages. The API includes
 
 ## Runtime settings
 
+### Ubuntu CPU deployment
+
+The Ubuntu Server deployment and measured tuning results are documented in
+[the server runbook](../../docs/ubuntu-cpu-recognition.md). `LATEX_REC_CPU_THREADS`
+applies to the resizer, encoder, and decoder. CPU mode limits OpenCV to one
+thread; set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1` for each process.
+
+Use a separate Python 3.12 environment and install `requirements-cpu.lock`
+with `uv pip sync --require-hashes`. Set
+`LATEX_REC_EXECUTION_PROVIDER=CPUExecutionProvider` before prefetch or startup.
+This explicitly selects CPU inference for the resizer, encoder, and decoder.
+The default remains DirectML for existing Windows deployments.
+
+The repository's `scripts/ubuntu/Install-UbuntuRecognition.sh` installs the
+production systemd workers and tunnel templates from `deployment/ubuntu`.
+Production requires the documented mutual TLS settings.
+
+For the complete Linux test suite, install `requirements-test-cpu.lock` and run:
+
+```sh
+LATEX_REC_EXECUTION_PROVIDER=CPUExecutionProvider python -m pytest -q -W error -ra tests
+```
+
 | Variable | Default |
 | --- | --- |
 | `LATEX_REC_HOST` | `127.0.0.1` |
+| `LATEX_REC_EXECUTION_PROVIDER` | `DmlExecutionProvider` (or explicit `CPUExecutionProvider`) |
+| `LATEX_REC_CPU_THREADS` | `0` (automatic); explicit count up to the host logical CPU count |
 | `LATEX_REC_PORT` | `18081` |
 | `LATEX_REC_WORKERS` | `1` |
 | `LATEX_REC_MODEL_DIR` | service-local `models` |

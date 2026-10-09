@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,22 @@ class EngineBundle:
         self.ready = True
 
     @classmethod
-    def load(cls, model_dir: Path) -> "EngineBundle":
+    def load(
+        cls,
+        model_dir: Path,
+        execution_provider: str = "DmlExecutionProvider",
+        cpu_threads: int = 0,
+    ) -> "EngineBundle":
+        if execution_provider not in {"DmlExecutionProvider", "CPUExecutionProvider"}:
+            raise ValueError(f"Unsupported execution provider: {execution_provider}")
+        use_dml = execution_provider == "DmlExecutionProvider"
+        if not 0 <= cpu_threads <= min(256, os.cpu_count() or 256):
+            raise ValueError("cpu_threads must not exceed the host logical CPU count")
+        threads = -1 if use_dml else cpu_threads
+        if not use_dml:
+            import cv2
+
+            cv2.setNumThreads(1)
         model_dir = model_dir.resolve()
         verify_models(
             model_dir,
@@ -80,7 +96,9 @@ class EngineBundle:
         ocr = RapidOCR(
             params={
                 "Global.return_word_box": True,
-                "EngineConfig.onnxruntime.use_dml": True,
+                "EngineConfig.onnxruntime.use_dml": use_dml,
+                "EngineConfig.onnxruntime.use_cuda": False,
+                "EngineConfig.onnxruntime.intra_op_num_threads": threads,
                 "Det.model_path": str(rapidocr_dir / RAPIDOCR_MODEL_NAMES[0]),
                 "Cls.model_path": str(rapidocr_dir / RAPIDOCR_MODEL_NAMES[1]),
                 "Rec.model_path": str(rapidocr_dir / RAPIDOCR_MODEL_NAMES[2]),
@@ -88,12 +106,14 @@ class EngineBundle:
         )
         classifier = TableCls(
             model_path=str(model_dir / TABLE_MODEL_PATHS["classifier"]),
-            use_dml=True,
+            use_dml=use_dml,
+            num_threads=threads,
         )
         wired = WiredTableRecognition(
             WiredTableInput(
                 model_path=str(model_dir / TABLE_MODEL_PATHS["wired"]),
-                use_dml=True,
+                use_dml=use_dml,
+                intra_op_num_threads=threads,
             )
         )
         lineless = LinelessTableRecognition(
@@ -106,7 +126,8 @@ class EngineBundle:
                         model_dir / TABLE_MODEL_PATHS["lineless_process"]
                     ),
                 },
-                use_dml=True,
+                use_dml=use_dml,
+                intra_op_num_threads=threads,
             )
         )
 
@@ -120,7 +141,7 @@ class EngineBundle:
             "lineless_process": _providers(lineless.table_structure.process_session),
         }
         for component in providers:
-            _require_provider(providers, component, "DmlExecutionProvider")
+            _require_provider(providers, component, execution_provider)
 
         LOGGER.info("engine_bundle_ready providers=%s", providers)
         return cls(classifier, ocr, wired, lineless, providers)
@@ -183,6 +204,8 @@ def _require_provider(
     providers: dict[str, list[str]], component: str, provider: str
 ) -> None:
     active_providers = providers[component]
+    if provider == "CPUExecutionProvider" and active_providers != [provider]:
+        raise RuntimeError(f"{component} did not initialize with CPU-only inference: {active_providers}")
     if not active_providers or active_providers[0] != provider:
         raise RuntimeError(
             f"{component} did not initialize with required primary provider "

@@ -41,6 +41,8 @@ class LaTeXOCR:
         encoder_path: Union[str, Path] = None,
         decoder_path: Union[str, Path] = None,
         tokenizer_json: Union[str, Path] = None,
+        execution_provider: str = "DmlExecutionProvider",
+        num_threads: int = -1,
     ):
         self.image_resizer_path = image_resizer_path
         self.encoder_path = encoder_path
@@ -62,7 +64,9 @@ class LaTeXOCR:
 
         self.pre_pro = PreProcess(max_dims=self.max_dims, min_dims=self.min_dims)
 
-        self.image_resizer = OrtInferSession(self.image_resizer_path)
+        self.image_resizer = OrtInferSession(
+            self.image_resizer_path, execution_provider=execution_provider, num_threads=num_threads
+        )
 
         self.encoder_decoder = EncoderDecoder(
             encoder_path=self.encoder_path,
@@ -70,6 +74,8 @@ class LaTeXOCR:
             bos_token=input_params.bos_token,
             eos_token=input_params.eos_token,
             max_seq_len=input_params.max_seq_len,
+            execution_provider=execution_provider,
+            num_threads=num_threads,
         )
         self.tokenizer = TokenizerCls(self.tokenizer_json)
 

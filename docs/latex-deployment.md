@@ -1,5 +1,10 @@
 # LaTeX extraction deployment
 
+The dedicated Ubuntu Server CPU deployment is described in
+[the current server runbook](ubuntu-cpu-recognition.md), including rollback to
+the retained WSL workers.
+The Windows installation below is historical and requires a Windows host.
+
 The LaTeX worker runs separately from the table service on the same Windows
 host, using port 18081 and its own runtime, certificates, and SSH tunnel.
 These instructions do not imply that a live deployment has occurred.

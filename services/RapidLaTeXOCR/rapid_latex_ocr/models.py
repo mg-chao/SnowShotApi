@@ -17,13 +17,15 @@ class EncoderDecoder:
         bos_token: int,
         eos_token: int,
         max_seq_len: int,
+        execution_provider: str = "DmlExecutionProvider",
+        num_threads: int = -1,
     ):
         self.bos_token = bos_token
         self.eos_token = eos_token
         self.max_seq_len = max_seq_len
 
-        self.encoder = OrtInferSession(encoder_path)
-        self.decoder = Decoder(decoder_path)
+        self.encoder = OrtInferSession(encoder_path, execution_provider=execution_provider, num_threads=num_threads)
+        self.decoder = Decoder(decoder_path, execution_provider=execution_provider, num_threads=num_threads)
 
     def __call__(self, x: np.ndarray, temperature: float = 0.25):
         ort_input_data = np.array([self.bos_token] * len(x))[:, None]
@@ -39,9 +41,9 @@ class EncoderDecoder:
 
 
 class Decoder:
-    def __init__(self, decoder_path: Union[Path, str]):
+    def __init__(self, decoder_path: Union[Path, str], execution_provider: str = "DmlExecutionProvider", num_threads: int = -1):
         self.max_seq_len = 512
-        self.session = OrtInferSession(decoder_path)
+        self.session = OrtInferSession(decoder_path, execution_provider=execution_provider, num_threads=num_threads)
 
     def __call__(
         self,

@@ -7,6 +7,12 @@ mitigating an incident.
 
 ## Change and rollback
 
+Policy revision 13 aligns table admission with the Ubuntu CPU worker: one
+global table inference and one per principal. Formula admission already uses
+one global slot. Overflow uses the existing gateway queue. See the
+[Ubuntu deployment and benchmark runbook](ubuntu-cpu-recognition.md).
+The deployment policy overlay is `deployment/policy/policy-revision-13.json`.
+
 Confirm the deployed commit, configuration revision, and active policy revision
 before changing production. Prefer a reversible configuration change or a
 rollback to the last known-good commit. After the change, verify readiness,

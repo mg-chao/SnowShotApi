@@ -11,6 +11,7 @@ pytest.importorskip("wired_table_rec")
 pytest.importorskip("lineless_table_rec")
 
 from table_rec_service.engine import EngineBundle, build_table_ocr_result
+from table_rec_service.config import ServiceSettings
 
 MODEL_DIR = Path(__file__).resolve().parents[1] / "models"
 REQUIRED_MODEL = MODEL_DIR / "wired" / "unet.onnx"
@@ -22,7 +23,8 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def bundle() -> EngineBundle:
-    return EngineBundle.load(MODEL_DIR)
+    settings = ServiceSettings.from_environment()
+    return EngineBundle.load(MODEL_DIR, settings.execution_provider, settings.cpu_threads)
 
 
 def table_image(*, wired: bool) -> np.ndarray:
@@ -62,7 +64,20 @@ def test_provider_assignment(bundle: EngineBundle) -> None:
         "lineless_detect",
         "lineless_process",
     ):
-        assert bundle.provider_summary[component][0] == "DmlExecutionProvider"
+        assert bundle.provider_summary[component][0] == ServiceSettings.from_environment().execution_provider
+
+
+def test_cpu_threads_reach_every_session(bundle: EngineBundle) -> None:
+    settings = ServiceSettings.from_environment()
+    if settings.execution_provider != "CPUExecutionProvider":
+        pytest.skip("CPU thread controls do not change DirectML sessions")
+    components = [bundle.classifier.table_engine.table_cls, bundle.ocr.text_det,
+                  bundle.ocr.text_cls, bundle.ocr.text_rec, bundle.wired.table_structure.session,
+                  bundle.lineless.table_structure.det_session, bundle.lineless.table_structure.process_session]
+    for component in components:
+        while not hasattr(component, "get_session_options"):
+            component = getattr(component, "session", None) or getattr(component, "engine")
+        assert component.get_session_options().intra_op_num_threads == settings.cpu_threads
 
 
 def test_wired_table_returns_non_empty_html(bundle: EngineBundle) -> None:

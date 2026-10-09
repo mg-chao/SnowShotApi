@@ -16,20 +16,27 @@ InputType = Union[str, np.ndarray, bytes, Path]
 
 
 class OrtInferSession:
-    def __init__(self, model_path: Union[str, Path], num_threads: int = -1):
+    def __init__(
+        self, model_path: Union[str, Path], num_threads: int = -1,
+        execution_provider: str = "DmlExecutionProvider",
+    ):
+        if execution_provider not in {"DmlExecutionProvider", "CPUExecutionProvider"}:
+            raise ValueError(f"Unsupported execution provider: {execution_provider}")
         self.verify_exist(model_path)
 
         self.num_threads = num_threads
         self._init_sess_opt()
 
-        if "DmlExecutionProvider" not in get_available_providers():
-            raise RuntimeError("DirectML is required for LaTeX inference.")
+        if execution_provider not in get_available_providers():
+            label = "DirectML" if execution_provider == "DmlExecutionProvider" else execution_provider
+            raise RuntimeError(f"{label} is required for LaTeX inference.")
         self.session = InferenceSession(
-            str(model_path), sess_options=self.sess_opt, providers=["DmlExecutionProvider"]
+            str(model_path), sess_options=self.sess_opt, providers=[execution_provider]
         )
         self.session.disable_fallback()
-        if self.session.get_providers()[0] != "DmlExecutionProvider":
-            raise RuntimeError("LaTeX model did not initialize with DirectML.")
+        providers = self.session.get_providers()
+        if not providers or providers[0] != execution_provider:
+            raise RuntimeError(f"LaTeX model did not initialize with {execution_provider}: {providers}")
 
     def _init_sess_opt(self):
         self.sess_opt = SessionOptions()

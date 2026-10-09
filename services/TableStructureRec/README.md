@@ -1,6 +1,6 @@
 # TableStructureRec service
 
-This Windows-only service accepts one cropped WebP table image at
+This service supports Windows DirectML and Ubuntu CPU inference. It accepts one cropped WebP table image at
 `POST /v2/table/extract` with a raw `image/webp` body. It classifies the table, runs OCR once, selects the
 wired or lineless structure engine, and returns `{"html":"..."}`.
 
@@ -16,6 +16,8 @@ variables or WinSW `<env>` entries.
 | Variable | Default |
 | --- | --- |
 | `TABLE_REC_HOST` | `127.0.0.1` |
+| `TABLE_REC_EXECUTION_PROVIDER` | `DmlExecutionProvider`; set `CPUExecutionProvider` on Ubuntu |
+| `TABLE_REC_CPU_THREADS` | `0` (automatic); explicit count up to the host logical CPU count |
 | `TABLE_REC_PORT` | `18080` |
 | `TABLE_REC_WORKERS` | `3` |
 | `TABLE_REC_MODEL_DIR` | `./models` |
@@ -114,15 +116,41 @@ environment, logs, and staged service files remain for recovery or audit.
 
 ## Verify
 
+### Ubuntu CPU deployment
+
+The Ubuntu Server deployment and measured tuning results are documented in
+[the server runbook](../../docs/ubuntu-cpu-recognition.md). CPU thread controls
+apply to classification, OCR detection/classification/recognition, wired
+structure, and both lineless models. CPU mode limits OpenCV to one thread;
+set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1` for each service process.
+Choose worker counts and CPU allocation from measurements on the target host.
+
+Use Python 3.12 and install `requirements-cpu.lock` with `uv pip sync
+--require-hashes` in a dedicated environment. Set
+`TABLE_REC_EXECUTION_PROVIDER=CPUExecutionProvider` before prefetch, startup,
+or native tests. Every inference session must then use only the CPU provider;
+the default remains DirectML for existing Windows deployments.
+
+The repository's `scripts/ubuntu/Install-UbuntuRecognition.sh` installs the
+production systemd workers and tunnel templates from `deployment/ubuntu`.
+Production requires the documented mutual TLS settings.
+
+For the complete Linux test suite, install `requirements-test-cpu.lock` and run:
+
+```sh
+TABLE_REC_EXECUTION_PROVIDER=CPUExecutionProvider python -m pytest -q -W error -ra tests
+```
+
 ```powershell
 python -m pytest -q
 Invoke-RestMethod http://127.0.0.1:18080/health/live
 Invoke-RestMethod http://127.0.0.1:18080/health/ready
 ```
 
-DirectML is required throughout the extraction path: table classification,
-RapidOCR, and both wired and lineless structure recognition. Startup preflight
-checks every ONNX session and fails if any stage falls back to another provider.
+The configured primary provider is required throughout table classification,
+RapidOCR, and both structure engines. CPU mode requires every ONNX session to
+advertise only `CPUExecutionProvider`. Startup fails if any stage initializes
+with a different primary provider.
 
 The recognition packages were imported from RapidAI/TableStructureRec commit
 `f79a85dbcbc0c14a5b5a14491a51d0855334d859`. The original project documentation

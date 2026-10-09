@@ -25,6 +25,8 @@ class ServiceSettings:
     tls_certificate: Path | None = None
     tls_private_key: Path | None = None
     tls_client_ca: Path | None = None
+    execution_provider: str = "DmlExecutionProvider"
+    cpu_threads: int = 0
 
     @property
     def tls_enabled(self) -> bool:
@@ -54,6 +56,12 @@ class ServiceSettings:
                 f"LATEX_REC_ENVIRONMENT must be one of: {allowed}."
             )
 
+        execution_provider = values.get(
+            "LATEX_REC_EXECUTION_PROVIDER", "DmlExecutionProvider"
+        ).strip()
+        if execution_provider not in {"DmlExecutionProvider", "CPUExecutionProvider"}:
+            raise ValueError("LATEX_REC_EXECUTION_PROVIDER must be DmlExecutionProvider or CPUExecutionProvider.")
+
         settings = cls(
             model_dir=Path(
                 values.get("LATEX_REC_MODEL_DIR", service_root / "models")
@@ -69,6 +77,8 @@ class ServiceSettings:
             tls_certificate=_optional_path(values, "LATEX_REC_TLS_CERTIFICATE"),
             tls_private_key=_optional_path(values, "LATEX_REC_TLS_PRIVATE_KEY"),
             tls_client_ca=_optional_path(values, "LATEX_REC_TLS_CLIENT_CA"),
+            execution_provider=execution_provider,
+            cpu_threads=_bounded_integer(values, "LATEX_REC_CPU_THREADS", 0, 0, min(256, os.cpu_count() or 256)),
         )
         settings._validate_tls()
         return settings

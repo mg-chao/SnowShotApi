@@ -88,7 +88,9 @@ def create_app(
     process_terminator: ProcessTerminator = os._exit,
 ) -> FastAPI:
     settings = ServiceSettings.from_environment()
-    factory = bundle_factory or (lambda: EngineBundle.load(settings.model_dir))
+    factory = bundle_factory or (
+        lambda: EngineBundle.load(settings.model_dir, settings.execution_provider, settings.cpu_threads)
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):

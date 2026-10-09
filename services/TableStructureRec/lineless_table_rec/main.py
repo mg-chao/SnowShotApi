@@ -45,6 +45,7 @@ class LinelessTableInput:
     use_cuda: bool = False
     use_dml: bool = False
     device: str = "cpu"
+    intra_op_num_threads: int = -1
 
 
 @dataclass
