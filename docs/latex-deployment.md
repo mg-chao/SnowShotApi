@@ -14,7 +14,7 @@ pinned model:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y libgl1 libglib2.0-0 openssl curl
+sudo apt-get install -y libgl1 libglib2.0-0 libgomp1 openssl curl
 cd /path/to/release/services/FormulaRecognition
 python3.12 -m venv /path/to/release/latex-venv
 /path/to/release/latex-venv/bin/python -m pip install --require-hashes -r requirements-cpu.lock
@@ -25,6 +25,8 @@ Runtime startup verifies every model file and performs a complete recognition
 preflight. Runtime does not download models. Leave source, models and the
 environment read-only to the worker; its logs and temporary directory may be
 writable. Use the separate LaTeX PKI bundle under `/etc/snowshot/pki-latex`.
+`libgomp1` supplies Paddle's CPU OpenMP runtime and is required on minimal Ubuntu
+installations even when the existing ONNX worker already runs successfully.
 
 Set `LATEX_REC_CPU_THREADS=1`, `LATEX_REC_WORKERS=1`,
 `LATEX_REC_HOST=127.0.0.1`, `LATEX_REC_PORT=18081`,

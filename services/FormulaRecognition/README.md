@@ -3,6 +3,8 @@
 The Linux CPU worker recognizes one cropped printed mathematical formula with
 **PP-FormulaNet_plus-S**. Ubuntu and WSL development are supported. Run it in an
 isolated Python 3.12 environment; the table worker keeps its own runtime.
+Install Ubuntu prerequisites `libgl1`, `libglib2.0-0`, and `libgomp1` before the
+Python dependencies. Paddle CPU requires the OpenMP runtime from `libgomp1`.
 
 ```bash
 python3.12 -m venv /path/to/latex-venv

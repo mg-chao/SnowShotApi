@@ -83,7 +83,7 @@ jobs:
       - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: '3.12.10'
-      - run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0 openssl
+      - run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0 libgomp1 openssl
       - run: python -m venv services/FormulaRecognition/.venv
       - run: services/FormulaRecognition/.venv/bin/python -m pip install --require-hashes -r services/FormulaRecognition/requirements-test-cpu.lock
       - name: Fetch and verify the pinned model
