@@ -9,6 +9,18 @@ Logs/
 # Generated files
 project.lock.json
 .vs/
+reports/
+artifacts/
+coverage/
+htmlcov/
+.coverage
+/dotnet-dependencies.json
+/dotnet-vulnerabilities.json
+/python-sbom.json
+/python-vulnerabilities.json
+/latex-sbom.json
+/latex-vulnerabilities.json
+/*-sbom-validation.json
 
 # mstest test results
 TestResults
@@ -142,10 +154,9 @@ __pycache__/
 # Agents
 .codex
 .zcode
-# RapidLaTeXOCR runtime
-services/RapidLaTeXOCR/venv/
-services/RapidLaTeXOCR/.venv/
-services/RapidLaTeXOCR/models/
-services/RapidLaTeXOCR/rapid_latex_ocr/models/
-services/RapidLaTeXOCR/logs/
-services/RapidLaTeXOCR/*.exe
+# Private worker runtimes (including retained local rollback artifacts)
+services/*/venv/
+services/*/.venv/
+services/*/models/
+services/*/logs/
+probe-pki/

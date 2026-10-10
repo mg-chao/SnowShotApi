@@ -188,10 +188,12 @@ one-shot action is still installed or the runner itself failed.
 
 ## LaTeX worker recovery
 
-Check `RapidLaTeXOCRService`, `SnowShotLatexTunnel`, and port 18081. Verify the
-separate LaTeX certificate bundle and all four model hashes, then run the
+Check `snowshot-cpu-worker@latex`, `snowshot-cpu-tunnel@latex`, and port 18081.
+Verify the separate LaTeX certificate bundle and pinned PP-FormulaNet_plus-S
+model hashes, then run the
 authenticated readiness probe described in [LaTeX deployment](latex-deployment.md).
 Inspect watchdog exit code 70, restart counts, and `snowshot.worker.busy` filtered
 to resource `latex-extraction`. Check contention with table inference before
-raising concurrency. Keep one worker process until GPU capacity has been measured.
+raising concurrency. Keep one worker process and the API's global concurrency
+of one; tune CPU threads and affinity using the balanced benchmark sweep.
 Never include uploaded images or recognized formulas in incident logs.

@@ -1,0 +1,12 @@
+fastapi==0.141.1
+uvicorn==0.52.0
+Pillow==12.3.0
+numpy==2.3.5
+paddlepaddle==3.3.1
+paddlex[ocr-core]==3.7.2
+opencv-contrib-python==4.10.0.84
+tokenizers==0.23.3
+ftfy==6.3.1
+pypdfium2==5.14.0
+requests==2.33.0
+PyYAML==6.0.2

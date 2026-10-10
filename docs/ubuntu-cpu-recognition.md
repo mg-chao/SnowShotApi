@@ -1,5 +1,117 @@
 # Ubuntu CPU recognition deployment and benchmark
 
+## PP-FormulaNet_plus-S release
+
+The current repository replaces the formula worker with
+`services/FormulaRecognition` on Ubuntu/WSL CPU. See
+[the formula rollout guide](latex-deployment.md). The HTTP module remains
+`latex_rec_service`, the private endpoint remains port 18081, and API policy
+revision 13 remains unchanged. This repository change does not itself deploy a
+new worker to the server.
+
+Use the new service's `requirements-cpu.lock` or
+`requirements-test-cpu.lock` in an isolated Python 3.12 environment. Prefetch
+verifies the pinned PP-FormulaNet_plus-S archive and model files; startup works
+offline and verifies the local files again. Remove
+`LATEX_REC_EXECUTION_PROVIDER` from the new worker environment. Its fixed backend
+is Paddle static CPU with MKLDNN/HPI disabled. Only the table worker retains
+`TABLE_REC_EXECUTION_PROVIDER=CPUExecutionProvider`.
+
+The adopted default uses one process per service, table eight CPU threads/formula
+one CPU thread, with both services sharing all eight physical cores. It was
+selected in WSL and explicitly adopted for production; target-host monitoring
+is still required. Table implementation,
+dependencies, model artifacts and ONNX options are unchanged. Threads and
+affinity are worker settings; changing them does not require an API policy
+revision. Multiple formula processes would not improve admitted throughput
+while API global concurrency remains one.
+
+### Balanced tuning
+
+Run the bounded sweep on an otherwise idle eight-physical-core Ubuntu host.
+The host's `performance` governor should match the retained deployment. The
+runner discovers SMT siblings with `lscpu`; its CPU choices are saved in every
+report. Existing models and separate environments can be supplied explicitly:
+
+```bash
+latex-venv/bin/python scripts/benchmarks/sweep_formula_cpu.py \
+  --root "$PWD" \
+  --table-python "$PWD/table-venv/bin/python" \
+  --latex-python "$PWD/latex-venv/bin/python" \
+  --table-model-dir "$PWD/services/TableStructureRec/models" \
+  --latex-model-dir "$PWD/services/FormulaRecognition/models" \
+  --pki-dir /path/to/temporary-probe-pki \
+  --output-dir /path/to/fresh/formula-sweep
+```
+
+The temporary PKI directory contains `table-communication` and
+`latex-communication`, each with `worker-server.pem`, `worker-server-key.pem`,
+`api-client-ca.pem`, `worker-server-ca.pem`, `client.pem`, and `client-key.pem`.
+Do not use or copy production private keys into benchmark reports. Temporary
+workers bind random loopback ports and verify both server and client identities;
+the runner never changes systemd units, tunnels, API policy or live routing.
+
+The 12 native configurations are disjoint 7/1, 6/2, 5/3 and 4/4 physical-core
+splits, using table threads equal to table cores and formula thread counts in
+the unique set `{1, min(2, formula cores), formula cores}`; three more cases
+share all cores with table eight threads/formula one, two or four threads.
+Every case uses one process per service and measures 90 seconds after both
+workers finish warming the reviewed performance corpus. Its manifest explicitly
+excludes known model limitations from performance timing; omitted IDs and reasons
+are reported, while the accuracy suite still exercises every fixture.
+Native and HTTP measurements use the same deterministic round-robin formula
+order. The `-light`, `-dark`, `-scaled` and `-transparent` ID suffixes identify
+variants of a base formula; each historical ID is a separate base. Base order
+and variant order follow the manifest, so the first 14 requests cover all 14
+retained bases before any base repeats. All 43 fixture bytes and expectations
+are preserved. This spreads formula complexity across short timed prefixes;
+time-limited runs may still complete different numbers of variants. A readiness
+barrier starts both measurements together.
+
+The top two native candidates plus the new-model 7/1 reference undergo three
+180-second balanced mTLS runs, followed by a 20-minute selected-configuration
+soak. Formula backlog is bounded to eight; reports distinguish worker HTTP
+latency from offer-to-completion delay. P95 consistently uses nearest rank.
+Selection maximizes median balanced completed pairs/second and requires meeting
+the 7/1 reference in a majority of paired rounds. Median rates within 3% of the
+best prefer fewer formula cores, then fewer threads. Correctness errors, swap and
+worker exits reject a run. RSS windows remain in the soak report for checking
+whether warm allocations stabilize.
+
+Formula correctness is checked against the reviewed expected syntax. Table
+validation checks only a nonempty string containing `<table>`; it does not score
+cell transcription or structural correctness. Completed-pair rates therefore
+count completed tables with matched formulas under that limited table check.
+
+`--stage screen` runs only native measurements without PKI. Continue a completed
+screen with `--reuse-screen` and the same directory plus PKI. Reuse requires a
+matching fingerprint of model files/manifests, corpus, source, runtime packages
+and locks, durations, CPU topology/governor and thread environment. Duration overrides,
+`--candidate-limit` and `--repeats` support smoke tests; release measurements use
+the defaults above. Run `scripts/benchmarks/summarize_cpu.py /path/to/formula-sweep`
+to create `native-summary.csv` and `measurement-summary.json`; the selection
+`summary.json` and raw reports remain separate.
+
+For supplemental whole-process HTTP CPU samples, run
+`scripts/benchmarks/observe_worker_cpu.py` with the sweep controller PID and its
+output directory. Its `summarize` subcommand records sample offsets, gaps and
+clock resolution. Native reports use exact internal process CPU time; HTTP CPU
+intervals are approximate because they are inferred from report publication time.
+
+### Retained deployment evidence
+
+The sections below document the **previous 2026-10-09 ONNX formula release**.
+Its paths and throughput figures describe retained external rollback artifacts,
+not the new Paddle worker. The current sweep uses the new reviewed corpus and
+must not be presented as a like-for-like accuracy or speed comparison with the
+four formula fixtures in the historical runs. New rollout requires the staged
+verification and traffic-switch steps in the formula rollout guide.
+
+The historical `formula_models_cpu.py` model-screen harness is local development
+work outside this release. It requires `--root` to point to a retained prior
+checkout containing `services/RapidLaTeXOCR` and its fixtures. Use the current
+sweep and accuracy tools against this release; generated reports stay outside Git.
+
 Deployed on **2026-10-09** to `chao@192.168.0.203`. Both production recognition
 routes now reach this Ubuntu Server through the existing restricted reverse SSH
 tunnels to `120.79.232.67`. All ten ONNX sessions use only

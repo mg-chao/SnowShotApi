@@ -1,0 +1,2 @@
+# Linux CPU runtime; install with --require-hashes using requirements-cpu.lock.
+-r requirements-cpu.txt

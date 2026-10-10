@@ -6,10 +6,10 @@ service_user=${2:-chao}
 table_workers=${3:-1}
 table_threads=${4:-8}
 latex_workers=${5:-1}
-latex_threads=${6:-4}
-table_affinity=${7:-}
-latex_affinity=${8:-}
-power_mode=${9:-stock}
+latex_threads=${6:-1}
+table_affinity=${7:-0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}
+latex_affinity=${8:-0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}
+power_mode=${9:-performance}
 [[ $power_mode == stock || $power_mode == performance ]] || exit 1
 for affinity in "$table_affinity" "$latex_affinity"; do [[ -z $affinity || $affinity =~ ^[0-9]+(,[0-9]+)*$ ]] || exit 1; done
 [[ $EUID == 0 ]] || { echo "Run this installer with sudo" >&2; exit 1; }
@@ -17,7 +17,9 @@ for affinity in "$table_affinity" "$latex_affinity"; do [[ -z $affinity || $affi
 [[ $service_user =~ ^[a-z_][a-z0-9_-]*$ ]] || exit 1
 id "$service_user" >/dev/null
 for count in "$table_workers" "$latex_workers"; do [[ $count =~ ^[0-9]+$ && $count -ge 1 && $count -le 16 ]] || exit 1; done
+[[ $latex_workers == 1 ]] || { echo 'The formula worker supports exactly one process; API concurrency remains one.' >&2; exit 1; }
 for count in "$table_threads" "$latex_threads"; do [[ $count =~ ^[0-9]+$ && $count -ge 0 && $count -le 16 ]] || exit 1; done
+[[ $latex_threads -ge 1 ]] || { echo 'Formula CPU threads must be positive.' >&2; exit 1; }
 backup=/var/backups/snowshot-ubuntu203/$(date -u +%Y%m%dT%H%M%SZ)
 install -d -m 700 "$backup"
 if [[ -d /etc/snowshot ]]; then cp -a /etc/snowshot "$backup/config"; fi
@@ -36,9 +38,8 @@ for dir in pki-table pki-latex ssh; do
 done
 for kind in table latex; do
     service=TableStructureRec; prefix=TABLE_REC; workers=$table_workers; threads=$table_threads; port=18080; affinity=$table_affinity
-    if [[ $kind == latex ]]; then service=RapidLaTeXOCR; prefix=LATEX_REC; workers=$latex_workers; threads=$latex_threads; port=18081; affinity=$latex_affinity; fi
+    if [[ $kind == latex ]]; then service=FormulaRecognition; prefix=LATEX_REC; workers=$latex_workers; threads=$latex_threads; port=18081; affinity=$latex_affinity; fi
     cat > "/etc/snowshot/$kind-cpu.env" <<EOF
-${prefix}_EXECUTION_PROVIDER=CPUExecutionProvider
 ${prefix}_WORKERS=$workers
 ${prefix}_CPU_THREADS=$threads
 ${prefix}_HOST=127.0.0.1
@@ -49,6 +50,7 @@ ${prefix}_TLS_CERTIFICATE=/etc/snowshot/pki-$kind/worker-server.pem
 ${prefix}_TLS_PRIVATE_KEY=/etc/snowshot/pki-$kind/worker-server-key.pem
 ${prefix}_TLS_CLIENT_CA=/etc/snowshot/pki-$kind/api-client-ca.pem
 EOF
+    if [[ $kind == table ]]; then printf 'TABLE_REC_EXECUTION_PROVIDER=CPUExecutionProvider\n' >> "/etc/snowshot/$kind-cpu.env"; fi
     install -m 640 -o root -g "$service_user" "$install_root/config/$kind-tunnel.env" "/etc/snowshot/$kind-tunnel.env"
     install -d -m 755 "/etc/systemd/system/snowshot-cpu-worker@$kind.service.d"
     printf '[Service]\nCPUAffinity=%s\n' "${affinity//,/ }" > "/etc/systemd/system/snowshot-cpu-worker@$kind.service.d/cpu-affinity.conf"
@@ -61,7 +63,7 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")" && pwd)
 case "$1" in
     table) cd "$root/services/TableStructureRec"; exec "$root/table-venv/bin/python" -m table_rec_service ;;
-    latex) cd "$root/services/RapidLaTeXOCR"; exec "$root/latex-venv/bin/python" -m latex_rec_service ;;
+    latex) cd "$root/services/FormulaRecognition"; exec "$root/latex-venv/bin/python" -m latex_rec_service ;;
     *) exit 2 ;;
 esac
 EOF

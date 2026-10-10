@@ -43,11 +43,6 @@ jobs:
         run: scripts/Verify-DotnetVulnerabilities.ps1 -ReportPath dotnet-vulnerabilities.json
       - run: dotnet list SnowShotApi.sln package --include-transitive --format json > dotnet-dependencies.json
       - run: python -m pytest -q -W error services/TableStructureRec/tests
-      - run: python -m venv services/RapidLaTeXOCR/venv
-      - run: services/RapidLaTeXOCR/venv/Scripts/python.exe -m pip install --require-hashes -r services/RapidLaTeXOCR/requirements-test.lock
-      - run: services/RapidLaTeXOCR/venv/Scripts/python.exe -m pytest -q -W error services/RapidLaTeXOCR/tests
-      - run: .\.audit-venv\Scripts\pip-audit.exe -r services/RapidLaTeXOCR/requirements-windows.lock --format json --output latex-vulnerabilities.json
-      - run: .\.audit-venv\Scripts\cyclonedx-py.exe requirements services/RapidLaTeXOCR/requirements-windows.lock -o latex-sbom.json
       - run: .\.audit-venv\Scripts\pip-audit.exe -r services/TableStructureRec/requirements-windows.lock --format json --output python-vulnerabilities.json
       - run: .\.audit-venv\Scripts\cyclonedx-py.exe requirements services/TableStructureRec/requirements-windows.lock -o python-sbom.json
       - run: dotnet publish src/SnowShotApi/SnowShotApi.csproj -c Release --no-restore -o artifacts/api
@@ -70,6 +65,43 @@ jobs:
             migrator-sbom-validation.json
             python-sbom.json
             python-vulnerabilities.json
+
+  formula-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LATEX_REC_CPU_THREADS: '1'
+      LATEX_REC_REQUIRE_MODELS: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      NUMEXPR_NUM_THREADS: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12.10'
+      - run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0 openssl
+      - run: python -m venv services/FormulaRecognition/.venv
+      - run: services/FormulaRecognition/.venv/bin/python -m pip install --require-hashes -r services/FormulaRecognition/requirements-test-cpu.lock
+      - name: Fetch and verify the pinned model
+        working-directory: services/FormulaRecognition
+        run: .venv/bin/python -m latex_rec_service.prefetch --model-dir models
+      - name: Required real recognition and offline startup tests
+        working-directory: services/FormulaRecognition
+        run: |
+          sudo unshare --net -- bash -c 'ip link set lo up; exec env LATEX_REC_REQUIRE_MODELS=1 LATEX_REC_CPU_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True "$1" -m pytest -c pytest.ini -q -W error -ra tests ../../scripts/benchmarks/tests' bash "$PWD/.venv/bin/python"
+      - run: python -m venv .audit-venv
+      - run: .audit-venv/bin/python -m pip install --require-hashes -r services/FormulaRecognition/requirements-audit.lock
+      - run: .audit-venv/bin/pip-audit -r services/FormulaRecognition/requirements-cpu.lock --format json --output latex-vulnerabilities.json
+      - run: .audit-venv/bin/cyclonedx-py requirements services/FormulaRecognition/requirements-cpu.lock -o latex-sbom.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: formula-cpu-reports
+          path: |
             latex-vulnerabilities.json
             latex-sbom.json
 
@@ -149,5 +181,3 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - shell: pwsh
         run: services/TableStructureRec/tests/run_winsw_service_harness.ps1
-      - shell: pwsh
-        run: services/RapidLaTeXOCR/tests/run_winsw_service_harness.ps1

@@ -1,0 +1,2 @@
+Source: https://github.com/RapidAI/RapidLaTeXOCR
+Revision: 21a6365738e6ae74006983ee023755f508739532
