@@ -433,7 +433,8 @@ class ApiAgent:
             if spec.get("settings_file"):
                 mount = next((m for m in template["Mounts"] if m["Destination"] == "/app/appsettings.Production.json"), None)
                 require(mount is not None, "No production settings mount to replace")
-                shutil.copy2(spec["settings_file"], mount["Source"])
+                # Keep the frozen mount's ownership and mode; the API container runs as a non-root user.
+                shutil.copyfile(spec["settings_file"], mount["Source"])
             if spec.get("environment_file"):
                 for key, value in environment(Path(spec["environment_file"]).read_text()).items():
                     self.set_option(template, key, value)
