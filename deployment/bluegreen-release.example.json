@@ -1,0 +1,8 @@
+{
+  "id": "first-green",
+  "api": { "legacy_clone": true },
+  "workers": {
+    "table": { "clone": true },
+    "latex": { "clone": true }
+  }
+}

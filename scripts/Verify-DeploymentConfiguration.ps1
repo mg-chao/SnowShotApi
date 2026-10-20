@@ -151,6 +151,12 @@ foreach ($healthPath in @("live", "ready")) {
 if ([regex]::IsMatch($nginx, "(?m)^\s*location\s+[^\r\n]*health/components")) {
     throw "nginx must not expose /health/components publicly."
 }
+$proxyLocations = [regex]::Matches($nginx, '(?m)^\s*proxy_pass\s+http://snowshot_api;\s*$').Count
+$disabledRetries = [regex]::Matches($nginx, '(?m)^\s*proxy_next_upstream\s+off;\s*$').Count
+if ($proxyLocations -ne 4 -or $disabledRetries -ne $proxyLocations -or
+    [regex]::IsMatch($nginx, 'proxy_pass\s+http://(?:localhost|127\.0\.0\.1):')) {
+    throw "Every API/health proxy must use the managed upstream with retries disabled."
+}
 
 Write-Host "Deployment configuration verified: models=$($models -join ','), app=${maximumDeadline}s, nginx=${readTimeout}s."
 

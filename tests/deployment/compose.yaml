@@ -1,0 +1,99 @@
+name: snowshot-deployment-test
+
+x-environment: &environment
+  ASPNETCORE_ENVIRONMENT: Development
+  DOTNET_ENVIRONMENT: Development
+  ConnectionStrings__SnowShot: Host=postgres;Database=snowshot;Username=snowshot;Password=deployment-test
+  ConnectionStrings__Redis: redis:6379,abortConnect=false
+  Identity__HmacKeyBase64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  Providers__CloudProviders__aliyun__Endpoint: http://provider:8080/v1/chat/completions
+  Providers__CloudProviders__aliyun__ApiKey: deployment-test
+  Policy__Resources__ai-model__RequestsPerMinute: "1000"
+  Policy__Resources__ai-model__PerPrincipalConcurrency: "1"
+  Policy__Resources__ai-model__GlobalConcurrency: "1"
+  Policy__Resources__ai-model__GlobalQueueLength: "8"
+  Policy__Resources__ai-model__QueueWaitSeconds: "60"
+  Policy__Resources__ai-model__ExecutionDeadlineSeconds: "90"
+  TrustedProxies__0: 172.30.244.10
+  TrustedProxies__1: 127.0.0.1
+  Providers__Table__BaseUrl: http://worker-blue:8080/
+  Providers__Latex__BaseUrl: http://worker-blue:8080/
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    environment:
+      POSTGRES_DB: snowshot
+      POSTGRES_USER: snowshot
+      POSTGRES_PASSWORD: deployment-test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snowshot -d snowshot"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:8-alpine@sha256:e8eb6f2980c06c6a25c08f62cb2e00dc7d2fead9aa492cfdd8b54a42109ae0f2
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  provider:
+    image: python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+    command: ["python", "/service.py"]
+    volumes:
+      - ./fake_service.py:/service.py:ro
+    ports: ["127.0.0.1:15300:8080"]
+  worker-blue:
+    image: python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+    command: ["python", "/service.py"]
+    volumes:
+      - ./fake_service.py:/service.py:ro
+    ports: ["127.0.0.1:15301:8080"]
+  worker-green:
+    image: python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+    command: ["python", "/service.py"]
+    volumes:
+      - ./fake_service.py:/service.py:ro
+    ports: ["127.0.0.1:15302:8080"]
+  migrate:
+    image: snowshot-migrator:deployment-test
+    build:
+      context: ../..
+      target: migrator
+    environment: *environment
+  api-blue:
+    image: snowshot-api:deployment-test
+    build:
+      context: ../..
+      target: api
+    environment: *environment
+    ports: ["127.0.0.1:15101:8080"]
+    stop_grace_period: 390s
+  api-green:
+    image: snowshot-api:deployment-test
+    environment:
+      <<: *environment
+      Providers__Table__BaseUrl: http://worker-green:8080/
+      Providers__Latex__BaseUrl: http://worker-green:8080/
+    ports: ["127.0.0.1:15102:8080"]
+    stop_grace_period: 390s
+  describe:
+    image: snowshot-api:deployment-test
+    network_mode: none
+    environment: *environment
+    command: ["--describe-deployment"]
+  nginx:
+    image: nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    volumes:
+      - ${SNOWSHOT_DEPLOY_NGINX_DIRECTORY:?Set harness configuration directory}:/etc/nginx/conf.d:ro
+      - ${SNOWSHOT_DEPLOY_NGINX_DIRECTORY}/main.txt:/etc/nginx/nginx.conf:ro
+    ports: ["127.0.0.1:18443:8080"]
+    networks:
+      default:
+        ipv4_address: 172.30.244.10
+
+networks:
+  default:
+    ipam:
+      config: [{subnet: 172.30.244.0/24}]

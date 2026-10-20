@@ -1,5 +1,10 @@
 # LaTeX extraction deployment
 
+For active blue/green releases, use the [release guide](bluegreen-deployment.md)
+and its `status` command to identify the selected worker units and private ports.
+The fixed-port restart and rollback commands below describe the retained legacy
+layout; do not apply them to an active blue/green release.
+
 The formula worker uses **PP-FormulaNet_plus-S on Ubuntu/WSL CPU**. Its source is
 `services/FormulaRecognition`; its module remains `latex_rec_service`. The
 private route, port 18081, certificate identities, public API and billing stay

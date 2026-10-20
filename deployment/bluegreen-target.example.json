@@ -1,0 +1,18 @@
+{
+  "api_host": "root@api.example.test",
+  "worker_host": "recognition@worker.example.test",
+  "worker_user": "recognition",
+  "api_root": "/opt/snowshot-v2/bluegreen",
+  "worker_release_root": "/home/recognition/snowshot",
+  "legacy_container": "snowshot-api-v2",
+  "public_host": "snowshot.top",
+  "nginx_include": "/etc/nginx/conf.d/snowshot-upstream.conf",
+  "nginx_files": [
+    "/etc/nginx/sites-enabled/snowshot.top.conf",
+    "/etc/nginx/sites-enabled/default"
+  ],
+  "fixtures": {
+    "table": { "path": "../tests/deployment/fixtures/table.webp", "expected": "<table" },
+    "latex": { "path": "../services/FormulaRecognition/tests/corpus/fractions-light.webp", "expected": "\\frac{a+b}{c-d}" }
+  }
+}

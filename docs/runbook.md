@@ -7,6 +7,10 @@ mitigating an incident.
 
 ## Change and rollback
 
+For API/recognition releases with an unchanged policy, use the
+[blue/green deployment procedure](bluegreen-deployment.md). Policy-changing
+releases require the separate maintenance procedure in that guide.
+
 Policy revision **15** introduces the public `ai-model` (AI Model / AI 模型).
 Both `/api/v1/chat/models` and `/api/v2/chat/models` expose only this model;
 it is a general model (`translation: false`, `translation_mode: "default"`),
@@ -200,6 +204,12 @@ the source of truth. Resume retention only after the conflict is resolved and
 all referenced identities remain protected.
 
 ## Worker recovery
+
+For a blue/green deployment, first run `deploy.py status` and use the active
+manifest's worker/tunnel unit names. Verify the selected private ports and avoid
+restarting legacy fixed-port units. If the active worker release fails, use the
+deployment controller's rollback so the API and its worker assignments recover
+together. The fixed-name recovery examples below apply to the legacy layout.
 
 The recognition capacity alert groups `snowshot.worker.busy` by resource.
 Infrastructure routes table incidents to the Table worker owner and

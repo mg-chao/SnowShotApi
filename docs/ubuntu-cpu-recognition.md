@@ -1,5 +1,9 @@
 # Ubuntu CPU recognition deployment and benchmark
 
+Use [blue/green deployment](bluegreen-deployment.md) for current release changes.
+Its manifests identify active units and ports; the fixed-port installation and
+recovery examples here describe the legacy layout and retained benchmark evidence.
+
 ## PP-FormulaNet_plus-S release
 
 The current repository replaces the formula worker with

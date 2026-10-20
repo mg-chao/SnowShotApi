@@ -113,6 +113,22 @@ jobs:
       - run: docker build --target api -t snowshot-api:ci .
       - run: docker build --target migrator -t snowshot-migrator:ci .
 
+  deployment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12.10'
+      - run: >-
+          docker run --rm
+          --mount type=bind,source=${{ github.workspace }}/scripts/deployment,target=/tests,readonly
+          -w /tests
+          python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+          python -W error -m unittest discover -s tests -v
+      - run: python tests/deployment/run_harness.py
+
   database:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Localization;
 using OpenTelemetry.Metrics;
@@ -8,7 +9,8 @@ using SnowShot.Api;
 using SnowShot.Infrastructure;
 using SnowShot.Infrastructure.Configuration;
 
-var builder = WebApplication.CreateBuilder(args);
+var describeDeployment = args.Contains("--describe-deployment", StringComparer.Ordinal);
+var builder = WebApplication.CreateBuilder(args.Where(value => value != "--describe-deployment").ToArray());
 builder.Configuration.AddMountedSecrets(builder.Environment.EnvironmentName);
 builder.Services.AddSnowShotApiAdapter();
 builder.Services.AddOpenApi();
@@ -26,6 +28,7 @@ builder.Services.AddOpenTelemetry()
         if (otlpConfigured) metrics.AddOtlpExporter();
     });
 builder.Services.AddSnowShotInfrastructure(builder.Configuration, builder.Environment);
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(360));
 var deployedEnvironment = !builder.Environment.IsDevelopment();
 var parsedProxies = IngressPolicy.Validate(builder.Configuration, deployedEnvironment);
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -37,6 +40,17 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 var app = builder.Build();
+if (describeDeployment)
+{
+    app.Services.GetService<Microsoft.Extensions.Options.IStartupValidator>()?.Validate();
+    var description = DeploymentDescription.From(app.Services.GetRequiredService<SnowShot.Domain.ServicePolicy>());
+    Console.WriteLine(JsonSerializer.Serialize(description, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    }));
+    await app.DisposeAsync();
+    return;
+}
 app.UseForwardedHeaders();
 if (deployedEnvironment)
 {
