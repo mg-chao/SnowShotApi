@@ -29,6 +29,9 @@ public sealed class OpenAiTranslationClient(
         var id = command.AttemptId;
         var started = command.AttemptStartedAt;
         var access = catalog.Get(command.Access.LogicalModel, command.Access.AccessId);
+        var pricing = command.Operation.Snapshot.ModelPricing;
+        ChatUsage? usage = null;
+        var transmittedBytes = 0L;
         var native = catalog.UsesNativeTranslationOptions(access.Selection.LogicalModel);
         if (command.ItemAttemptNumber > 1) SnowShotTelemetry.ProviderRetries.Add(1,
             new("kind", "translation"), new("model", access.Selection.LogicalModel), new("provider", access.Selection.Provider));
@@ -84,10 +87,15 @@ public sealed class OpenAiTranslationClient(
         }
         if (access.TranslationEnableThinking is not null)
             payload["enable_thinking"] = access.TranslationEnableThinking.Value;
+        else if (pricing is not null)
+            payload["enable_thinking"] = false;
+        var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions);
+        transmittedBytes = payloadBytes.Length;
         using var request = new HttpRequestMessage(HttpMethod.Post, access.Endpoint)
         {
-            Content = JsonContent.Create(payload, options: JsonOptions),
+            Content = new ByteArrayContent(payloadBytes),
         };
+        request.Content.Headers.ContentType = new("application/json") { CharSet = "utf-8" };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", access.ApiKey);
         request.Headers.TryAddWithoutValidation("X-Operation-ID", command.Operation.OperationId.ToString("N"));
         SnowShotTelemetry.TranslationActiveConversations.Add(1,
@@ -117,6 +125,7 @@ public sealed class OpenAiTranslationClient(
             await using var stream = await response.Content.ReadAsStreamAsync(attemptToken.Token);
             var bytes = await BoundedStreams.ReadAllAsync(stream, options.MaximumResponseBytes, attemptToken.Token);
             var completion = JsonSerializer.Deserialize<CompletionResponse>(bytes, JsonOptions);
+            usage = completion is null ? null : OpenAiUsage.ReadDetails(completion.Usage);
             var content = completion?.Choices is { Count: 1 } && completion.Choices[0]?.Message?.Content is { } value
                 ? value
                 : null;
@@ -175,6 +184,8 @@ public sealed class OpenAiTranslationClient(
         {
             if (outcome != "unchanged") dependencyHealth.Report("translation_provider", success);
             var price = policy.Get(Resources.Translation).Price;
+            var operatorInput = inputUnits;
+            var operatorOutput = outputUnits;
             var cost = dispatchState == AttemptDispatchState.Dispatched
                 ? basis switch
                 {
@@ -183,10 +194,34 @@ public sealed class OpenAiTranslationClient(
                     _ => NanoYuan.Zero,
                 }
                 : NanoYuan.Zero;
+            if (pricing is not null)
+            {
+                if (pricing.ExecutionModel != access.Selection.LogicalModel)
+                    throw new InvalidOperationException("Translation execution does not match its reserved tariff.");
+                if (dispatchState != AttemptDispatchState.Dispatched || (basis == CostBasis.Exact && inputUnits == 0 && outputUnits == 0))
+                {
+                    operatorInput = operatorOutput = 0;
+                    cost = NanoYuan.Zero;
+                }
+                else if (usage is not null)
+                {
+                    operatorInput = usage.PromptTokens;
+                    operatorOutput = usage.CompletionTokens;
+                    cost = pricing.Tariff.Calculate(operatorInput, operatorOutput, usage.CachedInputTokens);
+                    basis = CostBasis.Exact;
+                }
+                else
+                {
+                    operatorInput = policy.Estimation.EstimateInputTokens(transmittedBytes);
+                    operatorOutput = policy.Estimation.EstimateOutputTokens(outputUnits);
+                    cost = pricing.Tariff.Calculate(operatorInput, operatorOutput);
+                    basis = CostBasis.Estimated;
+                }
+            }
             var attempt = new ProviderAttempt(id, command.Operation.OperationId, command.AttemptNumber, access.Selection.AttemptProvider,
-                Resources.Translation, outcome, status, inputUnits, outputUnits, cost, basis, dispatchState,
+                Resources.Translation, outcome, status, operatorInput, operatorOutput, cost, basis, dispatchState,
                 started, timeProvider.GetUtcNow());
-            return new(success, values, inputUnits, outputUnits, inputUnits, outputUnits, outcome, basis, retryable,
+            return new(success, values, inputUnits, outputUnits, operatorInput, operatorOutput, outcome, basis, retryable,
                 retryAfter, attempt);
         }
     }
@@ -244,7 +279,11 @@ public sealed class OpenAiTranslationClient(
         catch (JsonException) { return false; }
     }
 
-    private sealed class CompletionResponse { [JsonPropertyName("choices")] public List<Choice?>? Choices { get; init; } }
+    private sealed class CompletionResponse
+    {
+        [JsonPropertyName("choices")] public List<Choice?>? Choices { get; init; }
+        [JsonPropertyName("usage")] public JsonElement Usage { get; init; }
+    }
     private sealed class Choice { [JsonPropertyName("message")] public Message? Message { get; init; } }
     private sealed class Message { [JsonPropertyName("content")] public string? Content { get; init; } }
     private sealed class Payload { [JsonPropertyName("translations")] public List<Indexed>? Translations { get; init; } }

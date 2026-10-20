@@ -23,6 +23,44 @@ namespace SnowShotApi.Tests.Domain;
 public sealed class DistributedIntegrationTests
 {
     [Fact, Trait("Category", "Integration")]
+    public async Task ModelPricingSnapshotsRoundTripAndReconcileWithoutRepricingHistoricalRows()
+    {
+        SkipUnlessEnabled();
+        var token = TestContext.Current.CancellationToken;
+        var options = DatabaseOptions(Environment.GetEnvironmentVariable("ConnectionStrings__SnowShot")!);
+        var policy = ServicePolicy.Defaults();
+        var ledger = new PostgresOperationLedger(new ContextFactory(options), policy);
+        var principal = await AddPrincipalAsync(options, token);
+        var pricing = AiModelTests.Configuration().Policy.PricingFor(Resources.QwenTextFlash)!;
+        foreach (var snapshot in new ModelPricingSnapshot?[] { pricing, null })
+        {
+            var operation = Operation(principal, policy);
+            operation = operation with { Snapshot = operation.Snapshot with { ModelPricing = snapshot } };
+            var handle = await ReserveDispatchedAsync(ledger, operation, token);
+            Assert.Equal(snapshot?.ExecutionModel, handle.Snapshot.ModelPricing?.ExecutionModel);
+            Assert.Equal(snapshot?.Tariff.CanonicalDocument, handle.Snapshot.ModelPricing?.Tariff.CanonicalDocument);
+            var cost = snapshot?.Tariff.Calculate(32_001, 100, 500) ?? operation.Snapshot.Price.Calculate(32_001, 100);
+            var started = DateTimeOffset.UtcNow;
+            var preparation = new ProviderAttemptPreparation(Guid.CreateVersion7(), handle, 1,
+                "provider", operation.Snapshot.Resource, started);
+            Assert.Equal(OwnershipMutationResult.Applied, await ledger.PrepareAttemptAsync(preparation, token));
+            var attempt = new ProviderAttempt(preparation.Id, handle.OperationId, 1, "provider",
+                operation.Snapshot.Resource, "success", 200, 32_001, 100, cost, CostBasis.Exact,
+                AttemptDispatchState.Dispatched, started, DateTimeOffset.UtcNow);
+            Assert.Equal(OwnershipMutationResult.Applied, await ledger.CompleteAttemptAsync(handle, attempt, token));
+            await using var context = new SnowShotDbContext(options);
+            var stored = await context.UsageOperations.AsNoTracking().SingleAsync(value => value.Id == operation.Id, token);
+            Assert.Equal(snapshot is null, stored.ModelPricingSnapshot is null);
+            await context.UsageOperations.Where(value => value.Id == operation.Id)
+                .ExecuteUpdateAsync(update => update.SetProperty(value => value.LeaseExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)), token);
+            Assert.True(await ledger.ReconcileExpiredAsync(100, token) >= 1);
+            stored = await context.UsageOperations.AsNoTracking().SingleAsync(value => value.Id == operation.Id, token);
+            Assert.Equal(cost.Value, stored.ActualOperatorNanoYuan);
+            Assert.Equal(0, stored.ActualPublicNanoYuan);
+        }
+    }
+
+    [Fact, Trait("Category", "Integration")]
     public async Task LatexUsageKindPersistsAndSettlesExactlyOnce()
     {
         SkipUnlessEnabled();

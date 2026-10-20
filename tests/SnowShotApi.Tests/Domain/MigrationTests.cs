@@ -12,7 +12,7 @@ public sealed class MigrationTests
     {
         using var context = Context();
         Assert.False(context.Database.HasPendingModelChanges());
-        Assert.Equal(4, context.Database.GetMigrations().Count());
+        Assert.Equal(5, context.Database.GetMigrations().Count());
     }
 
     [Fact]
@@ -35,6 +35,8 @@ public sealed class MigrationTests
         Assert.Contains("principal_fingerprints", script, StringComparison.Ordinal);
         Assert.Contains("ck_usage_operation_fence", script, StringComparison.Ordinal);
         Assert.Contains("ck_usage_operation_terminal", script, StringComparison.Ordinal);
+        Assert.Contains("ADD \"ModelPricingSnapshot\" text", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"ModelPricingSnapshot\" text NOT NULL", script, StringComparison.Ordinal);
     }
 
     private static SnowShotDbContext Context() => new(new DbContextOptionsBuilder<SnowShotDbContext>()

@@ -1,11 +1,14 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Immutable;
 
 namespace SnowShot.Domain;
 
 public static class Resources
 {
     public const string Translation = "translation";
+    public const string AiModel = "ai-model";
+    public const string QwenTextFlash = "qwen3.7-flash";
     public const string QwenFlash = "qwen3.8-flash";
     public const string QwenMtFlash = "qwen-mt-flash";
     public const string TableExtraction = "table-extraction";
@@ -13,7 +16,7 @@ public static class Resources
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        Translation, QwenFlash,
+        Translation, AiModel, QwenFlash,
         QwenMtFlash, TableExtraction, LatexExtraction,
     };
 }
@@ -89,7 +92,9 @@ public sealed class ServicePolicy
         TimeSpan activeLeaseTtl,
         TimeSpan leaseRenewalInterval,
         IEnumerable<string>? additionalResources = null,
-        EstimationRatios? estimation = null)
+        EstimationRatios? estimation = null,
+        IReadOnlyDictionary<string, TokenTariff>? modelPricing = null,
+        string routingIdentity = "")
     {
         Revision = revision;
         _resources = resources.ToDictionary(value => value.Resource, StringComparer.Ordinal);
@@ -100,6 +105,9 @@ public sealed class ServicePolicy
         ActiveLeaseTtl = activeLeaseTtl;
         LeaseRenewalInterval = leaseRenewalInterval;
         Estimation = estimation ?? EstimationRatios.Defaults;
+        ModelPricing = (modelPricing ?? new Dictionary<string, TokenTariff>())
+            .ToImmutableDictionary(StringComparer.Ordinal);
+        RoutingIdentity = routingIdentity;
         Validate();
         Fingerprint = ComputeFingerprint();
     }
@@ -111,6 +119,10 @@ public sealed class ServicePolicy
     public TimeSpan ActiveLeaseTtl { get; }
     public TimeSpan LeaseRenewalInterval { get; }
     public EstimationRatios Estimation { get; }
+    public IReadOnlyDictionary<string, TokenTariff> ModelPricing { get; }
+    public string RoutingIdentity { get; }
+    public ModelPricingSnapshot? PricingFor(string executionModel) =>
+        ModelPricing.TryGetValue(executionModel, out var tariff) ? new(executionModel, tariff) : null;
     public string Fingerprint { get; }
     public string CanonicalDocument => Canonicalize();
     public IEnumerable<ResourcePolicy> ResourcePolicies => _resources.Values;
@@ -197,7 +209,10 @@ public sealed class ServicePolicy
                 value.Admission.GlobalConcurrency, value.Admission.GlobalQueueLength, value.Admission.PerPrincipalQueueLength,
                 value.Admission.QueueWait.Ticks, value.ExecutionDeadline.Ticks, value.OperatorMaximum.Value))) +
             $"\n{PrincipalDailyAllowance.Value}|{DailyOperatorBudget.Value}|{MonthlyOperatorBudget.Value}|{ActiveLeaseTtl.Ticks}|{LeaseRenewalInterval.Ticks}" +
-            $"|{Estimation.BytesPerInputToken}|{Estimation.CharsPerOutputToken}";
+            $"|{Estimation.BytesPerInputToken}|{Estimation.CharsPerOutputToken}" +
+            (ModelPricing.Count == 0 && RoutingIdentity.Length == 0 ? "" :
+                "\n" + RoutingIdentity + "\n" + string.Join('\n', ModelPricing.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => $"{pair.Key}|{pair.Value.CanonicalDocument}")));
     }
 
     public static ServicePolicy Defaults() => new(

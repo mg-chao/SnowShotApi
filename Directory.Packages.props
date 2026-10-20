@@ -17,6 +17,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.8.58" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.0" />
   </ItemGroup>

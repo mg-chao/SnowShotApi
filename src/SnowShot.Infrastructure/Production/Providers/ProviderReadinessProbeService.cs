@@ -58,7 +58,7 @@ public sealed class ProviderReadinessProbeService(
         var results = await Task.WhenAll(probes);
         var healthy = results.Where(value => value.Healthy).Select(value => value.Selection.LogicalModel)
             .ToHashSet(StringComparer.Ordinal);
-        health.Report("chat_provider", catalog.Models.All(value => healthy.Contains(value.Model)));
+        health.Report("chat_provider", catalog.ChatExecutionModels.All(healthy.Contains));
         health.Report("translation_provider", translation.ConfiguredLogicalModels.Any(healthy.Contains));
         health.Report("table_worker", await ProbeWorkerAsync("table", cancellationToken));
         health.Report("latex_worker", await ProbeWorkerAsync("latex", cancellationToken));

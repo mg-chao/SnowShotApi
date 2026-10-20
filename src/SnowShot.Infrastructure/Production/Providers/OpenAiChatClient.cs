@@ -30,7 +30,7 @@ public sealed class OpenAiChatClient(
         var started = command.AttemptStartedAt;
         var access = catalog.Get(command.Access.LogicalModel, command.Access.AccessId);
         if (command.AttemptNumber > 1) SnowShotTelemetry.ProviderRetries.Add(1,
-            new("kind", "chat"), new("model", request.Model), new("provider", access.Selection.Provider));
+            new("kind", "chat"), new("model", access.Selection.LogicalModel), new("provider", access.Selection.Provider));
         var payload = RewritePayload(request.Utf8Json.Span, access.Selection.UpstreamModel,
             catalog.MergesSystemIntoUser(command.Access.LogicalModel),
             catalog.TranslationMode(command.Access.LogicalModel));
@@ -113,14 +113,17 @@ public sealed class OpenAiChatClient(
                 {
                     using var document = JsonDocument.Parse(data);
                     var root = document.RootElement;
-                    var parsedUsage = ReadUsage(root);
+                    if (root.ValueKind != JsonValueKind.Object)
+                        throw new InvalidDataException("A chat stream frame must be an object.");
+                    var parsedUsage = OpenAiUsage.Read(root);
                     if (parsedUsage is not null)
                     {
-                        _ = policy.Get(request.Model).Price.Calculate(parsedUsage.PromptTokens, parsedUsage.CompletionTokens);
+                        _ = Cost(parsedUsage.PromptTokens, parsedUsage.CompletionTokens, parsedUsage.CachedInputTokens);
                         usage = parsedUsage;
                     }
                     deliveredContentChars += ReadContentLength(root);
-                    frame = Encoding.UTF8.GetBytes(data);
+                    frame = request.Model == Resources.AiModel
+                        ? RewriteResponseModel(root, request.RequestedModel) : Encoding.UTF8.GetBytes(data);
                 }
                 catch (Exception exception) when (exception is JsonException or InvalidDataException or OverflowException)
                 {
@@ -136,7 +139,10 @@ public sealed class OpenAiChatClient(
                 yield return new ChatProviderEvent.Frame(frame);
             }
             var succeeded = delivered && sawDone && usage is not null;
-            dependencyHealth.Report("chat_provider", succeeded);
+            // A successful text request cannot establish that the vision route is
+            // healthy. The readiness probe evaluates all required execution routes.
+            if (!succeeded || catalog.ChatExecutionModels.Count() == 1)
+                dependencyHealth.Report("chat_provider", succeeded);
             if (!succeeded)
             {
                 await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
@@ -163,16 +169,36 @@ public sealed class OpenAiChatClient(
             new(outcome, retryable,
                 Attempt(outcome, status, usage, basis, dispatchState, estimatedInput, estimatedOutput));
 
+        NanoYuan Cost(long input, long output, long cached = 0) =>
+            command.Operation.Snapshot.ModelPricing?.Tariff.Calculate(input, output, cached)
+            ?? policy.Get(request.Model).Price.Calculate(input, output);
+
         ProviderAttempt Attempt(string outcome, int? status, ChatUsage? usage, CostBasis basis, AttemptDispatchState dispatchState,
             long estimatedInput = 0, long estimatedOutput = 0)
         {
             var input = usage?.PromptTokens ?? estimatedInput;
             var output = usage?.CompletionTokens ?? estimatedOutput;
             var cost = basis == CostBasis.Unknown ? NanoYuan.Zero
-                : policy.Get(request.Model).Price.Calculate(input, output);
+                : Cost(input, output, usage?.CachedInputTokens ?? 0);
             return new(id, command.Operation.OperationId, command.AttemptNumber, access.Selection.AttemptProvider, request.Model, outcome, status,
                 input, output, cost, basis, dispatchState, started, timeProvider.GetUtcNow());
         }
+    }
+
+    private static byte[] RewriteResponseModel(JsonElement root, string requestedModel)
+    {
+        using var output = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(output))
+        {
+            writer.WriteStartObject();
+            foreach (var property in root.EnumerateObject())
+            {
+                if (property.NameEquals("model")) writer.WriteString("model", requestedModel);
+                else property.WriteTo(writer);
+            }
+            writer.WriteEndObject();
+        }
+        return output.ToArray();
     }
 
     private static byte[] RewritePayload(ReadOnlySpan<byte> utf8Json, string upstreamModel,
@@ -301,47 +327,6 @@ public sealed class OpenAiChatClient(
             (content = contentProperty.GetString()) is not null;
     }
 
-    /// <summary>
-    /// Normalizes a provider usage frame instead of discarding it: a missing or
-    /// contradictory total is derived from its components, a missing component is derived
-    /// from the total, reasoning tokens are clamped to the completion, and implausible
-    /// magnitudes yield null so the attempt settles from estimation evidence instead.
-    /// </summary>
-    private static ChatUsage? ReadUsage(JsonElement root)
-    {
-        if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object) return null;
-        var hasPrompt = TryNonnegative(usage, "prompt_tokens", out var prompt);
-        var hasCompletion = TryNonnegative(usage, "completion_tokens", out var completion);
-        var hasTotal = TryNonnegative(usage, "total_tokens", out var total);
-        if (hasPrompt && hasCompletion)
-        {
-            total = checked(prompt + completion);
-        }
-        else if (hasTotal)
-        {
-            if (!hasPrompt && hasCompletion)
-            {
-                if (total < completion) return null;
-                prompt = total - completion;
-            }
-            else if (hasPrompt && !hasCompletion)
-            {
-                if (total < prompt) return null;
-                completion = total - prompt;
-            }
-            else return null;
-            total = checked(prompt + completion);
-        }
-        else return null;
-        if (prompt > AccountingLimits.MaximumUnitsPerDimension || completion > AccountingLimits.MaximumUnitsPerDimension)
-            return null;
-        var reasoning = 0L;
-        if (usage.TryGetProperty("completion_tokens_details", out var details) && details.ValueKind == JsonValueKind.Object &&
-            details.TryGetProperty("reasoning_tokens", out var value) && value.TryGetInt64(out reasoning) && reasoning > 0)
-            reasoning = Math.Min(reasoning, completion);
-        return new(prompt, completion, total, reasoning);
-    }
-
     private static long ReadContentLength(JsonElement root)
     {
         if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array ||
@@ -359,9 +344,4 @@ public sealed class OpenAiChatClient(
 
     private static long Count(string value) => value.EnumerateRunes().LongCount();
 
-    private static bool TryNonnegative(JsonElement element, string name, out long value)
-    {
-        value = 0;
-        return element.TryGetProperty(name, out var property) && property.TryGetInt64(out value) && value >= 0;
-    }
 }

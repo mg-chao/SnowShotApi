@@ -1,7 +1,8 @@
 param(
     [string]$ApplicationSettingsPath = "src/SnowShotApi/appsettings.json",
     [string]$NginxConfigurationPath = "deployment/nginx/snowshot.top.conf",
-    [string]$RestorePolicyPath = "deployment/policy/policy-revision-13.json"
+    [string]$RestorePolicyPath = "deployment/policy/policy-revision-15.json",
+    [long]$ExpectedPolicyRevision = 15
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,85 +21,83 @@ $settings = Get-Content -LiteralPath $ApplicationSettingsPath -Raw | ConvertFrom
 $nginx = Get-Content -LiteralPath $NginxConfigurationPath -Raw
 $restore = Get-Content -LiteralPath $RestorePolicyPath -Raw | ConvertFrom-Json
 
+if ($ExpectedPolicyRevision -lt 15 -or [long]$settings.Policy.Revision -ne $ExpectedPolicyRevision) {
+    throw "The candidate must use the expected revision ($ExpectedPolicyRevision), at least 15."
+}
 foreach ($document in @($settings, $restore)) {
+    if ([long]$document.Policy.Revision -lt 15) { throw "The policy must use revision 15 or higher." }
+    if ([long]$document.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000 -or
+        [long]$document.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000 -or
+        [long]$document.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
+        throw "Revision 15 must preserve the 3/50/1000 yuan allowances and budgets."
+    }
+    $expectedResources = @('ai-model', 'latex-extraction', 'table-extraction', 'translation')
+    foreach ($section in @('Resources', 'Pricing')) {
+        $names = @($document.Policy.$section.PSObject.Properties.Name | Sort-Object)
+        if (($names -join ',') -ne ($expectedResources -join ',')) {
+            throw "Policy:$section must contain only the four public resources. Remove obsolete layered keys."
+        }
+    }
+    foreach ($resource in $document.Policy.Resources.PSObject.Properties) {
+        if ([long]$resource.Value.OperatorMaximumNanoYuan -ne 30000000) {
+            throw "Every resource operator reservation maximum must remain 0.03 yuan."
+        }
+    }
     foreach ($resource in @('table-extraction', 'latex-extraction')) {
         if ([int]$document.Policy.Resources.$resource.GlobalConcurrency -ne 1 -or
             [int]$document.Policy.Resources.$resource.PerPrincipalConcurrency -ne 1) {
-            throw "Ubuntu CPU recognition requires one global and per-principal slot for $resource."
+            throw "CPU recognition requires one global and per-principal slot for $resource."
         }
     }
+    $admission = $document.Policy.Resources.'ai-model'
+    if ($admission.RequestsPerMinute -ne 60 -or $admission.PerPrincipalConcurrency -ne 4 -or
+        $admission.GlobalConcurrency -ne 64 -or $admission.GlobalQueueLength -ne 128) {
+        throw "AI Model must share the existing 60 RPM / 4 principal / 64 global / 128 queue limits."
+    }
+    if ($document.Policy.Estimation.BytesPerInputToken -ne 3 -or
+        $document.Policy.Estimation.CharsPerOutputToken -ne 2) { throw "Estimation ratios must remain 3 and 2." }
+    if ($document.Policy.Pricing.translation.InputRateNanoYuan -ne 2000 -or
+        $document.Policy.Pricing.translation.OutputRateNanoYuan -ne 8000) {
+        throw "Dedicated translation character deductions must remain unchanged."
+    }
+    $expectedTariffs = @{
+        'qwen3.7-flash' = @(@(32000, 200, 800, 40), @(256000, 600, 2400, 120), @(1000000, 1200, 4800, 240))
+        'qwen3.8-flash' = ,@(1000000, 800, 2700, 100)
+    }
+    if ((@($document.Policy.ModelPricing.PSObject.Properties.Name | Sort-Object) -join ',') -ne
+        'qwen3.7-flash,qwen3.8-flash') { throw "Both execution tariffs are required." }
+    foreach ($model in $expectedTariffs.Keys) {
+        $tiers = @($document.Policy.ModelPricing.$model)
+        $expected = $expectedTariffs[$model]
+        if ($tiers.Count -ne $expected.Count) { throw "Unexpected tariff tier count for $model." }
+        for ($i = 0; $i -lt $tiers.Count; $i++) {
+            $actual = @($tiers[$i].MaximumInputTokens, $tiers[$i].InputRateNanoYuan,
+                $tiers[$i].OutputRateNanoYuan, $tiers[$i].CachedInputRateNanoYuan)
+            if (($actual -join ',') -ne ($expected[$i] -join ',')) { throw "Incorrect Beijing tariff for $model tier $i." }
+        }
+    }
+    if ((@($document.Providers.Models.PSObject.Properties.Name | Sort-Object) -join ',') -ne
+        'qwen3.7-flash,qwen3.8-flash') { throw "Only the text and vision execution models may remain." }
+    if ((@($document.Providers.PublicModels.PSObject.Properties.Name) -join ',') -ne 'ai-model') {
+        throw "AI Model must be the only public model."
+    }
+    $public = $document.Providers.PublicModels.'ai-model'
+    if ($public.TextModel -ne 'qwen3.7-flash' -or $public.VisionModel -ne 'qwen3.8-flash' -or
+        -not $public.Thinking -or (@($public.Aliases | Sort-Object) -join ',') -ne 'qwen-mt-flash,qwen3.8-flash') {
+        throw "AI Model routes, aliases, or reasoning capability are incorrect."
+    }
+    foreach ($model in $expectedTariffs.Keys) {
+        $execution = $document.Providers.Models.$model
+        if ($execution.NativeTranslationOptions -or $execution.MergesSystemIntoUser -or
+            $execution.Accesses.aliyun.UpstreamModel -ne $model) { throw "Invalid execution configuration for $model." }
+    }
+    if (-not $document.Providers.Models.'qwen3.8-flash'.SupportVision -or
+        $document.Providers.Models.'qwen3.7-flash'.SupportVision) { throw "Incorrect execution modalities." }
+    if ((@($document.Providers.Translation.LogicalModels) -join ',') -ne 'qwen3.7-flash') {
+        throw "Dedicated translation must use only Qwen3.7-Flash."
+    }
 }
-
-if ([long]$settings.Policy.Revision -ne 13) {
-    throw "The active policy revision must be 13."
-}
-if ([long]$settings.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000) {
-    throw "The per-user daily allowance must be 3000000000 NanoYuan (3 yuan)."
-}
-if ([long]$settings.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000) {
-    throw "The daily operator budget must be 50000000000 NanoYuan (50 yuan)."
-}
-if ([long]$settings.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
-    throw "The monthly operator budget must be 1000000000000 NanoYuan (1000 yuan)."
-}
-$operatorMaximums = @($settings.Policy.Resources.PSObject.Properties | ForEach-Object {
-    [long]$_.Value.OperatorMaximumNanoYuan
-})
-if ($operatorMaximums.Count -eq 0 -or @($operatorMaximums | Where-Object { $_ -ne 30000000 }).Count -ne 0) {
-    throw "Every resource OperatorMaximumNanoYuan must be exactly 30000000 (0.03 yuan)."
-}
-if ([long]$settings.Policy.Estimation.BytesPerInputToken -ne 3 -or [long]$settings.Policy.Estimation.CharsPerOutputToken -ne 2) {
-    throw "The cost estimation ratios must be 3 payload bytes per input token and 2 delivered characters per output token."
-}
-if ([long]$settings.Policy.Pricing.'qwen3.8-flash'.InputRateNanoYuan -ne 800 -or
-    [long]$settings.Policy.Pricing.'qwen3.8-flash'.OutputRateNanoYuan -ne 2700) {
-    throw "The qwen3.8-flash price must match the Model Studio rate of 0.8 yuan input and 2.7 yuan output per million tokens."
-}
-if ([long]$restore.Policy.Revision -ne 13 -or
-    [long]$restore.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000 -or
-    [long]$restore.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000 -or
-    [long]$restore.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
-    throw "Revision 13 must preserve the 3 yuan user allowance, 50 yuan daily operator budget, and 1000 yuan monthly budget."
-}
-$restoreMaximums = @($restore.Policy.Resources.PSObject.Properties | ForEach-Object {
-    [long]$_.Value.OperatorMaximumNanoYuan
-})
-if ($restoreMaximums.Count -ne $operatorMaximums.Count -or
-    @($restoreMaximums | Where-Object { $_ -ne 30000000 }).Count -ne 0) {
-    throw "Revision 13 must preserve every resource OperatorMaximumNanoYuan at 30000000."
-}
-
-$expectedResources = @("translation", "qwen3.8-flash", "qwen-mt-flash", "table-extraction", "latex-extraction")
-$configuredResources = @($settings.Policy.Resources.PSObject.Properties.Name | Sort-Object)
-$restoredResources = @($restore.Policy.Resources.PSObject.Properties.Name | Sort-Object)
-if (($configuredResources -join "`n") -ne (($expectedResources | Sort-Object) -join "`n") -or
-    ($restoredResources -join "`n") -ne (($expectedResources | Sort-Object) -join "`n")) {
-    throw "Revision 13 must include only the active resources; qwen3-vl-flash is retired."
-}
-if (@($settings.Policy.Pricing.PSObject.Properties.Name | Sort-Object) -join "`n" -ne (($expectedResources | Sort-Object) -join "`n")) {
-    throw "Pricing must include only the active resources."
-}
-if (@($settings.Providers.Models.PSObject.Properties.Name | Sort-Object) -join "`n" -ne ((@("qwen3.8-flash", "qwen-mt-flash") | Sort-Object) -join "`n")) {
-    throw "Provider models must include only qwen3.8-flash and qwen-mt-flash."
-}
-if (-not [bool]$settings.Providers.Models.'qwen3.8-flash'.SupportVision -or
-    [string]$settings.Providers.Models.'qwen3.8-flash'.Accesses.aliyun.UpstreamModel -ne "qwen3.8-flash") {
-    throw "qwen3.8-flash must expose vision and route to the matching upstream model."
-}
-
 $models = @($settings.Providers.Translation.LogicalModels)
-$expectedModels = @("qwen3.8-flash", "qwen-mt-flash")
-if (($models -join "`n") -ne ($expectedModels -join "`n")) {
-    throw "Translation logical models must split traffic between qwen3.8-flash and qwen-mt-flash."
-}
-
-if (-not [bool]$settings.Providers.Models.'qwen-mt-flash'.MergesSystemIntoUser) {
-    throw "qwen-mt-flash must keep MergesSystemIntoUser because its upstream rejects the system role."
-}
-
-if (-not [bool]$settings.Providers.Models.'qwen-mt-flash'.NativeTranslationOptions) {
-    throw "qwen-mt-flash must keep NativeTranslationOptions so translation uses the vendor's translation_options contract."
-}
 
 $translationDeadline = [int]$settings.Policy.Resources.translation.ExecutionDeadlineSeconds
 $attemptTimeout = [int]$settings.Providers.Translation.AttemptTimeoutSeconds

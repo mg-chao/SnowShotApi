@@ -29,6 +29,8 @@ public interface IChatModelCatalog
     IReadOnlyList<ChatModelDefinition> Models { get; }
     bool Contains(string model);
     string TranslationMode(string model);
+    string CanonicalModel(string model) => model;
+    string ExecutionModel(string model, bool hasImages) => model;
 }
 
 public sealed record TranslationRouting(
@@ -59,7 +61,11 @@ public sealed record LifecycleTimeouts(TimeSpan Cleanup, TimeSpan AttemptRecordi
 public sealed record RequestContext(string? ClientAddress, string ClientRequestId, string TraceId);
 public sealed record ChatCommand(
     string Model,
-    ReadOnlyMemory<byte> Utf8Json);
+    ReadOnlyMemory<byte> Utf8Json)
+{
+    public string RequestedModel { get; init; } = Model;
+    public string ExecutionModel { get; init; } = Model;
+}
 public sealed record TranslationCommand(
     IReadOnlyList<string?> Content,
     string From,
@@ -217,7 +223,8 @@ public sealed record PersistenceReadiness(
     long? ActivePolicyRevision,
     string? ActivePolicyFingerprint);
 
-public sealed record ChatUsage(long PromptTokens, long CompletionTokens, long TotalTokens, long ReasoningTokens = 0);
+public sealed record ChatUsage(long PromptTokens, long CompletionTokens, long TotalTokens, long ReasoningTokens = 0,
+    long CachedInputTokens = 0);
 
 public abstract record ChatProviderEvent
 {
@@ -292,8 +299,8 @@ public sealed record TranslationProviderResult(
     IReadOnlyList<string> Results,
     long PublicInputCharacters,
     long PublicOutputCharacters,
-    long OperatorInputCharacters,
-    long OperatorOutputCharacters,
+    long OperatorInputUnits,
+    long OperatorOutputUnits,
     string Outcome,
     CostBasis Basis,
     bool Retryable,

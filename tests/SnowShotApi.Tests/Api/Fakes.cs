@@ -17,6 +17,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeChatClient Chat { get; } = new();
     public FakeTranslationClient Translation { get; } = new();
     public FakeProviderAccessPool ProviderAccess { get; } = new();
+    public FakeAdmission Admission { get; } = new();
     public FakeTableClient Table { get; } = new();
     public FakeLatexClient Latex { get; } = new();
     public ServicePolicy Policy => Services.GetRequiredService<ServicePolicy>();
@@ -38,7 +39,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["ConnectionStrings:SnowShot"] = "Host=127.0.0.1;Database=unused;Username=unused;Password=unused",
             ["ConnectionStrings:Redis"] = "",
             ["Identity:HmacKeyBase64"] = Convert.ToBase64String(new byte[32]),
-            ["Providers:Translation:LogicalModels:0"] = "qwen-mt-flash",
+            ["Providers:Translation:LogicalModels:0"] = "qwen3.7-flash",
             ["Providers:Translation:LogicalModels:1"] = "",
             ["Providers:Translation:MaximumConcurrentConversations"] = "4",
             ["Providers:CloudProviders:aliyun:Endpoint"] = "https://provider.test/chat",
@@ -48,11 +49,9 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             ["Providers:Models:qwen3.8-flash:Accesses:aliyun:Provider"] = "test",
             ["Providers:Models:qwen3.8-flash:Accesses:aliyun:UpstreamModel"] = "qwen3.8-flash",
             ["Providers:Models:qwen3.8-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
-            ["Providers:Models:qwen-mt-flash:Thinking"] = "false",
-            ["Providers:Models:qwen-mt-flash:NativeTranslationOptions"] = "true",
-            ["Providers:Models:qwen-mt-flash:Accesses:aliyun:Provider"] = "test",
-            ["Providers:Models:qwen-mt-flash:Accesses:aliyun:UpstreamModel"] = "qwen-mt-flash",
-            ["Providers:Models:qwen-mt-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
+            ["Providers:Models:qwen3.7-flash:Accesses:aliyun:Provider"] = "test",
+            ["Providers:Models:qwen3.7-flash:Accesses:aliyun:UpstreamModel"] = "qwen3.7-flash",
+            ["Providers:Models:qwen3.7-flash:Accesses:aliyun:MaxConcurrentRequests"] = "16",
             ["Providers:Table:BaseUrl"] = "http://table.test/",
             ["Providers:Latex:BaseUrl"] = "http://latex.test/",
         }));
@@ -70,7 +69,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<ILatexWorkerClient>();
             services.RemoveAll<IReadinessService>();
             services.AddSingleton<IPrincipalIdentity, FakeIdentity>();
-            services.AddSingleton<IAdmissionController, FakeAdmission>();
+            services.AddSingleton<IAdmissionController>(Admission);
             services.AddSingleton<IProviderAccessPool>(ProviderAccess);
             services.AddSingleton<IOperationLedger>(Ledger);
             services.AddSingleton<IChatProviderClient>(Chat);
@@ -132,8 +131,12 @@ internal sealed class FakeIdentity : IPrincipalIdentity
 
 internal sealed class FakeAdmission : IAdmissionController
 {
-    public Task<IAdmissionLease> AcquireAsync(AdmissionRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult<IAdmissionLease>(new Lease());
+    public ConcurrentQueue<AdmissionRequest> Requests { get; } = new();
+    public Task<IAdmissionLease> AcquireAsync(AdmissionRequest request, CancellationToken cancellationToken)
+    {
+        Requests.Enqueue(request);
+        return Task.FromResult<IAdmissionLease>(new Lease());
+    }
     public Task<bool> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 
     private sealed class Lease : IAdmissionLease
@@ -204,11 +207,22 @@ internal sealed class FakeChatClient : IChatProviderClient
     public ConcurrentQueue<ChatProviderCommand> Commands { get; } = new();
     public bool ThrowAfterFrame { get; set; }
     public bool TruncateAfterFrames { get; set; }
+    public bool FailFirstAttempt { get; set; }
 
     public async IAsyncEnumerable<ChatProviderEvent> StreamAsync(ChatProviderCommand command,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         Commands.Enqueue(command);
+        if (FailFirstAttempt && command.AttemptNumber == 1)
+        {
+            yield return new ChatProviderEvent.Failure("provider_http_503", true,
+                new(command.AttemptId, command.Operation.OperationId, command.AttemptNumber,
+                    command.Access.AttemptProvider, command.Request.Model, "provider_http_503", 503, 100, 0,
+                    command.Operation.Snapshot.ModelPricing!.Tariff.Calculate(100, 0),
+                    CostBasis.Estimated, AttemptDispatchState.Dispatched,
+                    command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
+            yield break;
+        }
         yield return new ChatProviderEvent.Frame(System.Text.Encoding.UTF8.GetBytes("{\"id\":\"chat-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"));
         await Task.Yield();
         if (ThrowAfterFrame) throw new InvalidOperationException("Simulated post-frame failure.");

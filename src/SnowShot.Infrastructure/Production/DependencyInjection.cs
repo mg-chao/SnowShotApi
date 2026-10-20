@@ -28,6 +28,9 @@ public static class DependencyInjection
         var secureEnvironment = !environment.IsDevelopment();
         var configuredModelNames = configuration.GetSection($"{ProviderModelsOptions.SectionName}:Models")
             .GetChildren().Select(value => value.Key).ToArray();
+        var publicModelNames = configuration.GetSection($"{ProviderModelsOptions.SectionName}:PublicModels")
+            .GetChildren().Select(value => value.Key).ToArray();
+        if (publicModelNames.Length > 0) configuredModelNames = publicModelNames;
         var redisConfiguration = RedisDeploymentPolicy.Build(configuration, secureEnvironment);
         Configure<ConnectionOptions>(services, configuration, ConnectionOptions.SectionName, options =>
             !secureEnvironment || !string.IsNullOrWhiteSpace(options.Redis), "Redis is required outside Development.");
@@ -43,7 +46,7 @@ public static class DependencyInjection
         }, "Current and previous identity HMAC keys must be valid, strong, and non-development outside Development.");
         Configure<PolicyOptions>(services, configuration, PolicyOptions.SectionName, options =>
         {
-            try { _ = options.Build(configuredModelNames); return true; } catch (Exception exception) when (exception is PolicyValidationException or ArgumentException) { return false; }
+            try { _ = options.Build(configuredModelNames, publishedModelsOnly: true); return true; } catch (Exception exception) when (exception is PolicyValidationException or ArgumentException) { return false; }
         }, "Policy has invalid or inconsistent limits or pricing.");
         Configure<ChatProviderOptions>(services, configuration, ChatProviderOptions.SectionName, _ => true,
             "Invalid chat provider limits.");
@@ -95,8 +98,16 @@ public static class DependencyInjection
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<LatexWorkerOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<RetentionOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<MaintenanceOptions>>().Value);
-        services.AddSingleton(sp => sp.GetRequiredService<PolicyOptions>().Build(
-            sp.GetRequiredService<ProviderModelsOptions>().Models.Keys));
+        services.AddSingleton(sp =>
+        {
+            var catalog = sp.GetRequiredService<ProviderModelCatalog>();
+            var policy = sp.GetRequiredService<PolicyOptions>().Build(
+                catalog.Models.Select(model => model.Model), catalog.RoutingIdentity, publishedModelsOnly: true);
+            if (catalog.Models.Any(model => model.Model == Resources.AiModel) &&
+                catalog.ChatExecutionModels.Any(model => !policy.ModelPricing.ContainsKey(model)))
+                throw new PolicyValidationException("AI Model requires a token tariff for every execution route.");
+            return policy;
+        });
         services.AddSingleton(sp =>
         {
             var options = sp.GetRequiredService<TranslationProviderOptions>();

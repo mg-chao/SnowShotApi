@@ -19,7 +19,8 @@ public sealed class OperationCoordinator(
         RequestContext context,
         NanoYuan publicReservation,
         NanoYuan operatorMaximum,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ModelPricingSnapshot? modelPricing = null)
     {
         var principal = await identity.ResolveAsync(context.ClientAddress, cancellationToken);
         if (principal is null)
@@ -39,7 +40,8 @@ public sealed class OperationCoordinator(
         var now = clock.UtcNow;
         var ownerToken = RandomNumberGenerator.GetBytes(32);
         var snapshot = new ReservationSnapshot(policy.Revision, policy.Fingerprint, resource, resourcePolicy.Price,
-            policy.PrincipalDailyAllowance, publicReservation, NanoYuan.Min(operatorMaximum, resourcePolicy.OperatorMaximum));
+            policy.PrincipalDailyAllowance, publicReservation, NanoYuan.Min(operatorMaximum, resourcePolicy.OperatorMaximum),
+            modelPricing);
         var operation = new ReserveOperation(
             Guid.CreateVersion7(now), principal.Id, kind, snapshot,
             HashIdempotency(resource, principal.Id, context.ClientRequestId), ownerToken,

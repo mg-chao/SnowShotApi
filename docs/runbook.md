@@ -7,51 +7,95 @@ mitigating an incident.
 
 ## Change and rollback
 
-Policy revision 13 aligns table admission with the Ubuntu CPU worker: one
-global table inference and one per principal. Formula admission already uses
-one global slot. Overflow uses the existing gateway queue. See the
-[Ubuntu deployment and benchmark runbook](ubuntu-cpu-recognition.md).
-The deployment policy overlay is `deployment/policy/policy-revision-13.json`.
+Policy revision **15** introduces the public `ai-model` (AI Model / AI 模型).
+Both `/api/v1/chat/models` and `/api/v2/chat/models` expose only this model;
+it is a general model (`translation: false`, `translation_mode: "default"`),
+with vision and reasoning support. `qwen3.8-flash` and `qwen-mt-flash` remain
+accepted request aliases. Text requests use `qwen3.7-flash`; an `image_url`
+content part anywhere in the conversation selects `qwen3.8-flash`. Alias,
+admission, and duplicate-request identity are resolved before reservation.
+Response model fields retain the requested ID. Provider attempt identities
+record the actual execution model. Reasoning defaults to disabled unless
+explicitly requested.
 
-Confirm the deployed commit, configuration revision, and active policy revision
-before changing production. Prefer a reversible configuration change or a
-rollback to the last known-good commit. After the change, verify readiness,
-policy convergence, and error counters from a fresh metric window. Roll back
-again if replicas disagree on the policy fingerprint or reservations are being
-rejected for a stale policy.
+The deployment overlay is `deployment/policy/policy-revision-15.json`.
+Revision 14 is reserved by the historical CPU recovery script: never reuse it.
+AI Model inherits 60 RPM, four concurrent requests per principal, 64 globally,
+a 128-request queue, and the existing 30-second queue / 300-second execution
+timeouts. Table and formula concurrency remains 1/1. Daily user allowance
+remains ¥3, daily/monthly operator budgets ¥50/¥1,000, and each operation's
+operator reservation maximum ¥0.03.
 
-Historical policy revision 5 temporarily raised the principal daily allowance
-to 6 CNY and the daily operator budget to 100 CNY. Revision 6 restored those
-values to 3 CNY and 50 CNY. Revision 7 retains those daily limits and raises
-the monthly operator budget from 500 CNY to 1000 CNY. Revision 8 preserves
-every allowance, budget, and operation maximum while retiring the qwen-flash,
-qwen-plus, and deepseek-v4-flash models. Revision 9 preserves every limit and
-price and adds the cost estimation ratios
-(3 payload bytes per input token, 2 delivered characters per output token)
-used to settle abnormal operations from local evidence. The chat model list is
-served by qwen3.8-flash and qwen-mt-flash. The legacy
-`/api/v1/chat/models` response remains available, while `/api/v2/chat/models`
-exposes `supports_reasoning`, `translation_mode`, and `supports_vision`.
-Translation traffic is split evenly between qwen3.8-flash and qwen-mt-flash.
-Admission limits were
-realigned to the Alibaba Cloud Model Studio lowest spending tier (qwen3.8-flash:
-60 requests per minute per principal and 64 global concurrent slots;
-qwen-mt-flash and translation: 30 requests per minute per
-principal). Revision 10 keeps those limits and updates the qwen3.8-flash price
-to the current Model Studio rate - 0.8 CNY per million input tokens and 2.7 CNY
-per million output tokens (800/2700 NanoYuan per token) after the 2026-08-27
-price reduction - while every allowance, budget, and operation maximum stays
-unchanged. Revision 11 retires qwen3-vl-flash and exposes vision support on
-qwen3.8-flash. Its pricing and limits remain at revision 10 values. Clients
-using qwen3-vl-flash must select qwen3.8-flash for image requests. The
-production host mounts
-`runtime/appsettings.Production.json`; the policy deployment job runs
-`Restore-TemporaryBudgets.sh`, keeps a rollback copy, recreates only the API
-container, and fails back if liveness does not recover. Before rolling out
-revision 11, remove any qwen3-vl-flash entries from the mounted configuration
-or environment overrides. After rollout, confirm policy convergence and verify
-that `/api/v2/chat/models` lists qwen3.8-flash with `supports_vision: true`
-and omits qwen3-vl-flash.
+Deploy the backend first:
+
+1. Record the deployed commit, database active revision, and effective configuration.
+   Back up the mounted configuration securely. Apply the additive
+   `AddModelPricingSnapshot` database migration before the new API starts; it adds
+   nullable text to `usage_operations`, leaving historical scalar prices intact.
+2. Run `python3 scripts/Prepare-AiModelPolicy.py --settings
+   runtime/appsettings.Production.json --output runtime/appsettings.ai-model.candidate.json
+   --active-revision <verified-revision>` (one command). It creates a new candidate
+   and explicitly removes retired owned keys before installing revision 15.
+   Review locally; the file may contain credentials. It does not deploy or print them.
+   If revision 15 or higher is already active, supply `--revision` higher than both
+   the active and configured revisions.
+3. Remove obsolete owned keys from **every** additional JSON/environment layer,
+   especially `Policy:Resources`, `Policy:Pricing`, `Providers:Models`, and the
+   old `Providers:Translation:LogicalModels:1` value. .NET merges dictionaries and
+   indexed arrays: adding an overlay does not remove old keys. Preserve cloud
+   credentials and unrelated deployment settings. The new base settings must be
+   deployed with the candidate. Validate with `Verify-DeploymentConfiguration.ps1`;
+   for a later revision, pass `-ExpectedPolicyRevision <revision>`.
+4. Replace the mounted settings with the reviewed candidate, deploy the API, and
+   verify liveness, readiness, policy revision/fingerprint convergence, and errors.
+   Check both catalog endpoints in en-US, zh-CN, and zh-TW. Send text and image
+   requests with **each** old ID and `ai-model`: text must record the 3.7 route,
+   images the 3.8 route, responses the requested ID. Verify legacy Qwen-MT options
+   are translated to instructions and removed from upstream JSON. Use staging
+   credentials for these provider-backed smoke checks; fixture tests alone cannot
+   confirm regional upstream availability.
+5. Release the desktop update after the compatibility checks. Saved selections
+   migrate only when a successful catalog advertises `ai-model`. Offline/older
+   backends preserve old selections; historical recognition output and drafts keep
+   their original identities. Dedicated defaults and custom providers stay intact.
+
+For recovery, prepare a configuration revision **higher than the active policy**,
+not the historical revision 13/14 rollback overlays. Keep the additive database
+column and all operations, attempts, usage events, and policy history. Prefer
+retaining the AI Model alias-aware API when rolling back other changes; an older
+API cannot serve desktop selections already migrated to `ai-model`. Any earlier
+binary needs a higher-revision compatible policy and a separately reviewed client
+compatibility plan. Do not run `Restore-TemporaryBudgets.sh` or
+`Apply-UbuntuCpuPolicy.sh` against this rollout: their fixed historical revisions
+are only evidence of earlier deployments.
+
+### Token tariffs and settlement
+
+Beijing/DashScope rates, CNY per million tokens (K = 1,000):
+
+| Route / total input tokens | Input | Output | Cached input |
+| --- | ---: | ---: | ---: |
+| Qwen3.7, ≤32,000 | 0.20 | 0.80 | 0.04 |
+| Qwen3.7, 32,001–256,000 | 0.60 | 2.40 | 0.12 |
+| Qwen3.7, >256,000 within the supported context | 1.20 | 4.80 | 0.24 |
+| Qwen3.8 | 0.80 | 2.70 | 0.10 |
+
+Sources: [Qwen3.7](https://help.aliyun.com/zh/model-studio/qwen3-7-flash),
+[Qwen3.8](https://help.aliyun.com/en/model-studio/qwen3-8-flash), and
+[tier rules](https://help.aliyun.com/zh/model-studio/model-pricing).
+The input count chooses one tier for the entire request, including completion.
+Cached tokens are a subset of input; reasoning tokens are already included in
+completion and are never charged twice. Rates are stored as integer NanoYuan
+per token (e.g. ¥0.20/million = 200 NanoYuan/token).
+
+A reservation snapshots its execution route and full immutable tariff. Routing
+and tariff changes alter the policy fingerprint. AI chat deducts the successful
+request's token cost from user allowance; operator cost includes all incurred
+attempts. Dedicated translation retains the existing public character formula
+(2,000 input / 8,000 output NanoYuan per character of the existing structured
+protocol), with independent token-based provider costs. Missing/unusable usage
+uses existing estimated/unknown settlement rules, never an exact token claim.
+Old rows with a null pricing snapshot retain their original scalar interpretation.
 
 ## Readiness and dependency outage
 
@@ -66,35 +110,20 @@ operator headroom, viable provider routes, and the table-worker mTLS probe.
 Detailed `/health/components` output is available only over API loopback and is
 not proxied by nginx.
 
-Translation is split evenly between the qwen3.8-flash and qwen-mt-flash
-logical models: the operation ID hash picks the initial model and retries
-alternate to the other, so qwen-mt-flash's 60 RPM upstream tier no longer
-bottlenecks the service. Models listed under
-`Providers:Translation:LogicalModels` also appear in the chat model catalog
-flagged as `translation: true`. The chat provider merges system prompts into
-the first user turn only for models configured with `MergesSystemIntoUser`
-(qwen-mt-flash), whose upstream rejects the system role; qwen3.8-flash keeps
-system messages unchanged. Watch `provider_http_4xx` and `invalid_output`
-outcomes on the qwen3.8-flash translation attempts after enabling the split,
-and 429s on qwen-mt-flash while its upstream tier stays at 60 RPM.
+Dedicated translation uses only `qwen3.7-flash` and shares its provider access
+pool with text chat. Its structured JSON output protocol is unchanged. Chat
+requests using legacy `translation_options` receive an ordinary translation
+instruction preserving source/target languages, automatic detection, domain
+hints, terminology, and translation memories. Native translation options and
+`incremental_output` are stripped; ordinary conversations and image parts are
+preserved when options are absent.
 
-The two translation models use different upstream wire contracts. Models
-configured with `NativeTranslationOptions` (qwen-mt-flash) follow the Alibaba
-Cloud Model Studio Qwen-MT convention: the item text is the single user
-message verbatim, language and domain control ride in the native top-level
-`translation_options` field (`source_lang`/`target_lang`, with `zh-CHS` and
-`zh-CHT` mapped to `zh` and `zh_tw`, and every non-general domain rendered as
-an English domain prompt), and the completion content is the translation
-itself. Unflagged models (qwen3.8-flash) keep the JSON-envelope instruction
-protocol with `response_format`. The vendor caps Qwen-MT input at 8,192
-tokens per call, supports single-turn user messages only, and documents that
-`translation_options` overrides equivalent prompt instructions; the glossary
-and translation-memory hooks (`terms`/`tm_list`) stay unused until the public
-contract carries them. With the native contract, `invalid_output` on
-qwen-mt-flash can only mean a null or empty completion, not a malformed JSON
-envelope. Chat clients that call qwen-mt-flash directly can pass
-`translation_options` in their own request body — the chat path forwards
-unknown fields verbatim.
+Text and vision have independent provider pools and circuits. Retries remain on
+the selected route, including dedicated translation. Readiness checks both
+underlying chat routes and the text translation route; there is no upstream
+named `ai-model`. Inspect provider attempt identities for route-specific 429,
+invalid-output, and circuit failures. A vision outage must not switch image
+requests to a text model or Qwen-MT.
 
 Image conversion clients use the same chat endpoint. Select a model whose
 `supports_vision` is true in `/api/v2/chat/models`, then send the image as a
@@ -103,7 +132,7 @@ multimodal user message. The full JSON body, including base64, must fit within
 
 ```json
 {
-  "model": "qwen3.8-flash",
+  "model": "ai-model",
   "stream": true,
   "enable_thinking": false,
   "temperature": 0,

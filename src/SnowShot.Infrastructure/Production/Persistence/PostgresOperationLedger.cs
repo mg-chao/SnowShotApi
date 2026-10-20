@@ -140,6 +140,7 @@ internal sealed class PostgresOperationLedger(
             PolicyRevision = operation.Snapshot.PolicyRevision,
             InputRateNanoYuan = operation.Snapshot.Price.Input.Value,
             OutputRateNanoYuan = operation.Snapshot.Price.Output.Value,
+            ModelPricingSnapshot = SerializePricing(operation.Snapshot.ModelPricing),
             AllowanceLimitNanoYuan = operation.Snapshot.AllowanceLimit.Value,
             ReservedPublicNanoYuan = operation.Snapshot.PublicReservation.Value,
             ReservedOperatorNanoYuan = operation.Snapshot.OperatorMaximum.Value,
@@ -592,6 +593,7 @@ internal sealed class PostgresOperationLedger(
         existing.PolicyFingerprint.AsSpan().SequenceEqual(Convert.FromHexString(requested.Snapshot.PolicyFingerprint)) &&
         existing.InputRateNanoYuan == requested.Snapshot.Price.Input.Value &&
         existing.OutputRateNanoYuan == requested.Snapshot.Price.Output.Value &&
+        existing.ModelPricingSnapshot == SerializePricing(requested.Snapshot.ModelPricing) &&
         existing.AllowanceLimitNanoYuan == requested.Snapshot.AllowanceLimit.Value &&
         existing.ReservedPublicNanoYuan == requested.Snapshot.PublicReservation.Value &&
         existing.ReservedOperatorNanoYuan == requested.Snapshot.OperatorMaximum.Value &&
@@ -603,7 +605,12 @@ internal sealed class PostgresOperationLedger(
     private static ReservationSnapshot Snapshot(UsageOperationEntity value) => new(
         value.PolicyRevision, Convert.ToHexString(value.PolicyFingerprint).ToLowerInvariant(), value.Resource,
         new(new(value.InputRateNanoYuan), new(value.OutputRateNanoYuan)), new(value.AllowanceLimitNanoYuan),
-        new(value.ReservedPublicNanoYuan), new(value.ReservedOperatorNanoYuan));
+        new(value.ReservedPublicNanoYuan), new(value.ReservedOperatorNanoYuan),
+        value.ModelPricingSnapshot is null ? null :
+            System.Text.Json.JsonSerializer.Deserialize<ModelPricingSnapshot>(value.ModelPricingSnapshot));
+
+    private static string? SerializePricing(ModelPricingSnapshot? pricing) =>
+        pricing is null ? null : System.Text.Json.JsonSerializer.Serialize(pricing);
 
     private static SettlementDecision StoredDecision(UsageOperationEntity value) => new(
         value.State, new(value.ActualPublicNanoYuan), new(value.ActualOperatorNanoYuan),

@@ -9,8 +9,16 @@ public static class CommandValidator
     {
         var errors = new List<ValidationIssue>();
         if (!modelCatalog.Contains(request.Model) ||
-            !policy.ResourcePolicies.Any(value => value.Resource == request.Model))
+            !policy.ResourcePolicies.Any(value => value.Resource == modelCatalog.CanonicalModel(request.Model)))
             errors.Add(new(ValidationIssueCode.UnsupportedModel, request.Model));
+        if (errors.Count == 0)
+        {
+            try { _ = ChatRequestResolver.Resolve(request, modelCatalog); }
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+            {
+                errors.Add(new(ValidationIssueCode.InvalidChatContent));
+            }
+        }
         return errors;
     }
 
@@ -39,6 +47,7 @@ public static class CommandValidator
 public enum ValidationIssueCode
 {
     UnsupportedModel,
+    InvalidChatContent,
     ContentCount,
     NullContentItem,
     ContentTooLong,

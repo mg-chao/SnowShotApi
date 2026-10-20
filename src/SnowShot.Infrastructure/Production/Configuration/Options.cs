@@ -40,13 +40,19 @@ public sealed class PolicyOptions
     [Range(1, 3599)] public int LeaseRenewalSeconds { get; init; } = 10;
     public EstimationOptions Estimation { get; init; } = new();
     public Dictionary<string, ResourcePricingOptions> Pricing { get; init; } = [];
+    public Dictionary<string, List<TokenPriceTier>> ModelPricing { get; init; } = [];
     public Dictionary<string, ResourcePolicyOptions> Resources { get; init; } = [];
 
-    public ServicePolicy Build(IEnumerable<string>? additionalResources = null)
+    public ServicePolicy Build(IEnumerable<string>? additionalResources = null, string routingIdentity = "",
+        bool publishedModelsOnly = false)
     {
         var defaults = ServicePolicy.Defaults();
-        var defaultsByResource = defaults.ResourcePolicies.ToDictionary(value => value.Resource, StringComparer.Ordinal);
         var additional = (additionalResources ?? []).ToHashSet(StringComparer.Ordinal);
+        // Only published models need admission/public-price policies.
+        var defaultResources = defaults.ResourcePolicies.Where(value => !publishedModelsOnly ||
+            value.Resource is SnowShot.Domain.Resources.Translation or SnowShot.Domain.Resources.TableExtraction or
+                SnowShot.Domain.Resources.LatexExtraction || additional.Contains(value.Resource)).ToArray();
+        var defaultsByResource = defaultResources.ToDictionary(value => value.Resource, StringComparer.Ordinal);
         var allowed = defaultsByResource.Keys.Concat(additional).ToHashSet(StringComparer.Ordinal);
         if (Resources.Keys.Except(allowed, StringComparer.Ordinal).Any())
             throw new PolicyValidationException("Policy contains an unknown resource identifier.");
@@ -60,7 +66,7 @@ public sealed class PolicyOptions
         if (missingPricing.Length > 0)
             throw new PolicyValidationException($"Policy is missing pricing for resource '{missingPricing[0]}'.");
 
-        var resources = defaults.ResourcePolicies.Select(current =>
+        var resources = defaultResources.Select(current =>
         {
             var price = Price(current.Resource);
             return Resources.TryGetValue(current.Resource, out var configured)
@@ -73,7 +79,9 @@ public sealed class PolicyOptions
             .ToArray();
         return new ServicePolicy(Revision, resources, new(PrincipalDailyAllowanceNanoYuan), new(DailyOperatorBudgetNanoYuan),
             new(MonthlyOperatorBudgetNanoYuan), TimeSpan.FromSeconds(ActiveLeaseTtlSeconds), TimeSpan.FromSeconds(LeaseRenewalSeconds),
-            additional, new(Estimation.BytesPerInputToken, Estimation.CharsPerOutputToken));
+            additional, new(Estimation.BytesPerInputToken, Estimation.CharsPerOutputToken),
+            ModelPricing.ToDictionary(pair => pair.Key, pair => new TokenTariff([.. pair.Value]), StringComparer.Ordinal),
+            routingIdentity);
     }
 
     private UnitPrice Price(string resource)
@@ -155,6 +163,16 @@ public sealed class ProviderModelsOptions
     public const string SectionName = "Providers";
     public Dictionary<string, CloudProviderOptions> CloudProviders { get; init; } = [];
     public Dictionary<string, ProviderModelOptions> Models { get; init; } = [];
+    public Dictionary<string, PublicModelOptions> PublicModels { get; init; } = [];
+}
+
+public sealed class PublicModelOptions
+{
+    [Required] public string TextModel { get; init; } = string.Empty;
+    public string? VisionModel { get; init; }
+    public List<string> Aliases { get; init; } = [];
+    public bool Thinking { get; init; } = true;
+    [Range(0, int.MaxValue)] public int Order { get; init; } = int.MaxValue;
 }
 
 public sealed class ProviderCircuitOptions

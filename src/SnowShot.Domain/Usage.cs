@@ -32,7 +32,8 @@ public sealed record ReservationSnapshot(
     UnitPrice Price,
     NanoYuan AllowanceLimit,
     NanoYuan PublicReservation,
-    NanoYuan OperatorMaximum);
+    NanoYuan OperatorMaximum,
+    ModelPricingSnapshot? ModelPricing = null);
 
 public sealed record SettlementDecision(
     ReservationState State,

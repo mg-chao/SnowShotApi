@@ -17,5 +17,7 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="StackExchange.Redis" />
+    <!-- Pin the patched dependency used by EF's design-time MSBuild tooling. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" PrivateAssets="all" />
   </ItemGroup>
 </Project>

@@ -24,6 +24,7 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
     private readonly Dictionary<string, bool> _nativeTranslationOptions;
     private readonly HashSet<string> _translationModels;
     private readonly ChatModelDefinition[] _chatModels;
+    private readonly Dictionary<string, (string PublicModel, string TextModel, string? VisionModel)> _routes = new(StringComparer.Ordinal);
 
     public ProviderModelCatalog(ProviderModelsOptions options, TranslationProviderOptions translation, bool requireHttps)
     {
@@ -88,11 +89,52 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
                 string.IsNullOrWhiteSpace(model.Value.TranslationMode) ? "default" : model.Value.TranslationMode,
                 model.Value.SupportVision, _translationModels.Contains(model.Key)))
             .ToArray();
+        if (options.PublicModels.Count > 0)
+        {
+            if (options.PublicModels.TryGetValue(Resources.AiModel, out var aiModel) &&
+                (aiModel is null || aiModel.VisionModel is null || logicalModels.Count != 1 ||
+                    logicalModels[0] != aiModel.TextModel))
+                throw new InvalidOperationException("AI Model requires dedicated translation to share its single text route.");
+            foreach (var (id, model) in options.PublicModels)
+            {
+                ValidateIdentifier(id, "public model");
+                if (model is null || model.Order < 0 || !_models.ContainsKey(model.TextModel) ||
+                    (model.VisionModel is not null && (!_models.ContainsKey(model.VisionModel) ||
+                        !options.Models[model.VisionModel].SupportVision)))
+                    throw new InvalidOperationException($"Public model '{id}' has invalid execution routes.");
+                foreach (var alias in model.Aliases.Prepend(id))
+                {
+                    ValidateIdentifier(alias, "model alias");
+                    if (!_routes.TryAdd(alias, (id, model.TextModel, model.VisionModel)))
+                        throw new InvalidOperationException($"Public model alias '{alias}' is ambiguous.");
+                }
+            }
+            _chatModels = options.PublicModels.OrderBy(pair => pair.Value.Order).ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => new ChatModelDefinition(pair.Key, pair.Value.Thinking, "default",
+                    pair.Value.VisionModel is not null, false)).ToArray();
+        }
     }
 
     public IReadOnlyList<ChatModelDefinition> Models => _chatModels;
 
-    public bool Contains(string model) => _models.ContainsKey(model);
+    public bool Contains(string model) => _routes.Count > 0 ? _routes.ContainsKey(model) : _models.ContainsKey(model);
+
+    public string CanonicalModel(string model) => _routes.TryGetValue(model, out var route) ? route.PublicModel : model;
+
+    public string ExecutionModel(string model, bool hasImages) => _routes.TryGetValue(model, out var route)
+        ? hasImages ? route.VisionModel ?? throw new InvalidOperationException("The model does not support images.") : route.TextModel
+        : model;
+
+    public IEnumerable<string> ChatExecutionModels => _routes.Count > 0
+        ? _routes.Values.SelectMany(route => route.VisionModel is null ? new[] { route.TextModel } : new[] { route.TextModel, route.VisionModel })
+            .Distinct(StringComparer.Ordinal)
+        : _models.Keys;
+
+    public string RoutingIdentity => _routes.Count == 0 ? "" :
+        string.Join('\n', _routes.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => $"{pair.Key}|{pair.Value.PublicModel}|{pair.Value.TextModel}|{pair.Value.VisionModel}")) +
+        "\n" + string.Join('\n', All.OrderBy(value => value.Selection.AttemptProvider, StringComparer.Ordinal)
+            .Select(value => $"{value.Selection.AttemptProvider}|{value.Selection.UpstreamModel}"));
 
     public string TranslationMode(string model) =>
         Models.FirstOrDefault(value => value.Model == model)?.TranslationMode ?? "default";

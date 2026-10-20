@@ -27,9 +27,16 @@ public sealed class ChatUseCase(
         ChatCommand request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var errors = Validate(request);
+        if (errors.Count > 0)
+        {
+            yield return new ChatApplicationEvent.Failed(new(ApplicationErrorCode.InvalidRequest, "invalid_request"));
+            yield break;
+        }
+        request = ChatRequestResolver.Resolve(request, modelCatalog);
         var resourcePolicy = policy.Get(request.Model);
         var started = await operations.StartAsync(request.Model, UsageKind.Chat, context, new(1),
-            resourcePolicy.OperatorMaximum, cancellationToken);
+            resourcePolicy.OperatorMaximum, cancellationToken, policy.PricingFor(request.ExecutionModel));
         if (!started.IsSuccess) { yield return new ChatApplicationEvent.Failed(started.Error!); yield break; }
 
         await using var scope = started.Value!;
@@ -44,7 +51,7 @@ public sealed class ChatUseCase(
             var remaining = scope.Handle.AbsoluteDeadline - clock.UtcNow;
             if (remaining <= TimeSpan.Zero) break;
             var wait = resourcePolicy.Admission.QueueWait < remaining ? resourcePolicy.Admission.QueueWait : remaining;
-            await using var accessLease = await providerAccess.AcquireAsync(new(request.Model, excluded, wait,
+            await using var accessLease = await providerAccess.AcquireAsync(new(request.ExecutionModel, excluded, wait,
                 policy.ActiveLeaseTtl, policy.LeaseRenewalInterval), operationToken.Token);
             if (!accessLease.Acquired)
             {
@@ -126,7 +133,9 @@ public sealed class ChatUseCase(
             if (terminal is not null)
             {
                 var usage = terminal.Usage;
-                var actual = usage is null ? NanoYuan.Zero : resourcePolicy.Price.Calculate(usage.PromptTokens, usage.CompletionTokens);
+                var actual = usage is null ? NanoYuan.Zero :
+                    scope.Handle.Snapshot.ModelPricing?.Tariff.Calculate(usage.PromptTokens, usage.CompletionTokens, usage.CachedInputTokens)
+                    ?? scope.Handle.Snapshot.Price.Calculate(usage.PromptTokens, usage.CompletionTokens);
                 var settlement = await scope.CompleteAsync(new(scope.Handle, actual, terminal.Attempt.Cost,
                     terminal.Delivered, terminal.Attempt.Basis, terminal.Attempt.CostKnown,
                     usage?.PromptTokens ?? 0, usage?.CompletionTokens ?? 0, terminal.Outcome), terminal.Attempt);
@@ -196,7 +205,8 @@ public sealed class TranslationUseCase(
         var content = request.Content.Select(value => value!).ToArray();
         var resourcePolicy = policy.Get(Resources.Translation);
         var started = await operations.StartAsync(Resources.Translation, UsageKind.Translation,
-            context, new(1), resourcePolicy.OperatorMaximum, cancellationToken);
+            context, new(1), resourcePolicy.OperatorMaximum, cancellationToken,
+            routing.LogicalModels.Count == 1 ? policy.PricingFor(routing.LogicalModels[0]) : null);
         if (!started.IsSuccess) return ApplicationResult.Failure<TranslationResult>(started.Error!);
 
         await using var scope = started.Value!;
@@ -249,8 +259,8 @@ public sealed class TranslationUseCase(
 
         var attempts = completedAttempts.ToArray();
         var operatorCost = attempts.Aggregate(NanoYuan.Zero, (total, attempt) => total + attempt.Attempt.Cost);
-        var operatorInput = attempts.Aggregate(0L, (total, attempt) => checked(total + attempt.OperatorInputCharacters));
-        var operatorOutput = attempts.Aggregate(0L, (total, attempt) => checked(total + attempt.OperatorOutputCharacters));
+        var operatorInput = attempts.Aggregate(0L, (total, attempt) => checked(total + attempt.OperatorInputUnits));
+        var operatorOutput = attempts.Aggregate(0L, (total, attempt) => checked(total + attempt.OperatorOutputUnits));
         var basis = attempts.Any(attempt => attempt.Attempt.Basis == CostBasis.Unknown)
             ? CostBasis.Unknown
             : attempts.All(attempt => attempt.Attempt.Basis == CostBasis.Exact) ? CostBasis.Exact : CostBasis.Estimated;

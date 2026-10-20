@@ -55,6 +55,7 @@ internal sealed class UsageOperationEntity
     public long PolicyRevision { get; set; }
     public long InputRateNanoYuan { get; set; }
     public long OutputRateNanoYuan { get; set; }
+    public string? ModelPricingSnapshot { get; set; }
     public long AllowanceLimitNanoYuan { get; set; }
     public long ReservedPublicNanoYuan { get; set; }
     public long ReservedOperatorNanoYuan { get; set; }

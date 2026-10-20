@@ -428,6 +428,9 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
                     b.Property<DateTimeOffset>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ModelPricingSnapshot")
+                        .HasColumnType("text");
+
                     b.Property<long>("OperatorOverageNanoYuan")
                         .HasColumnType("bigint");
 
