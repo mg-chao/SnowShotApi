@@ -1,5 +1,9 @@
 # Production blue/green adoption — 20 October 2026
 
+This is the initial adoption record. The subsequent
+[latest API release and policy-15 deployment](production-release-20261020.md)
+supersedes the active-state details below.
+
 Completed production adoption and the forward → rollback → forward rehearsal.
 The active release is `green-20261020-c`. The retained baseline is
 `baseline-20261020`; its API container, worker units and tunnels are stopped,

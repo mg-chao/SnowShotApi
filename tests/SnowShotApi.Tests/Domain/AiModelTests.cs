@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using SnowShot.Application;
 using SnowShot.Domain;
 using SnowShot.Infrastructure.Configuration;
+using SnowShot.Infrastructure.Admission;
 using SnowShot.Infrastructure.Providers;
 using SnowShot.Infrastructure.Telemetry;
 using SnowShotApi.Tests.Api;
@@ -38,14 +39,68 @@ public sealed class AiModelTests
         Assert.False(catalog.Contains(Resources.QwenTextFlash));
         Assert.Equal([Resources.AiModel, Resources.LatexExtraction, Resources.TableExtraction, Resources.Translation],
             policy.ResourcePolicies.Select(value => value.Resource).Order(StringComparer.Ordinal).ToArray());
-        Assert.Equal(15, policy.Revision);
-        Assert.Equal(60, policy.Get(Resources.AiModel).Admission.RequestsPerMinute);
-        Assert.Equal(4, policy.Get(Resources.AiModel).Admission.PerPrincipalConcurrency);
+        Assert.Equal(17, policy.Revision);
+        Assert.Equal(600, policy.Get(Resources.AiModel).Admission.RequestsPerMinute);
+        Assert.Equal(8, policy.Get(Resources.AiModel).Admission.PerPrincipalConcurrency);
+        Assert.Equal(8, policy.Get(Resources.AiModel).Admission.PerPrincipalQueueLength);
         Assert.Equal(64, policy.Get(Resources.AiModel).Admission.GlobalConcurrency);
         Assert.Equal(128, policy.Get(Resources.AiModel).Admission.GlobalQueueLength);
         Assert.Equal(TimeSpan.FromSeconds(30), policy.Get(Resources.AiModel).Admission.QueueWait);
         Assert.Equal(TimeSpan.FromSeconds(300), policy.Get(Resources.AiModel).ExecutionDeadline);
         Assert.Equal(3_000_000_000, policy.PrincipalDailyAllowance.Value);
+    }
+
+    [Fact]
+    public async Task ScreenshotBoxesCanUseTheFullRateAllowanceWithoutDisablingItsBoundary()
+    {
+        var (_, policy) = Configuration();
+        var limiter = new InMemoryAdmissionController(TimeProvider.System);
+        var request = new AdmissionRequest(Resources.AiModel, "screenshot-user",
+            policy.Get(Resources.AiModel).Admission, TimeSpan.FromSeconds(30), policy.ActiveLeaseTtl);
+        for (var index = 0; index < 600; index++)
+        {
+            await using var lease = await limiter.AcquireAsync(request, TestContext.Current.CancellationToken);
+            Assert.True(lease.Acquired, $"Screenshot box {index + 1} should be admitted.");
+            await lease.ReleaseAsync(TestContext.Current.CancellationToken);
+        }
+        await using var rejected = await limiter.AcquireAsync(request, TestContext.Current.CancellationToken);
+        Assert.False(rejected.Acquired);
+        Assert.Equal(AdmissionRejectionReason.RateLimit, rejected.RejectionReason);
+        Assert.True(rejected.RetryAfter > TimeSpan.Zero);
+
+        await using var other = await limiter.AcquireAsync(request with { PrincipalKey = "other-user" },
+            TestContext.Current.CancellationToken);
+        Assert.True(other.Acquired);
+    }
+
+    [Fact]
+    public async Task EightScreenshotBoxesExecuteTogetherWhileTheNinthWaits()
+    {
+        var (_, policy) = Configuration();
+        var limiter = new InMemoryAdmissionController(TimeProvider.System);
+        var request = new AdmissionRequest(Resources.AiModel, "screenshot-user",
+            policy.Get(Resources.AiModel).Admission, TimeSpan.FromSeconds(30), policy.ActiveLeaseTtl);
+        var leases = new List<IAdmissionLease>();
+        try
+        {
+            for (var index = 0; index < 8; index++)
+            {
+                var acquired = limiter.AcquireAsync(request, TestContext.Current.CancellationToken);
+                Assert.True(acquired.IsCompletedSuccessfully, "Eight boxes must not queue behind the same user.");
+                var lease = await acquired;
+                leases.Add(lease);
+                Assert.True(lease.Acquired);
+            }
+            var queued = limiter.AcquireAsync(request, TestContext.Current.CancellationToken);
+            Assert.False(queued.IsCompleted);
+            await leases[0].ReleaseAsync(TestContext.Current.CancellationToken);
+            await using var next = await queued;
+            Assert.True(next.Acquired);
+        }
+        finally
+        {
+            foreach (var lease in leases) await lease.DisposeAsync();
+        }
     }
 
     [Theory]

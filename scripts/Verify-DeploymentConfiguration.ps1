@@ -2,7 +2,9 @@ param(
     [string]$ApplicationSettingsPath = "src/SnowShotApi/appsettings.json",
     [string]$NginxConfigurationPath = "deployment/nginx/snowshot.top.conf",
     [string]$RestorePolicyPath = "deployment/policy/policy-revision-15.json",
-    [long]$ExpectedPolicyRevision = 15
+    [Nullable[long]]$ExpectedPolicyRevision,
+    [string]$PolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-17.json",
+    [string]$RestorePolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-15.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,20 +18,50 @@ if (-not (Test-Path -LiteralPath $NginxConfigurationPath -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $RestorePolicyPath -PathType Leaf)) {
     throw "Restore policy file not found: $RestorePolicyPath"
 }
+foreach ($path in @($PolicyReferencePath, $RestorePolicyReferencePath)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Policy reference file not found: $path"
+    }
+}
 
 $settings = Get-Content -LiteralPath $ApplicationSettingsPath -Raw | ConvertFrom-Json
 $nginx = Get-Content -LiteralPath $NginxConfigurationPath -Raw
 $restore = Get-Content -LiteralPath $RestorePolicyPath -Raw | ConvertFrom-Json
+$policyReference = Get-Content -LiteralPath $PolicyReferencePath -Raw | ConvertFrom-Json
+$restoreReference = Get-Content -LiteralPath $RestorePolicyReferencePath -Raw | ConvertFrom-Json
 
-if ($ExpectedPolicyRevision -lt 15 -or [long]$settings.Policy.Revision -ne $ExpectedPolicyRevision) {
-    throw "The candidate must use the expected revision ($ExpectedPolicyRevision), at least 15."
+$referenceRevision = [long]$policyReference.Policy.Revision
+if ($null -eq $ExpectedPolicyRevision) { $ExpectedPolicyRevision = $referenceRevision }
+if ($ExpectedPolicyRevision -lt $referenceRevision) {
+    throw "The expected revision must be at least the policy reference revision ($referenceRevision)."
 }
-foreach ($document in @($settings, $restore)) {
+if ([long]$settings.Policy.Revision -ne $ExpectedPolicyRevision) {
+    throw "The candidate must use the expected revision ($ExpectedPolicyRevision)."
+}
+
+function Get-PrincipalQueueLength {
+    param($Admission)
+
+    if ($null -ne $Admission.PerPrincipalQueueLength) { return [int]$Admission.PerPrincipalQueueLength }
+    return [Math]::Min([int]$Admission.PerPrincipalConcurrency, [int]$Admission.GlobalQueueLength)
+}
+
+# Candidate and retained recovery settings have independent, reviewed contracts.
+# Raising a revision never selects or changes an admission profile implicitly.
+$profiles = @(
+    @{ Document = $settings; Reference = $policyReference; Path = $PolicyReferencePath },
+    @{ Document = $restore; Reference = $restoreReference; Path = $RestorePolicyReferencePath }
+)
+foreach ($profile in $profiles) {
+    $document = $profile.Document
     if ([long]$document.Policy.Revision -lt 15) { throw "The policy must use revision 15 or higher." }
+    if ([long]$document.Policy.Revision -lt [long]$profile.Reference.Policy.Revision) {
+        throw "The policy revision must be at least its reference revision ($($profile.Reference.Policy.Revision))."
+    }
     if ([long]$document.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000 -or
         [long]$document.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000 -or
         [long]$document.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
-        throw "Revision 15 must preserve the 3/50/1000 yuan allowances and budgets."
+        throw "The policy must preserve the 3/50/1000 yuan allowances and budgets."
     }
     $expectedResources = @('ai-model', 'latex-extraction', 'table-extraction', 'translation')
     foreach ($section in @('Resources', 'Pricing')) {
@@ -50,15 +82,25 @@ foreach ($document in @($settings, $restore)) {
         }
     }
     $admission = $document.Policy.Resources.'ai-model'
-    if ($admission.RequestsPerMinute -ne 60 -or $admission.PerPrincipalConcurrency -ne 4 -or
-        $admission.GlobalConcurrency -ne 64 -or $admission.GlobalQueueLength -ne 128) {
-        throw "AI Model must share the existing 60 RPM / 4 principal / 64 global / 128 queue limits."
+    $expectedAdmission = $profile.Reference.Policy.Resources.'ai-model'
+    foreach ($key in @('RequestsPerMinute', 'PerPrincipalConcurrency', 'GlobalConcurrency',
+            'GlobalQueueLength', 'QueueWaitSeconds', 'ExecutionDeadlineSeconds')) {
+        if ($admission.$key -ne $expectedAdmission.$key) {
+            throw "AI Model admission '$key' must match policy reference '$($profile.Path)' ($($expectedAdmission.$key))."
+        }
+    }
+    if ((Get-PrincipalQueueLength $admission) -ne (Get-PrincipalQueueLength $expectedAdmission)) {
+        throw "AI Model admission 'PerPrincipalQueueLength' must match policy reference '$($profile.Path)'."
     }
     if ($document.Policy.Estimation.BytesPerInputToken -ne 3 -or
         $document.Policy.Estimation.CharsPerOutputToken -ne 2) { throw "Estimation ratios must remain 3 and 2." }
     if ($document.Policy.Pricing.translation.InputRateNanoYuan -ne 2000 -or
         $document.Policy.Pricing.translation.OutputRateNanoYuan -ne 8000) {
         throw "Dedicated translation character deductions must remain unchanged."
+    }
+    if ([long]$document.Policy.Pricing.'latex-extraction'.InputRateNanoYuan -ne 15000000 -or
+        [long]$document.Policy.Pricing.'latex-extraction'.OutputRateNanoYuan -ne 0) {
+        throw "LaTeX extraction must cost 0.015 yuan per successful request."
     }
     $expectedTariffs = @{
         'qwen3.7-flash' = @(@(32000, 200, 800, 40), @(256000, 600, 2400, 120), @(1000000, 1200, 4800, 240))
@@ -159,5 +201,3 @@ if ($proxyLocations -ne 4 -or $disabledRetries -ne $proxyLocations -or
 }
 
 Write-Host "Deployment configuration verified: models=$($models -join ','), app=${maximumDeadline}s, nginx=${readTimeout}s."
-
-if ([long]$settings.Policy.Pricing.'latex-extraction'.InputRateNanoYuan -ne 15000000 -or [long]$settings.Policy.Pricing.'latex-extraction'.OutputRateNanoYuan -ne 0) { throw "LaTeX extraction must cost 0.015 yuan per successful request." }

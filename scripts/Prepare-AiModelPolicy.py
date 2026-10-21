@@ -15,8 +15,9 @@ OWNED_MODELS = (
 def prepare(settings, overlay, active_revision, revision):
     if revision <= max(active_revision, settings.get("Policy", {}).get("Revision", 0)):
         raise ValueError("The new revision must exceed both the active and configured revisions.")
-    if revision < 15:
-        raise ValueError("Revision 14 belongs to the historical CPU recovery script; use 15 or higher.")
+    minimum_revision = max(15, overlay["Policy"]["Revision"])
+    if revision < minimum_revision:
+        raise ValueError(f"The new revision must be at least the selected overlay's revision ({minimum_revision}).")
     result = copy.deepcopy(settings)
     policy = result.setdefault("Policy", {})
     providers = result.setdefault("Providers", {})
@@ -45,20 +46,21 @@ def main():
     parser.add_argument("--settings", type=Path, required=True, help="Existing mounted production settings")
     parser.add_argument("--output", type=Path, required=True, help="New file, reviewed before installation")
     parser.add_argument("--active-revision", type=int, required=True, help="Verified database active revision")
-    parser.add_argument("--revision", type=int, default=15)
+    parser.add_argument("--revision", type=int, help="Defaults to the selected overlay's revision")
     parser.add_argument("--overlay", type=Path, default=Path(__file__).resolve().parents[1] /
-                        "deployment/policy/policy-revision-15.json")
+                        "deployment/policy/policy-revision-17.json")
     args = parser.parse_args()
     settings = json.loads(args.settings.read_text(encoding="utf-8-sig"))
     overlay = json.loads(args.overlay.read_text(encoding="utf-8-sig"))
-    result = prepare(settings, overlay, args.active_revision, args.revision)
+    revision = args.revision if args.revision is not None else overlay["Policy"]["Revision"]
+    result = prepare(settings, overlay, args.active_revision, revision)
     # Exclusive creation also prevents accidentally replacing the input or a
     # previous reviewed candidate. Contents may contain secrets: do not print.
     descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
         json.dump(result, output, ensure_ascii=False, indent=2)
         output.write("\n")
-    print(f"Prepared revision {args.revision}. Review the output and all other configuration layers before rollout.")
+    print(f"Prepared revision {revision}. Review the output and all other configuration layers before rollout.")
 
 
 if __name__ == "__main__":

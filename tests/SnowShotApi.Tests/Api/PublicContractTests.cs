@@ -801,6 +801,31 @@ public sealed class PublicContractTests
         await AssertProblemAsync(response, expectedStatus, expectedCode, "/api/v2/translation/translate", retryable);
     }
 
+    [Theory]
+    [InlineData(true, "en-US", "Too many requests in a short time. Wait before retrying.")]
+    [InlineData(true, "zh-CN", "短时间内请求过多，请稍后重试。")]
+    [InlineData(false, "en-US", "The daily usage allowance has been exhausted.")]
+    [InlineData(false, "zh-CN", "今日使用额度已用尽。")]
+    public async Task ChatRateAndAllowanceLimitsHaveDistinctLocalizedReasonsAndRetryMetadata(
+        bool temporary, string language, string detail)
+    {
+        await using var factory = new ApiFactory();
+        if (temporary) factory.Admission.RejectWith = AdmissionRejectionReason.RateLimit;
+        else factory.Ledger.RejectWith = ReservationRejectionReason.AllowanceExhausted;
+        using var client = factory.CreateAnonymousClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(language);
+        using var response = await client.PostAsJsonAsync("/api/v1/chat/completions",
+            new { model = Resources.AiModel, messages = new[] { new { role = "user", content = "hello" } } },
+            TestContext.Current.CancellationToken);
+
+        var problem = await AssertProblemAsync(response, HttpStatusCode.TooManyRequests,
+            temporary ? "rate_limited" : "allowance_exhausted", "/api/v1/chat/completions", retryable: true);
+        Assert.Equal(detail, problem.GetProperty("detail").GetString());
+        Assert.Equal(response.Headers.RetryAfter!.Delta!.Value.TotalSeconds,
+            problem.GetProperty("retry_after_seconds").GetInt32());
+        Assert.Empty(factory.Ledger.Preparations);
+    }
+
     [Fact]
     public async Task OversizedMultipartUsesPayloadTooLargeStatus()
     {

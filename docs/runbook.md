@@ -7,6 +7,9 @@ mitigating an incident.
 
 ## Change and rollback
 
+The [20 October production release record](production-release-20261020.md)
+records the active policy-15 API, immutable artifacts and retained recovery settings.
+
 For API/recognition releases with an unchanged policy, use the
 [blue/green deployment procedure](bluegreen-deployment.md). Policy-changing
 releases require the separate maintenance procedure in that guide.
@@ -22,10 +25,12 @@ Response model fields retain the requested ID. Provider attempt identities
 record the actual execution model. Reasoning defaults to disabled unless
 explicitly requested.
 
-The deployment overlay is `deployment/policy/policy-revision-15.json`.
+The current candidate overlay is `deployment/policy/policy-revision-17.json`;
+see the [screenshot translation admission update](translation-admission-20261022.md).
+The policy-15 overlay is retained unchanged as a historical recovery reference.
 Revision 14 is reserved by the historical CPU recovery script: never reuse it.
-AI Model inherits 60 RPM, four concurrent requests per principal, 64 globally,
-a 128-request queue, and the existing 30-second queue / 300-second execution
+The deployed policy-15 AI Model uses 60 RPM, four concurrent requests per
+principal, 64 globally, a 128-request queue, and the existing 30-second queue / 300-second execution
 timeouts. Table and formula concurrency remains 1/1. Daily user allowance
 remains ¥3, daily/monthly operator budgets ¥50/¥1,000, and each operation's
 operator reservation maximum ¥0.03.
@@ -39,9 +44,9 @@ Deploy the backend first:
 2. Run `python3 scripts/Prepare-AiModelPolicy.py --settings
    runtime/appsettings.Production.json --output runtime/appsettings.ai-model.candidate.json
    --active-revision <verified-revision>` (one command). It creates a new candidate
-   and explicitly removes retired owned keys before installing revision 15.
+   and explicitly removes retired owned keys before installing revision 17.
    Review locally; the file may contain credentials. It does not deploy or print them.
-   If revision 15 or higher is already active, supply `--revision` higher than both
+   If revision 17 or higher is already active, supply `--revision` higher than both
    the active and configured revisions.
 3. Remove obsolete owned keys from **every** additional JSON/environment layer,
    especially `Policy:Resources`, `Policy:Pricing`, `Providers:Models`, and the
@@ -49,7 +54,12 @@ Deploy the backend first:
    indexed arrays: adding an overlay does not remove old keys. Preserve cloud
    credentials and unrelated deployment settings. The new base settings must be
    deployed with the candidate. Validate with `Verify-DeploymentConfiguration.ps1`;
-   for a later revision, pass `-ExpectedPolicyRevision <revision>`.
+   for a later revision, pass `-ExpectedPolicyRevision <revision>`. Admission is
+   compared with the selected `-PolicyReferencePath`, which defaults to the
+   revision-17 overlay. The retained settings are independently compared with
+   `-RestorePolicyReferencePath` (revision 15 by default). Select the matching
+   reference explicitly when validating a historical profile or a new recovery
+   configuration; a revision increase alone never changes its admission contract.
 4. Replace the mounted settings with the reviewed candidate, deploy the API, and
    verify liveness, readiness, policy revision/fingerprint convergence, and errors.
    Check both catalog endpoints in en-US, zh-CN, and zh-TW. Send text and image

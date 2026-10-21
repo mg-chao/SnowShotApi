@@ -28,6 +28,8 @@ public sealed class PublicMessages
         ["Duplicate request"] = ("A request with this id already exists", "具有此请求 ID 的请求已存在"),
         ["Request ownership lost"] = ("Request ownership was lost", "请求所有权已丢失"),
         ["Request limit reached"] = ("The request limit has been reached", "已达到请求限额"),
+        ["Request rate limit reached"] = ("Too many requests in a short time. Wait before retrying.", "短时间内请求过多，请稍后重试。"),
+        ["Daily allowance exhausted"] = ("The daily usage allowance has been exhausted.", "今日使用额度已用尽。"),
         ["Request queue full"] = ("The request queue is full", "请求队列已满"),
         ["Service unavailable"] = ("A required service is unavailable", "所需服务暂不可用"),
         ["Payload too large"] = ("The request payload is too large", "请求负载过大"),

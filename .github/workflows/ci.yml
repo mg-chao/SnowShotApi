@@ -27,6 +27,7 @@ jobs:
         run: scripts/Verify-ObservabilityContract.ps1 -SelfTest
       - shell: pwsh
         run: scripts/Verify-DeploymentConfiguration.ps1
+      - run: python -W error -m unittest scripts.test_ai_model_policy scripts.test_deployment_configuration -v
       - run: dotnet tool restore
       - run: pip install --require-hashes -r services/TableStructureRec/requirements-test.lock
       - run: python -m venv .audit-venv
@@ -127,6 +128,7 @@ jobs:
           -w /tests
           python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
           python -W error -m unittest discover -s tests -v
+      - run: python -W error -m unittest discover -s tests/deployment -p test_harness.py -v
       - run: python tests/deployment/run_harness.py
 
   database:

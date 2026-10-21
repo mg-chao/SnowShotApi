@@ -73,8 +73,15 @@ class HarnessAgent(agent.ApiAgent):
     def probe(self, port):
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/health/ready", timeout=15) as response:
             assert json.load(response)["status"] == "ready"
-        fingerprint = sql('SELECT encode("Fingerprint",\'hex\') FROM snowshot.policy_revisions WHERE "Revision"=15;')
-        return {"revision": 15, "fingerprint": fingerprint}
+        # Read the active revision, rather than a retained historical row. Readiness
+        # already requires this backend's configured policy to converge with it.
+        return json.loads(sql('''
+            SELECT json_build_object('revision', revision."Revision",
+                                     'fingerprint', encode(revision."Fingerprint", 'hex'))
+            FROM snowshot.policy_state state
+            JOIN snowshot.policy_revisions revision ON revision."Revision" = state."ActiveRevision"
+            WHERE state."Id" = 1;
+        '''))
 
     def upstream(self, release):
         return (f"upstream snowshot_api {{ server api-{release['id']}:8080; }}\n"
@@ -134,11 +141,13 @@ def main():
         compose("build", "api-blue", "migrate")
         # No network and no dependencies: description must not activate policy or call a provider.
         description = json.loads(compose("run", "--rm", "--no-deps", "describe", timeout=30))
-        assert description["policy_revision"] == 15 and description["drain_timeout_seconds"] == 360
+        expected_policy = {"revision": description["policy_revision"], "fingerprint": description["policy_fingerprint"]}
+        assert expected_policy["revision"] > 0 and len(expected_policy["fingerprint"]) == 64
+        assert description["drain_timeout_seconds"] == 360
         compose("up", "-d", "--wait", "postgres", "redis", "provider", "worker-blue", "worker-green")
         compose("run", "--rm", "migrate")
         compose("up", "-d", "api-blue", "api-green", "nginx")
-        wait(lambda: api.probe(15101) == api.probe(15102))
+        wait(lambda: api.probe(15101) == api.probe(15102) == expected_policy)
         for release in api.state["releases"].values():
             release["policy"] = api.probe(release["port"])
         wait(lambda: request("/health/ready")[2] == "blue")

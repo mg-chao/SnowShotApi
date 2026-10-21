@@ -132,18 +132,19 @@ internal sealed class FakeIdentity : IPrincipalIdentity
 internal sealed class FakeAdmission : IAdmissionController
 {
     public ConcurrentQueue<AdmissionRequest> Requests { get; } = new();
+    public AdmissionRejectionReason RejectWith { get; set; }
     public Task<IAdmissionLease> AcquireAsync(AdmissionRequest request, CancellationToken cancellationToken)
     {
         Requests.Enqueue(request);
-        return Task.FromResult<IAdmissionLease>(new Lease());
+        return Task.FromResult<IAdmissionLease>(new Lease(RejectWith));
     }
     public Task<bool> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 
-    private sealed class Lease : IAdmissionLease
+    private sealed class Lease(AdmissionRejectionReason reason) : IAdmissionLease
     {
-        public bool Acquired => true;
-        public TimeSpan? RetryAfter => null;
-        public AdmissionRejectionReason RejectionReason => AdmissionRejectionReason.None;
+        public bool Acquired => reason == AdmissionRejectionReason.None;
+        public TimeSpan? RetryAfter => Acquired ? null : TimeSpan.FromSeconds(2);
+        public AdmissionRejectionReason RejectionReason => reason;
         public CancellationToken OwnershipLost => CancellationToken.None;
         public Task<bool> RenewAsync(CancellationToken cancellationToken) => Task.FromResult(true);
         public Task ReleaseAsync(CancellationToken cancellationToken) => Task.CompletedTask;
