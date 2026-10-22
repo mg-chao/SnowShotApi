@@ -7,8 +7,10 @@ mitigating an incident.
 
 ## Change and rollback
 
-The [20 October production release record](production-release-20261020.md)
-records the active policy-15 API, immutable artifacts and retained recovery settings.
+The [22 October production release record](production-release-20261022.md)
+records the active policy-17 API, immutable artifacts and retained revision-18
+recovery settings. The [20 October record](production-release-20261020.md)
+is historical.
 
 For API/recognition releases with an unchanged policy, use the
 [blue/green deployment procedure](bluegreen-deployment.md). Policy-changing
@@ -25,12 +27,12 @@ Response model fields retain the requested ID. Provider attempt identities
 record the actual execution model. Reasoning defaults to disabled unless
 explicitly requested.
 
-The current candidate overlay is `deployment/policy/policy-revision-17.json`;
+The deployed overlay is `deployment/policy/policy-revision-17.json`;
 see the [screenshot translation admission update](translation-admission-20261022.md).
 The policy-15 overlay is retained unchanged as a historical recovery reference.
 Revision 14 is reserved by the historical CPU recovery script: never reuse it.
-The deployed policy-15 AI Model uses 60 RPM, four concurrent requests per
-principal, 64 globally, a 128-request queue, and the existing 30-second queue / 300-second execution
+The deployed policy-17 AI Model uses 600 RPM, eight concurrent and eight queued
+requests per principal, 64 globally, a 128-request queue, and the existing 30-second queue / 300-second execution
 timeouts. Table and formula concurrency remains 1/1. Daily user allowance
 remains ¥3, daily/monthly operator budgets ¥50/¥1,000, and each operation's
 operator reservation maximum ¥0.03.

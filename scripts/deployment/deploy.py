@@ -77,7 +77,7 @@ class Session:
 
 def bootstrap(target, password=None):
     files = {name: base64.b64encode((HERE / name).read_bytes()).decode()
-             for name in ("agent.py", "launch.py")}
+             for name in ("agent.py", "launch.py", "tunnel_recovery.py")}
     installer = (HERE / "install.py").read_text()
     for role, host in (("worker", target["worker_host"]), ("api", target["api_host"])):
         payload = json.dumps({"role": role, "target": target, "files": files}) + "\n"

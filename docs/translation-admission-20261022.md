@@ -1,7 +1,8 @@
 # Screenshot translation admission update
 
-Prepared on 22 October 2026. This document describes the candidate; it does not
-record a production deployment.
+Prepared and deployed on 22 October 2026. The
+[production release record](production-release-20261022.md) records activation,
+verification, and the retained higher-revision recovery configuration.
 
 Production inspection found HTTP 429 responses concentrated around the existing
 60 requests/minute per-IP threshold. Screenshot translation sends one chat

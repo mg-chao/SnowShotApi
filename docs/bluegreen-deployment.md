@@ -24,6 +24,24 @@ helper accepts validated deployment operations, not arbitrary shell commands.
 Only the Ubuntu tunnel keys gain their second, loopback-only permitted listener;
 Windows recovery keys and existing forwarding stay unchanged.
 
+API bootstrap also installs SSH liveness checks for the root account used by the
+recognition tunnels: `ClientAliveInterval 30` and `ClientAliveCountMax 3`.
+The installer validates both SSH syntax and the effective root configuration
+before reloading SSH, and restores the previous drop-in if validation or reload
+fails. Existing SSH sessions retain their original settings until reconnected.
+The worker already probes the server every 30 seconds and systemd retries failed
+tunnels every three seconds. Server-side checks are also required: after a local
+network outage, a stale server session can otherwise retain its forwarding port
+and reject every replacement connection with `remote port forwarding failed`.
+
+For this incident, verify the listener belongs to the disconnected recognition
+session before terminating that specific SSH child; do not stop the SSH daemon.
+Let the existing worker units reconnect, then verify public readiness and both
+authenticated recognition fixtures. An isolated network-blackhole check on
+22 October 2026 reclaimed the lost session's port in 120.7 seconds and verified
+that a replacement tunnel could bind it. Recognition remains unavailable while
+the worker has no power or network.
+
 Adoption snapshots effective API environment/bind mounts under a root-only
 release directory, records worker source/model/runtime hashes, backs up ingress
 files, and introduces a managed upstream pointing to the existing API. Existing
