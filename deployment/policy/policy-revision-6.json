@@ -1,0 +1,16 @@
+{
+  "Policy": {
+    "Revision": 6,
+    "PrincipalDailyAllowanceNanoYuan": 3000000000,
+    "DailyOperatorBudgetNanoYuan": 50000000000,
+    "MonthlyOperatorBudgetNanoYuan": 500000000000,
+    "Resources": {
+      "translation": { "OperatorMaximumNanoYuan": 30000000 },
+      "qwen-flash": { "OperatorMaximumNanoYuan": 30000000 },
+      "qwen-plus": { "OperatorMaximumNanoYuan": 30000000 },
+      "qwen3-vl-flash": { "OperatorMaximumNanoYuan": 30000000 },
+      "deepseek-v4-flash": { "OperatorMaximumNanoYuan": 30000000 },
+      "table-extraction": { "OperatorMaximumNanoYuan": 30000000 }
+    }
+  }
+}

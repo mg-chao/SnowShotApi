@@ -1,0 +1,16 @@
+.git
+.github
+.idea
+.vs
+**/bin
+**/obj
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/venv
+**/models
+.env*
+.secrets
+.runlogs
+.artifacts-review
+TestResults

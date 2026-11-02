@@ -1,0 +1,23 @@
+name: snowshot-recovery
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    environment:
+      POSTGRES_DB: snowshot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: recovery-admin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d snowshot"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  migrator:
+    image: snowshot-migrator:recovery
+    build:
+      context: ../..
+      target: migrator
+    depends_on:
+      postgres:
+        condition: service_healthy

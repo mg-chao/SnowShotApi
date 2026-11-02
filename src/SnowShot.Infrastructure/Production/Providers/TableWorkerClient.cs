@@ -1,0 +1,97 @@
+using System.Net;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using SnowShot.Application;
+using SnowShot.Domain;
+using SnowShot.Infrastructure.Configuration;
+using SnowShot.Infrastructure.Telemetry;
+
+namespace SnowShot.Infrastructure.Providers;
+
+public sealed class TableWorkerClient(
+    IHttpClientFactory clients,
+    TableWorkerOptions options,
+    ServicePolicy policy,
+    IDependencyHealth dependencyHealth,
+    TimeProvider timeProvider) : ITableWorkerClient
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<TableExtractionResult> ExtractAsync(TableProviderCommand command, CancellationToken cancellationToken)
+    {
+        using var activity = SnowShotTelemetry.Activities.StartActivity("provider.table.dispatch");
+        var operationId = command.Operation.OperationId;
+        var input = command.Request;
+        var id = command.AttemptId;
+        var started = command.AttemptStartedAt;
+        if (input.ImageData.Length > options.MaximumUploadBytes)
+            return Result(TableExtractionStatus.InvalidRequest, null, "request_too_large", true, null, AttemptDispatchState.NotDispatched);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "v2/table/extract")
+        {
+            Content = new ReadOnlyMemoryContent(input.ImageData),
+        };
+        request.Headers.TryAddWithoutValidation("X-Operation-ID", operationId.ToString("N"));
+        request.Headers.TryAddWithoutValidation("X-Request-ID", command.RequestId);
+        request.Content.Headers.ContentType = new(input.Format switch
+        {
+            RecognitionImageFormat.Jpeg => "image/jpeg",
+            RecognitionImageFormat.Png => "image/png",
+            _ => "image/webp",
+        });
+        request.Content.Headers.ContentLength = input.ImageData.Length;
+        try
+        {
+            using var response = await clients.CreateClient("table").SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var bytes = await BoundedStreams.ReadAllAsync(stream, options.MaximumResponseBytes, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                var success = JsonSerializer.Deserialize<TableSuccess>(bytes, JsonOptions);
+                return string.IsNullOrWhiteSpace(success?.Html)
+                    ? Result(TableExtractionStatus.InferenceFailed, null, "invalid_html", true, (int)response.StatusCode, AttemptDispatchState.Dispatched)
+                    : Result(TableExtractionStatus.Success, success.Html, "success", true, (int)response.StatusCode, AttemptDispatchState.Dispatched);
+            }
+            var failure = JsonSerializer.Deserialize<TableFailure>(bytes, JsonOptions);
+            var status = (response.StatusCode, failure?.Error?.Code) switch
+            {
+                (HttpStatusCode.RequestEntityTooLarge, "payload_too_large") => TableExtractionStatus.InvalidRequest,
+                (HttpStatusCode.UnsupportedMediaType, "not_webp" or "unsupported_image_format") => TableExtractionStatus.InvalidRequest,
+                (HttpStatusCode.UnprocessableEntity, "invalid_image" or "image_too_large") => TableExtractionStatus.InvalidRequest,
+                (HttpStatusCode.UnprocessableEntity, "no_table") => TableExtractionStatus.NoTable,
+                (HttpStatusCode.ServiceUnavailable, "worker_busy") => TableExtractionStatus.Busy,
+                (HttpStatusCode.InternalServerError, "inference_failed") => TableExtractionStatus.InferenceFailed,
+                _ => TableExtractionStatus.Unavailable,
+            };
+            var known = status is not (TableExtractionStatus.Unavailable or TableExtractionStatus.Timeout);
+            return Result(status, null, failure?.Error?.Code ?? "worker_http", known, (int)response.StatusCode, AttemptDispatchState.Dispatched);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Result(TableExtractionStatus.Timeout, null, "timeout", false, null, AttemptDispatchState.Unknown);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidDataException)
+        {
+            return Result(TableExtractionStatus.Unavailable, null, exception is HttpRequestException ? "network" : "invalid_response", false,
+                null, exception is HttpRequestException ? AttemptDispatchState.Unknown : AttemptDispatchState.Dispatched);
+        }
+
+        TableExtractionResult Result(TableExtractionStatus status, string? html, string outcome, bool known, int? httpStatus,
+            AttemptDispatchState dispatchState)
+        {
+            if (status == TableExtractionStatus.Busy) SnowShotTelemetry.WorkerBusy.Add(1, new KeyValuePair<string, object?>("resource", Resources.TableExtraction));
+            if (outcome != "request_too_large")
+                dependencyHealth.Report("table_worker", status is TableExtractionStatus.Success or TableExtractionStatus.NoTable or
+                    TableExtractionStatus.InvalidRequest or TableExtractionStatus.Busy);
+            var cost = status == TableExtractionStatus.Success ? policy.Get(Resources.TableExtraction).Price.Input : NanoYuan.Zero;
+            var basis = known ? CostBasis.Exact : CostBasis.Unknown;
+            var attempt = new ProviderAttempt(id, operationId, 1, "table-worker", Resources.TableExtraction, outcome,
+                httpStatus, status == TableExtractionStatus.Success ? 1 : 0, 0, cost, basis, dispatchState,
+                started, timeProvider.GetUtcNow());
+            return new(status, html, attempt);
+        }
+    }
+
+    private sealed class TableSuccess { [JsonPropertyName("html")] public string? Html { get; init; } }
+    private sealed class TableFailure { [JsonPropertyName("error")] public TableError? Error { get; init; } }
+    private sealed class TableError { [JsonPropertyName("code")] public string? Code { get; init; } }
+}

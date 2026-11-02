@@ -1,0 +1,95 @@
+using System.Globalization;
+using System.Text.Json;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Localization;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using SnowShot.Api;
+using SnowShot.Infrastructure;
+using SnowShot.Infrastructure.Configuration;
+
+var describeDeployment = args.Contains("--describe-deployment", StringComparer.Ordinal);
+var builder = WebApplication.CreateBuilder(args.Where(value => value != "--describe-deployment").ToArray());
+builder.Configuration.AddMountedSecrets(builder.Environment.EnvironmentName);
+builder.Services.AddSnowShotApiAdapter();
+builder.Services.AddOpenApi();
+var otlpConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService("SnowShotApi"))
+    .WithTracing(tracing =>
+    {
+        tracing.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddSource("SnowShot");
+        if (otlpConfigured) tracing.AddOtlpExporter();
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddRuntimeInstrumentation().AddMeter("SnowShot");
+        if (otlpConfigured) metrics.AddOtlpExporter();
+    });
+builder.Services.AddSnowShotInfrastructure(builder.Configuration, builder.Environment);
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(360));
+var deployedEnvironment = !builder.Environment.IsDevelopment();
+var parsedProxies = IngressPolicy.Validate(builder.Configuration, deployedEnvironment);
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 2;
+    options.RequireHeaderSymmetry = true;
+    foreach (var address in parsedProxies) options.KnownProxies.Add(address);
+});
+
+var app = builder.Build();
+if (describeDeployment)
+{
+    app.Services.GetService<Microsoft.Extensions.Options.IStartupValidator>()?.Validate();
+    var description = DeploymentDescription.From(app.Services.GetRequiredService<SnowShot.Domain.ServicePolicy>());
+    Console.WriteLine(JsonSerializer.Serialize(description, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    }));
+    await app.DisposeAsync();
+    return;
+}
+app.UseForwardedHeaders();
+if (deployedEnvironment)
+{
+    app.Use(async (context, next) =>
+    {
+        if (!context.Request.IsHttps)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+        await next(context);
+    });
+}
+app.UseRequestLocalization(new RequestLocalizationOptions
+{
+    DefaultRequestCulture = new RequestCulture("en-US"),
+    SupportedCultures =
+    [
+        new CultureInfo("en-US"), new CultureInfo("en"),
+        new CultureInfo("zh-CN"), new CultureInfo("zh-Hans"), new CultureInfo("zh"),
+    ],
+    SupportedUICultures =
+    [
+        new CultureInfo("en-US"), new CultureInfo("en"),
+        new CultureInfo("zh-CN"), new CultureInfo("zh-Hans"), new CultureInfo("zh"),
+    ],
+    RequestCultureProviders = [new AcceptLanguageHeaderRequestCultureProvider()],
+});
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.ContentLanguage = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "zh"
+        ? "zh-CN"
+        : "en-US";
+    context.Response.Headers.Vary = "Accept-Language";
+    await next(context);
+});
+app.UseSnowShotApiAdapter();
+if (app.Environment.IsDevelopment()) app.MapOpenApi();
+app.MapSnowShotEndpoints();
+app.Run();
+
+public partial class Program;

@@ -1,0 +1,484 @@
+[
+  {
+    "id": "fractions-light",
+    "image": "fractions-light.webp",
+    "category": "fractions",
+    "expected_latex": "\\frac{a+b}{c-d}",
+    "equivalents": [],
+    "sha256": "ef47f771718336796b395e392a454aba943800e65a16510c5097e15d7a3eb92f"
+  },
+  {
+    "id": "fractions-dark",
+    "image": "fractions-dark.webp",
+    "category": "fractions",
+    "expected_latex": "\\frac{a+b}{c-d}",
+    "equivalents": [],
+    "sha256": "41d8f3f23bb907b30ebbec0bebeaf06e3802059652684b1714b9f70e276a92d2"
+  },
+  {
+    "id": "fractions-scaled",
+    "image": "fractions-scaled.webp",
+    "category": "fractions",
+    "expected_latex": "\\frac{a+b}{c-d}",
+    "equivalents": [],
+    "sha256": "3a5fd4aeb32b2656bd82aa1b4c09e928c062e0006c4ab72e7547501e37a70a5c"
+  },
+  {
+    "id": "fractions-transparent",
+    "image": "fractions-transparent.webp",
+    "category": "fractions",
+    "expected_latex": "\\frac{a+b}{c-d}",
+    "equivalents": [],
+    "sha256": "a4e2ed93385a8ee8267af6320f5e51129d540025e93558f24eb3ffa6e06edc2e"
+  },
+  {
+    "id": "roots-light",
+    "image": "roots-light.webp",
+    "category": "roots",
+    "expected_latex": "x=\\sqrt{a^{2}+b^{2}}",
+    "equivalents": [
+      "x={\\sqrt{a^{2}+b^{2}}}"
+    ],
+    "sha256": "3f8eb904c7552cce9dee85f76a57273c7e15ae868314e4bd27c71a895bb43cc9"
+  },
+  {
+    "id": "roots-dark",
+    "image": "roots-dark.webp",
+    "category": "roots",
+    "expected_latex": "x=\\sqrt{a^{2}+b^{2}}",
+    "equivalents": [
+      "x={\\sqrt{a^{2}+b^{2}}}"
+    ],
+    "sha256": "2f54534d586ca4791430ee31fa5f74a83eb93c8606b628c18a13515d3c1e33b0"
+  },
+  {
+    "id": "roots-scaled",
+    "image": "roots-scaled.webp",
+    "category": "roots",
+    "expected_latex": "x=\\sqrt{a^{2}+b^{2}}",
+    "equivalents": [
+      "x={\\sqrt{a^{2}+b^{2}}}"
+    ],
+    "sha256": "5776d706b8f2e3dcb4df6b7072e150759fed8705ddb3ac094f56f6f9b116ffd0"
+  },
+  {
+    "id": "roots-transparent",
+    "image": "roots-transparent.webp",
+    "category": "roots",
+    "expected_latex": "x=\\sqrt{a^{2}+b^{2}}",
+    "equivalents": [
+      "x={\\sqrt{a^{2}+b^{2}}}"
+    ],
+    "sha256": "4a5919011c542f599e4734dc1b3fdb7dae6de3e9ec3a598dffb5da0d0c8be403"
+  },
+  {
+    "id": "greek-light",
+    "image": "greek-light.webp",
+    "category": "greek",
+    "expected_latex": "\\alpha+\\beta=\\gamma",
+    "equivalents": [],
+    "sha256": "251e9caa28d74ec3b091040b5331432cd94e3138f0b49ff0eda679843337f323"
+  },
+  {
+    "id": "greek-dark",
+    "image": "greek-dark.webp",
+    "category": "greek",
+    "expected_latex": "\\alpha+\\beta=\\gamma",
+    "equivalents": [],
+    "sha256": "ae99ed8d765f5ee53162595e1a6436c0ed25d856d4742050c4ac28283687e14b"
+  },
+  {
+    "id": "greek-scaled",
+    "image": "greek-scaled.webp",
+    "category": "greek",
+    "expected_latex": "\\alpha+\\beta=\\gamma",
+    "equivalents": [],
+    "sha256": "2bb981d07716a8e7a6c7166de86dd71fbb0524e072cc60aaa12b73c60ae57da2"
+  },
+  {
+    "id": "greek-transparent",
+    "image": "greek-transparent.webp",
+    "category": "greek",
+    "expected_latex": "\\alpha+\\beta=\\gamma",
+    "equivalents": [],
+    "sha256": "387295e8cfb5711ac61c4c0b7de7ce2212b081e7b8c1ad40202c2690775a8268"
+  },
+  {
+    "id": "powers-light",
+    "image": "powers-light.webp",
+    "category": "powers",
+    "expected_latex": "e^{i\\pi}+1=0",
+    "equivalents": [],
+    "sha256": "7839094cad7eefea2c35a78c8312936632518a1ee3bca7649d78dd5b293a0378"
+  },
+  {
+    "id": "powers-dark",
+    "image": "powers-dark.webp",
+    "category": "powers",
+    "expected_latex": "e^{i\\pi}+1=0",
+    "equivalents": [],
+    "sha256": "7e2cb9c2a6ad92464cd14e83570356f08ce520141f690649008d1be85f350ff6"
+  },
+  {
+    "id": "powers-scaled",
+    "image": "powers-scaled.webp",
+    "category": "powers",
+    "expected_latex": "e^{i\\pi}+1=0",
+    "equivalents": [],
+    "sha256": "c567ca3d9ac365c1530fd666c2cbb3ddd9e890435679c4b9097d1e30ca12caca"
+  },
+  {
+    "id": "powers-transparent",
+    "image": "powers-transparent.webp",
+    "category": "powers",
+    "expected_latex": "e^{i\\pi}+1=0",
+    "equivalents": [],
+    "sha256": "41a83262a0390ece7a4adf07e5978ab724f9e8ee563fa2c83cd1e5d3c523a81f"
+  },
+  {
+    "id": "integral-light",
+    "image": "integral-light.webp",
+    "category": "integral",
+    "expected_latex": "\\int_{0}^{1}x^{2}\\,dx=\\frac{1}{3}",
+    "equivalents": [],
+    "sha256": "b0df0f7fafa1ac380e4551cdb8887ff5ec68234a78c03eb69266e6523cb47975"
+  },
+  {
+    "id": "integral-dark",
+    "image": "integral-dark.webp",
+    "category": "integral",
+    "expected_latex": "\\int_{0}^{1}x^{2}\\,dx=\\frac{1}{3}",
+    "equivalents": [],
+    "sha256": "ccfbd8156fc701fa3a2ad8b998ebb335dc7092b161f74076b6a6d8793b650020"
+  },
+  {
+    "id": "integral-scaled",
+    "image": "integral-scaled.webp",
+    "category": "integral",
+    "expected_latex": "\\int_{0}^{1}x^{2}\\,dx=\\frac{1}{3}",
+    "equivalents": [],
+    "sha256": "f6de10077f0800c48a5a897c088b9c7059fae4ff16989805bb978fd7dd6be1a9",
+    "known_limitation": "Pinned S model misrecognizes the differential and fraction at this scale.",
+    "benchmark": false
+  },
+  {
+    "id": "integral-transparent",
+    "image": "integral-transparent.webp",
+    "category": "integral",
+    "expected_latex": "\\int_{0}^{1}x^{2}\\,dx=\\frac{1}{3}",
+    "equivalents": [],
+    "sha256": "2680d941745c572fe4f13710f2c4717c04d9735273d6c3b5ee7df44d217c0032"
+  },
+  {
+    "id": "sum-light",
+    "image": "sum-light.webp",
+    "category": "sum",
+    "expected_latex": "\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}",
+    "equivalents": [],
+    "sha256": "5ecca5eb5210ec7b48157cbf58bc7e97c0da3e6c33352bf8c5a22d9e9a970882"
+  },
+  {
+    "id": "sum-dark",
+    "image": "sum-dark.webp",
+    "category": "sum",
+    "expected_latex": "\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}",
+    "equivalents": [],
+    "sha256": "a95ab2ede4bfaa06bb2e3e96f069ba2a80246ab070de2528118ab15aca17cbc9"
+  },
+  {
+    "id": "sum-scaled",
+    "image": "sum-scaled.webp",
+    "category": "sum",
+    "expected_latex": "\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}",
+    "equivalents": [],
+    "sha256": "187a549a61e19a5c057a75bad208a6af741d67c0cfbb4144cd734086fdc283a6"
+  },
+  {
+    "id": "sum-transparent",
+    "image": "sum-transparent.webp",
+    "category": "sum",
+    "expected_latex": "\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}",
+    "equivalents": [],
+    "sha256": "e1c9c381fb36dbfbde9b869ec98bf43ba26e5e688343567dbb51b7e9776980be"
+  },
+  {
+    "id": "limit-light",
+    "image": "limit-light.webp",
+    "category": "limit",
+    "expected_latex": "\\lim_{x\\to0}\\frac{\\sin x}{x}=1",
+    "equivalents": [
+      "\\operatorname*{lim}_{x\\to0}\\frac{\\operatorname{sin}x}{x}=1",
+      "\\operatorname*{lim}_{x\\to0}{\\frac{\\sin x}{x}}=1"
+    ],
+    "sha256": "dcf009196531c0d0cee72549bd75abc967f2f9d1b7b061076340fe7b668e8f7f"
+  },
+  {
+    "id": "limit-dark",
+    "image": "limit-dark.webp",
+    "category": "limit",
+    "expected_latex": "\\lim_{x\\to0}\\frac{\\sin x}{x}=1",
+    "equivalents": [
+      "\\operatorname*{lim}_{x\\to0}\\frac{\\operatorname{sin}x}{x}=1",
+      "\\operatorname*{lim}_{x\\to0}{\\frac{\\sin x}{x}}=1"
+    ],
+    "sha256": "842a2223b537ff3ffc94c87831d0ba9e48f1e4b7dcb7be854f6e65f2f56e275e"
+  },
+  {
+    "id": "limit-scaled",
+    "image": "limit-scaled.webp",
+    "category": "limit",
+    "expected_latex": "\\lim_{x\\to0}\\frac{\\sin x}{x}=1",
+    "equivalents": [
+      "\\operatorname*{lim}_{x\\to0}\\frac{\\operatorname{sin}x}{x}=1",
+      "\\operatorname*{lim}_{x\\to0}{\\frac{\\sin x}{x}}=1"
+    ],
+    "sha256": "53ef255a95af56a4dc198b1ee024ac8b43343fbe85a7483d8945fd160e3add75"
+  },
+  {
+    "id": "limit-transparent",
+    "image": "limit-transparent.webp",
+    "category": "limit",
+    "expected_latex": "\\lim_{x\\to0}\\frac{\\sin x}{x}=1",
+    "equivalents": [
+      "\\operatorname*{lim}_{x\\to0}\\frac{\\operatorname{sin}x}{x}=1",
+      "\\operatorname*{lim}_{x\\to0}{\\frac{\\sin x}{x}}=1"
+    ],
+    "sha256": "3fe679041355df3eaf1bb375579c1adcc197d38cdeec59480db4b23f1a12958e"
+  },
+  {
+    "id": "matrix-light",
+    "image": "matrix-light.webp",
+    "category": "matrix",
+    "expected_latex": "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}",
+    "equivalents": [
+      "\\left(\\begin{matrix}{1}&{2}\\\\{3}&{4}\\\\\\end{matrix}\\right)"
+    ],
+    "sha256": "0a1b03d805bc4df68dfd8c662831b6399e0c3e9e67390f8b8c23154a39e1d2f7"
+  },
+  {
+    "id": "matrix-dark",
+    "image": "matrix-dark.webp",
+    "category": "matrix",
+    "expected_latex": "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}",
+    "equivalents": [
+      "\\left(\\begin{matrix}{1}&{2}\\\\{3}&{4}\\\\\\end{matrix}\\right)"
+    ],
+    "sha256": "68e7ae66f4aa0742f00670ba9f58a57023e7f4e44c271a27967dcd812a713130"
+  },
+  {
+    "id": "matrix-scaled",
+    "image": "matrix-scaled.webp",
+    "category": "matrix",
+    "expected_latex": "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}",
+    "equivalents": [
+      "\\left(\\begin{matrix}{1}&{2}\\\\{3}&{4}\\\\\\end{matrix}\\right)"
+    ],
+    "sha256": "8040f840d6f2ed7cab26cfe544ef03b308984dc0055ef622d461b539d3ce01d0"
+  },
+  {
+    "id": "matrix-transparent",
+    "image": "matrix-transparent.webp",
+    "category": "matrix",
+    "expected_latex": "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}",
+    "equivalents": [
+      "\\left(\\begin{matrix}{1}&{2}\\\\{3}&{4}\\\\\\end{matrix}\\right)"
+    ],
+    "sha256": "c69440ccc3a00ba83bb5fd5c28a5a637063bdd34a1bc33184e197b0618700d3d"
+  },
+  {
+    "id": "cases-light",
+    "image": "cases-light.webp",
+    "category": "cases",
+    "expected_latex": "f(x)=\\begin{cases}x^{2}&x\\geq0\\\\-x&x<0\\end{cases}",
+    "equivalents": [],
+    "sha256": "f512039ca781653ec297af591b8de6896738aa4093b0f5077a0120471e39a439",
+    "known_limitation": "Pinned S model emits an extra brace and invented punctuation for this cases example.",
+    "benchmark": false
+  },
+  {
+    "id": "cases-dark",
+    "image": "cases-dark.webp",
+    "category": "cases",
+    "expected_latex": "f(x)=\\begin{cases}x^{2}&x\\geq0\\\\-x&x<0\\end{cases}",
+    "equivalents": [],
+    "sha256": "f445d03a5e29a9f838cdfcbad3998c01e1e82e3a6f38ac22a081d8bdec4ec6ed",
+    "known_limitation": "Pinned S model emits an extra brace and invented punctuation for this cases example.",
+    "benchmark": false
+  },
+  {
+    "id": "cases-scaled",
+    "image": "cases-scaled.webp",
+    "category": "cases",
+    "expected_latex": "f(x)=\\begin{cases}x^{2}&x\\geq0\\\\-x&x<0\\end{cases}",
+    "equivalents": [],
+    "sha256": "4d7c68c4f62c9ea1e2d5a74c806404b4da53fce18d13c72cb252369fa388024e",
+    "known_limitation": "Pinned S model emits an extra brace and invented punctuation for this cases example.",
+    "benchmark": false
+  },
+  {
+    "id": "cases-transparent",
+    "image": "cases-transparent.webp",
+    "category": "cases",
+    "expected_latex": "f(x)=\\begin{cases}x^{2}&x\\geq0\\\\-x&x<0\\end{cases}",
+    "equivalents": [],
+    "sha256": "570f75b22efacd56bb0034271a9c6c73c928fdfdfce8a84cb8ebc0e264666018",
+    "known_limitation": "Pinned S model emits an extra brace and invented punctuation for this cases example.",
+    "benchmark": false
+  },
+  {
+    "id": "multiline-light",
+    "image": "multiline-light.webp",
+    "category": "multiline",
+    "expected_latex": "\\begin{aligned}a+b&=c\\\\a-b&=d\\end{aligned}",
+    "equivalents": [],
+    "sha256": "5892421470b216822f8ca9e0f7fc07566c373be38dc3adc88d31e75158f65830",
+    "known_limitation": "Pinned S model duplicates c in the first aligned equation.",
+    "benchmark": false
+  },
+  {
+    "id": "multiline-dark",
+    "image": "multiline-dark.webp",
+    "category": "multiline",
+    "expected_latex": "\\begin{aligned}a+b&=c\\\\a-b&=d\\end{aligned}",
+    "equivalents": [],
+    "sha256": "e7a1a183ddb7c416325aa4a68695857a725fc8089fbb57ecb96f1acaa3fb4e93",
+    "known_limitation": "Pinned S model duplicates c in the first aligned equation.",
+    "benchmark": false
+  },
+  {
+    "id": "multiline-scaled",
+    "image": "multiline-scaled.webp",
+    "category": "multiline",
+    "expected_latex": "\\begin{aligned}a+b&=c\\\\a-b&=d\\end{aligned}",
+    "equivalents": [],
+    "sha256": "b656f3f174e507cbed00b85ca941491e30924c81ccfe0599704994f64b9cea7e",
+    "known_limitation": "Pinned S model duplicates c in the first aligned equation.",
+    "benchmark": false
+  },
+  {
+    "id": "multiline-transparent",
+    "image": "multiline-transparent.webp",
+    "category": "multiline",
+    "expected_latex": "\\begin{aligned}a+b&=c\\\\a-b&=d\\end{aligned}",
+    "equivalents": [],
+    "sha256": "40a2532da052388ec9d8c1c0ea5e5cdbd0a1a9552cdec6668ae2d46f56cad580",
+    "known_limitation": "Pinned S model duplicates c in the first aligned equation.",
+    "benchmark": false
+  },
+  {
+    "id": "derivatives-light",
+    "image": "derivatives-light.webp",
+    "category": "derivatives",
+    "expected_latex": "\\frac{\\partial^{2}u}{\\partial x^{2}}+\\frac{\\partial^{2}u}{\\partial y^{2}}=0",
+    "equivalents": [
+      "{\\frac{\\partial^{2}u}{\\partial x^{2}}}+{\\frac{\\partial^{2}u}{\\partial y^{2}}}=0"
+    ],
+    "sha256": "3067d0a1e79d7350c6e7237121260d58d654c275306cc4a73f8573f6bbb8873d"
+  },
+  {
+    "id": "derivatives-dark",
+    "image": "derivatives-dark.webp",
+    "category": "derivatives",
+    "expected_latex": "\\frac{\\partial^{2}u}{\\partial x^{2}}+\\frac{\\partial^{2}u}{\\partial y^{2}}=0",
+    "equivalents": [
+      "{\\frac{\\partial^{2}u}{\\partial x^{2}}}+{\\frac{\\partial^{2}u}{\\partial y^{2}}}=0"
+    ],
+    "sha256": "93d76f297d2b9d7a43239cd0e1d2acf4cc646e90400a5056f74d9a2ec23da477"
+  },
+  {
+    "id": "derivatives-scaled",
+    "image": "derivatives-scaled.webp",
+    "category": "derivatives",
+    "expected_latex": "\\frac{\\partial^{2}u}{\\partial x^{2}}+\\frac{\\partial^{2}u}{\\partial y^{2}}=0",
+    "equivalents": [
+      "{\\frac{\\partial^{2}u}{\\partial x^{2}}}+{\\frac{\\partial^{2}u}{\\partial y^{2}}}=0"
+    ],
+    "sha256": "324769130796e94a91326a1096e1269d02625d1f2fac1819eeee18fa0986202e"
+  },
+  {
+    "id": "derivatives-transparent",
+    "image": "derivatives-transparent.webp",
+    "category": "derivatives",
+    "expected_latex": "\\frac{\\partial^{2}u}{\\partial x^{2}}+\\frac{\\partial^{2}u}{\\partial y^{2}}=0",
+    "equivalents": [
+      "{\\frac{\\partial^{2}u}{\\partial x^{2}}}+{\\frac{\\partial^{2}u}{\\partial y^{2}}}=0"
+    ],
+    "sha256": "cd1cb9ac97050e36e797961b4430a9bf9c0fee42c05a30c914f3f0ac24591f55"
+  },
+  {
+    "id": "long-light",
+    "image": "long-light.webp",
+    "category": "long",
+    "expected_latex": "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}",
+    "equivalents": [
+      "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}."
+    ],
+    "sha256": "4daa5b6482dadbf82327ca50e9b38489afc3d36477518d6eb0f41217097711df"
+  },
+  {
+    "id": "long-dark",
+    "image": "long-dark.webp",
+    "category": "long",
+    "expected_latex": "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}",
+    "equivalents": [
+      "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}."
+    ],
+    "sha256": "52b10be138385d8e95dc3df23d81fafeaeda45e025a42e63869c9ba1461db03c"
+  },
+  {
+    "id": "long-scaled",
+    "image": "long-scaled.webp",
+    "category": "long",
+    "expected_latex": "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}",
+    "equivalents": [
+      "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}."
+    ],
+    "sha256": "99ddce116c187c0239ae1b9b009fd0955c963b7781293af7a9206e0091cce3bc"
+  },
+  {
+    "id": "long-transparent",
+    "image": "long-transparent.webp",
+    "category": "long",
+    "expected_latex": "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}",
+    "equivalents": [
+      "\\left(\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\\right)^{2}=(a+b)^{2n}."
+    ],
+    "sha256": "53503230bb734e60ba688e294648a8a93512356b49538158bd31c6bb11f587f5"
+  },
+  {
+    "id": "upstream-1",
+    "image": "upstream-1.webp",
+    "category": "historical",
+    "expected_latex": "\\operatorname{exp}\\left[\\int d^{4}x\\,g\\phi\\bar{\\psi}\\psi\\right]=\\sum_{n=0}^{\\infty}\\frac{g^{n}}{n!}\\left(\\int d^{4}x\\,\\phi\\bar{\\psi}\\psi\\right)^{n}.",
+    "equivalents": [],
+    "sha256": "5f1a1aaed7b0f4832caad15a4f0d38c5be82da6a2dab160ce4cb67cd99b90316"
+  },
+  {
+    "id": "upstream-2",
+    "image": "upstream-2.webp",
+    "category": "historical",
+    "expected_latex": "x^{2}+y^{2}=1",
+    "equivalents": [],
+    "sha256": "e8060ae5db219efe413d806840c297fbb3e58d5c2b4c557f203948513108a4df"
+  },
+  {
+    "id": "upstream-5",
+    "image": "upstream-5.webp",
+    "category": "historical",
+    "expected_latex": "x=\\frac{-b\\pm\\sqrt{b^{2}-4ac}}{2a}",
+    "equivalents": [
+      "x={\\frac{-b\\pm{\\sqrt{b^{2}-4ac}}}{2a}}"
+    ],
+    "sha256": "b0a4d6a636f439502c4427cbb471807d43f9ab4524bdb12a012e3dd321f5c23a"
+  },
+  {
+    "id": "upstream-6",
+    "image": "upstream-6.webp",
+    "category": "historical",
+    "expected_latex": "\\frac{x^{2}}{a^{2}}-\\frac{y^{2}}{b^{2}}=1",
+    "equivalents": [
+      "{\\frac{x^{2}}{a^{2}}}-{\\frac{y^{2}}{b^{2}}}=1"
+    ],
+    "sha256": "4c8f7cc9392a2e86f6aeae53b07f3a0d4b1f75c2c106ffae68ad9b11692e469e"
+  }
+]

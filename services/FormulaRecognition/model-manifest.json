@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "model_name": "PP-FormulaNet_plus-S",
+  "archive": {
+    "url": "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-FormulaNet_plus-S_infer.tar",
+    "root": "PP-FormulaNet_plus-S_infer",
+    "size_bytes": 259604480,
+    "sha256": "31e8659fd5bdbefcc1339ab531e359c58fae6c0971097ca4cc897073e3fd28a6"
+  },
+  "files": [
+    {
+      "path": "inference.json",
+      "size_bytes": 506956,
+      "sha256": "01238434e33df83588e2627f350559b576e34551d2b2ffea148345032de56c00"
+    },
+    {
+      "path": "inference.pdiparams",
+      "size_bytes": 256845006,
+      "sha256": "e464f94412feaa98f8791eacc84684f887b3569e30e80c52b8112e9cf7d4069b"
+    },
+    {
+      "path": "inference.yml",
+      "size_bytes": 2244564,
+      "sha256": "96062655d94c21d39274328dbc82c1a487e66addb8425f5a7fd5b7dfb2421ec3"
+    }
+  ]
+}

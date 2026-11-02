@@ -1,0 +1,26 @@
+[Unit]
+Description=SnowShot %i recognition (Ubuntu CPU)
+After=network-online.target snowshot-cpu-power.service
+Wants=network-online.target snowshot-cpu-power.service
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+EnvironmentFile=/etc/snowshot/%i-cpu.env
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=NUMEXPR_NUM_THREADS=1
+ExecStart=@INSTALL_ROOT@/run-worker %i
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+MemoryAccounting=true
+
+[Install]
+WantedBy=multi-user.target

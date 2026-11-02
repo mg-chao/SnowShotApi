@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>SnowShot.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SnowShot.Domain\SnowShot.Domain.csproj" />
+  </ItemGroup>
+</Project>

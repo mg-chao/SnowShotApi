@@ -1,0 +1,8 @@
+numpy>=1.21.6
+onnxruntime>=1.14.1
+opencv_python
+scipy
+scikit-image
+Shapely
+requests
+tqdm

@@ -1,0 +1,23 @@
+[Unit]
+Description=SnowShot %i recognition reverse SSH tunnel
+Wants=network-online.target
+After=network-online.target snowshot-cpu-worker@%i.service
+Requires=snowshot-cpu-worker@%i.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+EnvironmentFile=/etc/snowshot/%i-tunnel.env
+ExecStart=/usr/bin/ssh -N -T -i /etc/snowshot/ssh/%i-ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/snowshot/ssh/known_hosts -o ExitOnForwardFailure=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:${REMOTE_PORT}:127.0.0.1:${LOCAL_PORT} ${SSH_USER}@${SSH_HOST}
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

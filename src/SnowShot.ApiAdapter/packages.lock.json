@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "snowshot.application": {
+        "type": "Project",
+        "dependencies": {
+          "SnowShot.Domain": "[1.0.0, )"
+        }
+      },
+      "snowshot.contracts": {
+        "type": "Project"
+      },
+      "snowshot.domain": {
+        "type": "Project"
+      }
+    }
+  }
+}

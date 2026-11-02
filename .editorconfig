@@ -1,0 +1,9 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{cs,csproj,json,md,py,ps1,yaml,yml}]
+trim_trailing_whitespace = true

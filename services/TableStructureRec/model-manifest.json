@@ -1,0 +1,40 @@
+{
+  "revision": "a484f11b64162cc443ccf14582996ca35be33030",
+  "files": [
+    {
+      "path": "table_cls/yolo_cls.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidTable/resolve/a484f11b64162cc443ccf14582996ca35be33030/table_cls/yolo_cls.onnx",
+      "sha256": "903fcc7add42f5103711203af4b97b8740633065ed9d97e4f3590f9b9a2b04ed"
+    },
+    {
+      "path": "wired/unet.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidTable/resolve/a484f11b64162cc443ccf14582996ca35be33030/unet.onnx",
+      "sha256": "0ea48d3a17e35ef5c2e498a5e799566073234d39b1079ca21d9f4fafe73c6d20"
+    },
+    {
+      "path": "lineless/detect.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidTable/resolve/a484f11b64162cc443ccf14582996ca35be33030/lore/detect.onnx",
+      "sha256": "b18cb55e68192b9c7567628dd491abf39d079e65614ab6b0b4efab8395c38c7a"
+    },
+    {
+      "path": "lineless/process.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidTable/resolve/a484f11b64162cc443ccf14582996ca35be33030/lore/process.onnx",
+      "sha256": "ba303812c3fc0e2f7df9a4286f8b32b3fd2da8d933ba1b58ef65879b005eded7"
+    },
+    {
+      "path": "rapidocr/PP-OCRv6_det_small.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx",
+      "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"
+    },
+    {
+      "path": "rapidocr/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+      "sha256": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"
+    },
+    {
+      "path": "rapidocr/PP-OCRv6_rec_small.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx",
+      "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884"
+    }
+  ]
+}

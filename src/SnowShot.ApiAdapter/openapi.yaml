@@ -1,0 +1,1009 @@
+openapi: 3.1.1
+info:
+  title: SnowShot API
+  version: current
+paths:
+  /health/live:
+    get:
+      tags:
+      - Health
+      operationId: Liveness
+      responses:
+        '200':
+          description: OK
+  /health/ready:
+    get:
+      tags:
+      - Health
+      operationId: Readiness
+      responses:
+        '200':
+          description: OK
+        '503':
+          description: Service Unavailable
+  /health/components:
+    get:
+      tags:
+      - Health
+      operationId: DependencyTelemetry
+      responses:
+        '200':
+          description: OK
+  /api/v1/chat/completions:
+    post:
+      tags:
+      - Chat
+      operationId: ChatCompletions
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '402':
+          description: Payment Required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+  /api/v1/chat/models:
+    get:
+      tags:
+      - Chat
+      operationId: ChatModels
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/chat/models:
+    get:
+      tags:
+      - Chat
+      operationId: ChatModelsV2
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/translation/translate:
+    post:
+      tags:
+      - Translation
+      operationId: Translate
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslationRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '402':
+          description: Payment Required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+  /api/v2/translation/types:
+    get:
+      tags:
+      - Translation
+      operationId: TranslationTypes
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v1/table/extract:
+    post:
+      tags:
+      - Table
+      description: Extract one table from a JPEG, PNG or WebP image. Upload one multipart
+        file named image, at most 800 KiB and 2880 x 2880 pixels. Returns data.html;
+        account authentication is optional.
+      operationId: TableExtraction
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/IFormFile'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '402':
+          description: Payment Required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+  /api/v1/latex/extract:
+    post:
+      tags:
+      - Latex
+      operationId: LatexExtraction
+      parameters:
+      - name: X-Request-ID
+        in: header
+        schema:
+          maxLength: 64
+          minLength: 0
+          pattern: ^[\x21-\x7E]+$
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/IFormFile'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '402':
+          description: Payment Required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '413':
+          description: Payload Too Large
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '429':
+          description: Too Many Requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '502':
+          description: Bad Gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '503':
+          description: Service Unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+        '504':
+          description: Gateway Timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/PublicProblem'
+  /api/v2/registration/captcha:
+    get:
+      tags:
+      - Account
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/auth/login:
+    post:
+      tags:
+      - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountLoginRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/auth/wechat:
+    post:
+      tags:
+      - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountWechatLoginRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/auth/refresh:
+    post:
+      tags:
+      - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountRefreshRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/auth/logout:
+    post:
+      tags:
+      - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountRefreshRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/registration/requests:
+    post:
+      tags:
+      - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountRegistrationRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/registration/requests/{id}:
+    get:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/registration/requests/{id}/refresh:
+    post:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/registration/requests/{id}/claim:
+    post:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/registration/requests/{id}/link:
+    post:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/packages:
+    get:
+      tags:
+      - Account
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/requests:
+    post:
+      tags:
+      - Account
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/mini-program/requests:
+    post:
+      tags:
+      - Account
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/requests/{id}/refresh:
+    post:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/requests/{id}:
+    get:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/orders:
+    post:
+      tags:
+      - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountOrderRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/orders/{id}/refresh:
+    post:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/account:
+    get:
+      tags:
+      - Account
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/account/transactions:
+    get:
+      tags:
+      - Account
+      parameters:
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/account/deletion:
+    get:
+      tags:
+      - Account
+      description: Returns deletion eligibility and the opaque deletion_version snapshot.
+        data.membership_tier is the linked account's advanced-card tier (cny-9-9,
+        cny-29-9, cny-88-8, cny-188 or cny-999), calculated from cumulative net recharge
+        under the same wallet lock; null means unlinked or below CNY 9.90. Existing
+        exact nano-yuan balance fields remain available for settlement checks.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+    post:
+      tags:
+      - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDeletionRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/wechat/events:
+    get:
+      tags:
+      - Account
+      responses:
+        '200':
+          description: OK
+    post:
+      tags:
+      - Account
+      responses:
+        '200':
+          description: OK
+components:
+  schemas:
+    AccountDeletionRequest:
+      required:
+      - confirmation
+      - wechat_code
+      - acknowledge_forfeiture
+      - deletion_version
+      type: object
+      properties:
+        confirmation:
+          type:
+          - 'null'
+          - string
+        wechat_code:
+          type:
+          - 'null'
+          - string
+        acknowledge_forfeiture:
+          type: boolean
+        deletion_version:
+          type:
+          - 'null'
+          - string
+    AccountLoginRequest:
+      required:
+      - username
+      - password
+      type: object
+      properties:
+        username:
+          type:
+          - 'null'
+          - string
+        password:
+          type:
+          - 'null'
+          - string
+    AccountOrderRequest:
+      required:
+      - request_id
+      - package_id
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        package_id:
+          type:
+          - 'null'
+          - string
+        checkout_attempt_id:
+          type:
+          - 'null'
+          - string
+          format: uuid
+    AccountRefreshRequest:
+      required:
+      - refresh_token
+      type: object
+      properties:
+        refresh_token:
+          type:
+          - 'null'
+          - string
+    AccountRegistrationRequest:
+      required:
+      - username
+      - password
+      - password_confirmation
+      - captcha_id
+      - captcha_answer
+      type: object
+      properties:
+        username:
+          type:
+          - 'null'
+          - string
+        password:
+          type:
+          - 'null'
+          - string
+        password_confirmation:
+          type:
+          - 'null'
+          - string
+        captcha_id:
+          type: string
+          format: uuid
+        captcha_answer:
+          type:
+          - 'null'
+          - string
+    AccountWechatLoginRequest:
+      required:
+      - code
+      type: object
+      properties:
+        code:
+          type:
+          - 'null'
+          - string
+    AppEnvelope:
+      required:
+      - code
+      - message
+      type: object
+      properties:
+        code:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+        message:
+          type: string
+        data: {}
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+        content:
+          $ref: '#/components/schemas/JsonElement'
+    ChatRequest:
+      required:
+      - model
+      type: object
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        enable_thinking:
+          type: boolean
+        temperature:
+          pattern: ^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$
+          type:
+          - number
+          - string
+          format: double
+        max_tokens:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+        thinking_budget_tokens:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+        translation_options:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/ChatTranslationOptions'
+    ChatTranslationOptions:
+      type: object
+      properties:
+        source_lang:
+          type:
+          - 'null'
+          - string
+        target_lang:
+          type:
+          - 'null'
+          - string
+        domains:
+          type:
+          - 'null'
+          - string
+        terms:
+          type:
+          - 'null'
+          - array
+          items:
+            $ref: '#/components/schemas/ChatTranslationTerm'
+        tm_list:
+          type:
+          - 'null'
+          - array
+          items:
+            $ref: '#/components/schemas/ChatTranslationTerm'
+    ChatTranslationTerm:
+      required:
+      - source
+      - target
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+    IFormFile:
+      type: string
+      format: binary
+    JsonElement: {}
+    PublicProblem:
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - instance
+      - code
+      - trace_id
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - integer
+          - string
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+        trace_id:
+          type: string
+        retry_after_seconds:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+          - 'null'
+          - integer
+          - string
+          format: int32
+    TranslationRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/TranslationType'
+        content:
+          type: array
+          items:
+            type: string
+        from:
+          type: string
+        to:
+          type: string
+        domain:
+          type: string
+    TranslationType:
+      type: integer
+tags:
+- name: Health
+- name: Chat
+- name: Translation
+- name: Table
+- name: Latex
+- name: Account

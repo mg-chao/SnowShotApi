@@ -1,0 +1,8 @@
+name: snowshot
+
+services:
+  api:
+    environment:
+      Providers__Table__BaseUrl: http://host.docker.internal:18080/
+    extra_hosts:
+      - host.docker.internal:host-gateway
