@@ -139,6 +139,22 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
         }, token);
     }
 
+    public async Task<AccountPurchaseRequest> CancelTopUpAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token)
+    {
+        return await store.ExecuteAsync(async (db, now) =>
+        {
+            // Serialize cancellation with checkout so an issued payment is never discarded.
+            await AccountSynchronization.ChangeIdentityAsync(db, token);
+            await RequireLiveSessionAsync(db, identity, now, token);
+            var request = await db.AccountPurchaseRequests.SingleOrDefaultAsync(x => x.Id == requestId &&
+                x.Purpose == "top_up" && x.AccountId == identity.AccountId, token) ?? throw NotFound();
+            var account = await db.Accounts.SingleOrDefaultAsync(x => x.Id == request.AccountId && x.Active, token) ?? throw InvalidSession();
+            if (request.State == "awaiting_payment" && request.OrderId is null)
+                AccountPurchaseLifecycle.CancelUnissued(request);
+            return requests.View(request, account.Username, now);
+        }, token);
+    }
+
     public async Task<PublicPurchaseRequest> PublicRequestAsync(Guid requestId, AccountSessionIdentity? identity, CancellationToken token)
     {
         await requests.ExpireDueRequestsAsync(requestId, token);

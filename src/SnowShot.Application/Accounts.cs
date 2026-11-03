@@ -61,6 +61,7 @@ public interface IAccountService
     Task<AccountPurchaseRequest> MiniProgramPurchaseAsync(AccountSessionIdentity identity, CancellationToken token);
     Task<PublicPurchaseRequest> LinkRegistrationAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token);
     Task<AccountPurchaseRequest> RefreshTopUpAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token);
+    Task<AccountPurchaseRequest> CancelTopUpAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token);
     Task<PublicPurchaseRequest> PublicRequestAsync(Guid requestId, AccountSessionIdentity? identity, CancellationToken token);
     Task<AccountPurchaseOrder> CreateOrderAsync(AccountSessionIdentity identity, Guid requestId, string packageId, CancellationToken token,
         Guid? checkoutAttemptId = null);

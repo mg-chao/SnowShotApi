@@ -7,10 +7,12 @@ mitigating an incident.
 
 ## Change and rollback
 
-The [22 October production release record](production-release-20261022.md)
-records the active policy-17 API, immutable artifacts and retained revision-18
-recovery settings. The [20 October record](production-release-20261020.md)
-is historical.
+The [3 November production release record](production-release-20261103.md)
+records the active API and recognition workers, account migrations and production
+payment configuration. Policy remains at revision 17. The
+[22 October record](production-release-20261022.md) documents the previous API
+and retained revision-18 recovery settings; the
+[20 October record](production-release-20261020.md) is historical.
 
 For API/recognition releases with an unchanged policy, use the
 [blue/green deployment procedure](bluegreen-deployment.md). Policy-changing

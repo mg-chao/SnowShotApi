@@ -16,6 +16,13 @@ internal static class AccountPurchaseLifecycle
         request.State = "payment_pending";
     }
 
+    internal static void CancelUnissued(AccountPurchaseRequestEntity request)
+    {
+        RequireUnissued(request);
+        request.State = "failed";
+        request.CodeImage = null;
+    }
+
     internal static bool CanRecoverCheckout(AccountPaymentOrderEntity order, AccountPurchaseRequestEntity request) =>
         order.RequestId == request.Id && request.OrderId == order.Id &&
         order.State == "payment_pending" && request.State == "payment_pending" &&

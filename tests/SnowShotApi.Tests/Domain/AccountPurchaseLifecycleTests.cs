@@ -6,6 +6,31 @@ namespace SnowShotApi.Tests.Domain;
 public sealed class AccountPurchaseLifecycleTests
 {
     [Fact]
+    public void CanceledUnissuedCodeCannotBeginCheckout()
+    {
+        var request = new AccountPurchaseRequestEntity
+        {
+            Purpose = "top_up",
+            State = "awaiting_payment",
+            CodeImage = [1, 2, 3]
+        };
+        AccountPurchaseLifecycle.CancelUnissued(request);
+        Assert.Equal("failed", request.State);
+        Assert.Null(request.CodeImage);
+        Assert.Null(request.OrderId);
+        Assert.Throws<InvalidOperationException>(() => AccountPurchaseLifecycle.IssueCheckout(request, "order"));
+    }
+
+    [Fact]
+    public void CancellationCannotDiscardIssuedPayment()
+    {
+        var (order, request) = Purchase();
+        Assert.Throws<InvalidOperationException>(() => AccountPurchaseLifecycle.CancelUnissued(request));
+        Assert.Equal("payment_pending", request.State);
+        Assert.Equal(order.Id, request.OrderId);
+    }
+
+    [Fact]
     public void FulfilledPaymentCannotBeClosedAndReleaseItsClaims()
     {
         var (order, request) = Purchase();

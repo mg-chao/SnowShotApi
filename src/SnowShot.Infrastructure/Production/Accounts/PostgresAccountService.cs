@@ -64,6 +64,7 @@ internal sealed class PostgresAccountService(PostgresAccountStore store, IWechat
     public Task<AccountPurchaseRequest> MiniProgramPurchaseAsync(AccountSessionIdentity identity, CancellationToken token) => purchases.MiniProgramPurchaseAsync(identity, token);
     public Task<PublicPurchaseRequest> LinkRegistrationAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token) => purchases.LinkRegistrationAsync(identity, requestId, token);
     public Task<AccountPurchaseRequest> RefreshTopUpAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token) => purchases.RefreshTopUpAsync(identity, requestId, token);
+    public Task<AccountPurchaseRequest> CancelTopUpAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token) => purchases.CancelTopUpAsync(identity, requestId, token);
     public Task<PublicPurchaseRequest> PublicRequestAsync(Guid requestId, AccountSessionIdentity? identity, CancellationToken token) => purchases.PublicRequestAsync(requestId, identity, token);
     public Task<AccountPurchaseOrder> CreateOrderAsync(AccountSessionIdentity identity, Guid requestId, string packageId, CancellationToken token, Guid? checkoutAttemptId = null) => purchases.CreateOrderAsync(identity, requestId, packageId, token, checkoutAttemptId);
     public Task<AccountOrderStatus> RefreshOrderAsync(AccountSessionIdentity identity, string orderId, CancellationToken token) => payments.RefreshOrderAsync(identity, orderId, token);

@@ -66,6 +66,7 @@ internal static class AccountEndpoints
         group.MapPost("/purchases/requests", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.TopUpAsync(i, t))).Produces<AppEnvelope>();
         group.MapPost("/purchases/mini-program/requests", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.MiniProgramPurchaseAsync(i, t))).Produces<AppEnvelope>();
         group.MapPost("/purchases/requests/{id:guid}/refresh", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.RefreshTopUpAsync(i, id, t))).Produces<AppEnvelope>();
+        group.MapPost("/purchases/requests/{id:guid}/cancel", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.CancelTopUpAsync(i, id, t))).Produces<AppEnvelope>();
         group.MapGet("/purchases/requests/{id:guid}", async (Guid id, HttpContext c, IAccountService s, CancellationToken t) =>
         {
             var identity = await Identity(c);

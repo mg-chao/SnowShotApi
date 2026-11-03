@@ -615,6 +615,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AppEnvelope'
+  /api/v2/purchases/requests/{id}/cancel:
+    post:
+      tags:
+      - Account
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppEnvelope'
   /api/v2/purchases/requests/{id}:
     get:
       tags:

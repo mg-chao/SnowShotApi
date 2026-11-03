@@ -8,6 +8,7 @@ public sealed class AccountApiContractTests
 {
     [Theory]
     [InlineData("/api/v2/purchases/mini-program/requests")]
+    [InlineData("/api/v2/purchases/requests/ed6057bc-ab1b-4a61-8dc5-a60f2d7c2b21/cancel")]
     [InlineData("/api/v2/account/deletion")]
     [InlineData("/api/v2/registration/requests/ed6057bc-ab1b-4a61-8dc5-a60f2d7c2b21/link")]
     public async Task MiniProgramPurchaseAndLinkRequireAuthentication(string path)
