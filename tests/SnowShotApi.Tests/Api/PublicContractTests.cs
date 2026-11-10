@@ -573,6 +573,51 @@ public sealed class PublicContractTests
     }
 
     [Fact]
+    public async Task VisionTableFlushesContentBeforeProviderCompletion()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateAnonymousClient();
+        var continuation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        factory.Chat.ContinueAfterFirstFrame = continuation.Task;
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/chat/completions")
+        {
+            Content = JsonContent.Create(new
+            {
+                model = Resources.AiModel,
+                messages = new object[]
+                {
+                    new { role = "system", content = "Return an HTML table." },
+                    new { role = "user", content = new object[]
+                    {
+                        new { type = "image_url", image_url = new { url = "data:image/webp;base64,YQ==" } },
+                    } },
+                },
+            }),
+        };
+        var cancellation = TestContext.Current.CancellationToken;
+        try
+        {
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation)
+                .WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellation));
+            var first = await reader.ReadLineAsync(cancellation).AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+            Assert.Contains("\"content\":\"ok\"", first, StringComparison.Ordinal);
+            Assert.False(factory.Ledger.SettlementCompleted);
+            Assert.Equal(Resources.QwenFlash, Assert.Single(factory.Chat.Commands).Access.LogicalModel);
+            continuation.SetResult();
+            var tail = await reader.ReadToEndAsync(cancellation).WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+            Assert.EndsWith("data: [DONE]\n\n", tail, StringComparison.Ordinal);
+            Assert.True(factory.Ledger.SettlementCompleted);
+        }
+        finally
+        {
+            continuation.TrySetResult();
+        }
+    }
+
+    [Fact]
     public async Task VisionConversionHonorsTheExistingChatBodyLimit()
     {
         await using var factory = new ApiFactory();

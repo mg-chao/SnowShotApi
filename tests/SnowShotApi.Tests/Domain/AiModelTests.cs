@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Text.Json.Nodes;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -388,6 +391,87 @@ public sealed class AiModelTests
         Assert.Equal(Resources.QwenTextFlash, payload.RootElement.GetProperty("model").GetString());
         Assert.False(payload.RootElement.GetProperty("enable_thinking").GetBoolean());
         Assert.Equal("json_object", payload.RootElement.GetProperty("response_format").GetProperty("type").GetString());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task TableCorrectionPreservesVisionPrefixBillingAndRecordsUsageOnce(bool truncated, bool interrupted)
+    {
+        var (catalog, policy) = Configuration();
+        var initialMessages = JsonNode.Parse("""[{"role":"system","content":"Return one faithful HTML table."},{"role":"user","content":[{"type":"text","text":"Convert this image faithfully."},{"type":"image_url","image_url":{"url":"data:image/webp;base64,YQ=="}}]}]""")!.AsArray();
+        var correctionMessages = initialMessages.DeepClone().AsArray();
+        correctionMessages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "<table><tr>broken" });
+        correctionMessages.Add(new JsonObject { ["role"] = "user", ["content"] = "Return a complete replacement table." });
+        var prompts = new List<long>();
+        var cached = new List<long>();
+        var marker = Guid.NewGuid().ToString();
+        using var activity = new Activity("table-correction-test").Start();
+        activity.SetBaggage("table-correction-test", marker);
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == SnowShotTelemetry.Name &&
+                instrument.Name is "snowshot.chat.prompt_tokens" or "snowshot.chat.cached_prompt_tokens")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (Activity.Current?.GetBaggageItem("table-correction-test") != marker) return;
+            Assert.Equal(2, tags.Length);
+            Assert.Equal(Resources.QwenFlash, tags[0].Value);
+            Assert.Equal("aliyun", tags[1].Value);
+            (instrument.Name == "snowshot.chat.prompt_tokens" ? prompts : cached).Add(value);
+        });
+        listener.Start();
+        JsonElement? originalSent = null;
+        foreach (var messages in new[] { initialMessages, correctionMessages })
+        {
+            var resolved = Resolve(catalog, Resources.AiModel, messages.ToJsonString());
+            Assert.Equal(Resources.QwenFlash, resolved.ExecutionModel);
+            var authorized = PaidChatAuthorizer.Authorize(resolved, catalog, policy).Request;
+            using var authorizedJson = JsonDocument.Parse(authorized.Utf8Json);
+            Assert.True(JsonElement.DeepEquals(JsonSerializer.SerializeToElement(messages),
+                authorizedJson.RootElement.GetProperty("messages")));
+            const string frame = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2000,\"completion_tokens\":20,\"prompt_tokens_details\":{\"cached_tokens\":1500}}}\n\n";
+            using var handler = new ResponseHandler("data: {\"choices\":[{\"delta\":{\"content\":\"<table><tr>broken\"}}]}\n\n" +
+                frame + frame + (truncated ? "" : "data: [DONE]\n\n"));
+            using var registry = new Registry(handler);
+            var provider = new OpenAiChatClient(registry, new(), catalog, policy,
+                new DependencyHealth(TimeProvider.System), TimeProvider.System);
+            var events = new List<ChatProviderEvent>();
+            await foreach (var value in provider.StreamAsync(new(Handle(policy, resolved.ExecutionModel), authorized,
+                catalog.Selections(resolved.ExecutionModel)[0], Guid.NewGuid().ToString(), "trace", 1,
+                Guid.CreateVersion7(), DateTimeOffset.UtcNow), TestContext.Current.CancellationToken))
+            {
+                events.Add(value);
+                // Disconnect after repeated usage frames, before the terminal event.
+                // Disposing the iterator must still account for this dispatch exactly once.
+                if (interrupted && events.Count == 3) break;
+            }
+            Assert.IsType<ChatProviderEvent.Frame>(events[0]);
+            var cost = policy.PricingFor(resolved.ExecutionModel)!.Tariff.Calculate(2000, 20, 1500);
+            if (interrupted)
+                Assert.All(events, value => Assert.IsType<ChatProviderEvent.Frame>(value));
+            else if (truncated)
+                Assert.Equal(cost, Assert.Single(events.OfType<ChatProviderEvent.Failure>()).Attempt.Cost);
+            else
+                Assert.Equal(cost, Assert.Single(events.OfType<ChatProviderEvent.Terminal>()).Attempt.Cost);
+            using var sent = JsonDocument.Parse(handler.Payload!);
+            var sentMessages = sent.RootElement.GetProperty("messages");
+            Assert.Equal(Resources.QwenFlash, sent.RootElement.GetProperty("model").GetString());
+            Assert.True(sent.RootElement.GetProperty("stream_options").GetProperty("include_usage").GetBoolean());
+            if (originalSent is null) originalSent = sentMessages.Clone();
+            else
+            {
+                Assert.Equal(4, sentMessages.GetArrayLength());
+                for (var index = 0; index < 2; index++)
+                    Assert.True(JsonElement.DeepEquals(originalSent.Value[index], sentMessages[index]));
+            }
+        }
+        Assert.Equal(new long[] { 2000, 2000 }, prompts);
+        Assert.Equal(new long[] { 1500, 1500 }, cached);
     }
 
     private static ChatCommand Resolve(ProviderModelCatalog catalog, string id, string messages) =>

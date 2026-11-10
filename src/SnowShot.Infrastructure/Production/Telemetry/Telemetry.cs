@@ -16,6 +16,8 @@ public static class SnowShotTelemetry
     public static readonly Counter<long> RenewedLeases = Meter.CreateCounter<long>("snowshot.leases.renewed");
     public static readonly Counter<long> LostLeases = Meter.CreateCounter<long>("snowshot.leases.lost");
     public static readonly Counter<long> ProviderAttempts = Meter.CreateCounter<long>("snowshot.provider.attempts");
+    public static readonly Counter<long> ChatPromptTokens = Meter.CreateCounter<long>("snowshot.chat.prompt_tokens");
+    public static readonly Counter<long> ChatCachedPromptTokens = Meter.CreateCounter<long>("snowshot.chat.cached_prompt_tokens");
     public static readonly Histogram<double> ProviderLatencyMilliseconds = Meter.CreateHistogram<double>("snowshot.provider.latency.ms");
     public static readonly Counter<long> PublicCost = Meter.CreateCounter<long>("snowshot.cost.public.nanoyuan");
     public static readonly Counter<long> OperatorCost = Meter.CreateCounter<long>("snowshot.cost.operator.nanoyuan");

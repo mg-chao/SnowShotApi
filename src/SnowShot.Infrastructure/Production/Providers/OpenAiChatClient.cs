@@ -28,6 +28,7 @@ public sealed class OpenAiChatClient(
         var request = command.Request;
         var id = command.AttemptId;
         var started = command.AttemptStartedAt;
+        ChatUsage? observedUsage = null;
         var access = catalog.Get(command.Access.LogicalModel, command.Access.AccessId);
         if (command.AttemptNumber > 1) SnowShotTelemetry.ProviderRetries.Add(1,
             new("kind", "chat"), new("model", access.Selection.LogicalModel), new("provider", access.Selection.Provider));
@@ -56,104 +57,120 @@ public sealed class OpenAiChatClient(
         }
         if (sendFailure is not null) { yield return sendFailure; yield break; }
         var deliveredContentChars = 0L;
-        using (var receivedResponse = response!)
+        try
         {
-            if (!receivedResponse.IsSuccessStatusCode)
+            using (var receivedResponse = response!)
             {
-                dependencyHealth.Report("chat_provider", false);
-                await using var error = await receivedResponse.Content.ReadAsStreamAsync(cancellationToken);
-                try { _ = await BoundedStreams.ReadAllAsync(error, options.MaximumErrorBodyBytes, cancellationToken); } catch (InvalidDataException) { }
-                var status = (int)receivedResponse.StatusCode;
-                var retryable = status is 408 or 429 || status is >= 500 and <= 599;
-                // A rejected request never reached model execution (exact zero cost); a
-                // timeout or server error may have executed the transmitted prompt, so the
-                // prompt is billed as an estimate.
-                yield return status is 408 or >= 500 and <= 599
-                    ? Failure($"provider_http_{status}", status, null, CostBasis.Estimated,
-                        AttemptDispatchState.Dispatched, retryable, policy.Estimation.EstimateInputTokens(payload.Length), 0)
-                    : Failure($"provider_http_{status}", status, null, CostBasis.Exact,
-                        AttemptDispatchState.Dispatched, retryable);
-                yield break;
-            }
-            await using var stream = await receivedResponse.Content.ReadAsStreamAsync(cancellationToken);
-            var reader = new BoundedLineReader(stream, options.MaximumSseLineBytes);
-            ChatUsage? usage = null;
-            var sawDone = false;
-            var delivered = false;
-            while (true)
-            {
-                string? line;
-                ChatProviderEvent.Failure? readFailure = null;
-                try { line = await reader.ReadLineAsync(cancellationToken); }
-                catch (InvalidDataException)
+                if (!receivedResponse.IsSuccessStatusCode)
                 {
                     dependencyHealth.Report("chat_provider", false);
-                    await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
-                    readFailure = usage is not null
-                        ? Failure("invalid_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, false)
-                        : EstimatedStreamFailure("invalid_stream", false);
-                    line = null;
+                    await using var error = await receivedResponse.Content.ReadAsStreamAsync(cancellationToken);
+                    try { _ = await BoundedStreams.ReadAllAsync(error, options.MaximumErrorBodyBytes, cancellationToken); } catch (InvalidDataException) { }
+                    var status = (int)receivedResponse.StatusCode;
+                    var retryable = status is 408 or 429 || status is >= 500 and <= 599;
+                    // A rejected request never reached model execution (exact zero cost); a
+                    // timeout or server error may have executed the transmitted prompt, so the
+                    // prompt is billed as an estimate.
+                    yield return status is 408 or >= 500 and <= 599
+                        ? Failure($"provider_http_{status}", status, null, CostBasis.Estimated,
+                            AttemptDispatchState.Dispatched, retryable, policy.Estimation.EstimateInputTokens(payload.Length), 0)
+                        : Failure($"provider_http_{status}", status, null, CostBasis.Exact,
+                            AttemptDispatchState.Dispatched, retryable);
+                    yield break;
                 }
-                if (readFailure is not null) { yield return readFailure; yield break; }
-                if (line is null) break;
-                if (line.Length == 0 || line.StartsWith(':')) continue;
-                if (!line.StartsWith("data:", StringComparison.Ordinal))
+                await using var stream = await receivedResponse.Content.ReadAsStreamAsync(cancellationToken);
+                var reader = new BoundedLineReader(stream, options.MaximumSseLineBytes);
+                ChatUsage? usage = null;
+                var sawDone = false;
+                var delivered = false;
+                while (true)
+                {
+                    string? line;
+                    ChatProviderEvent.Failure? readFailure = null;
+                    try { line = await reader.ReadLineAsync(cancellationToken); }
+                    catch (InvalidDataException)
+                    {
+                        dependencyHealth.Report("chat_provider", false);
+                        await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
+                        readFailure = usage is not null
+                            ? Failure("invalid_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, false)
+                            : EstimatedStreamFailure("invalid_stream", false);
+                        line = null;
+                    }
+                    if (readFailure is not null) { yield return readFailure; yield break; }
+                    if (line is null) break;
+                    if (line.Length == 0 || line.StartsWith(':')) continue;
+                    if (!line.StartsWith("data:", StringComparison.Ordinal))
+                    {
+                        await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
+                        yield return usage is not null
+                            ? Failure("invalid_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, false)
+                            : EstimatedStreamFailure("invalid_stream", false);
+                        yield break;
+                    }
+                    var data = line[5..].TrimStart();
+                    if (data == "[DONE]") { sawDone = true; continue; }
+                    byte[] frame;
+                    ChatProviderEvent.Failure? parseFailure = null;
+                    try
+                    {
+                        using var document = JsonDocument.Parse(data);
+                        var root = document.RootElement;
+                        if (root.ValueKind != JsonValueKind.Object)
+                            throw new InvalidDataException("A chat stream frame must be an object.");
+                        var parsedUsage = OpenAiUsage.Read(root);
+                        if (parsedUsage is not null)
+                        {
+                            _ = Cost(parsedUsage.PromptTokens, parsedUsage.CompletionTokens, parsedUsage.CachedInputTokens);
+                            usage = parsedUsage;
+                            observedUsage = parsedUsage;
+                        }
+                        deliveredContentChars += ReadContentLength(root);
+                        frame = request.Model == Resources.AiModel
+                            ? RewriteResponseModel(root, request.RequestedModel) : Encoding.UTF8.GetBytes(data);
+                    }
+                    catch (Exception exception) when (exception is JsonException or InvalidDataException or OverflowException)
+                    {
+                        dependencyHealth.Report("chat_provider", false);
+                        await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
+                        parseFailure = usage is not null
+                            ? Failure("invalid_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, false)
+                            : EstimatedStreamFailure("invalid_stream", false);
+                        frame = [];
+                    }
+                    if (parseFailure is not null) { yield return parseFailure; yield break; }
+                    delivered = true;
+                    yield return new ChatProviderEvent.Frame(frame);
+                }
+                var succeeded = delivered && sawDone && usage is not null;
+                // A successful text request cannot establish that the vision route is
+                // healthy. The readiness probe evaluates all required execution routes.
+                if (!succeeded || catalog.ChatExecutionModels.Count() == 1)
+                    dependencyHealth.Report("chat_provider", succeeded);
+                if (!succeeded)
                 {
                     await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
                     yield return usage is not null
-                        ? Failure("invalid_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, false)
-                        : EstimatedStreamFailure("invalid_stream", false);
+                        ? Failure("truncated_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, !delivered)
+                        : EstimatedStreamFailure("truncated_stream", !delivered);
                     yield break;
                 }
-                var data = line[5..].TrimStart();
-                if (data == "[DONE]") { sawDone = true; continue; }
-                byte[] frame;
-                ChatProviderEvent.Failure? parseFailure = null;
-                try
-                {
-                    using var document = JsonDocument.Parse(data);
-                    var root = document.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                        throw new InvalidDataException("A chat stream frame must be an object.");
-                    var parsedUsage = OpenAiUsage.Read(root);
-                    if (parsedUsage is not null)
-                    {
-                        _ = Cost(parsedUsage.PromptTokens, parsedUsage.CompletionTokens, parsedUsage.CachedInputTokens);
-                        usage = parsedUsage;
-                    }
-                    deliveredContentChars += ReadContentLength(root);
-                    frame = request.Model == Resources.AiModel
-                        ? RewriteResponseModel(root, request.RequestedModel) : Encoding.UTF8.GetBytes(data);
-                }
-                catch (Exception exception) when (exception is JsonException or InvalidDataException or OverflowException)
-                {
-                    dependencyHealth.Report("chat_provider", false);
-                    await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
-                    parseFailure = usage is not null
-                        ? Failure("invalid_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, false)
-                        : EstimatedStreamFailure("invalid_stream", false);
-                    frame = [];
-                }
-                if (parseFailure is not null) { yield return parseFailure; yield break; }
-                delivered = true;
-                yield return new ChatProviderEvent.Frame(frame);
+                await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.Success);
+                yield return new ChatProviderEvent.Terminal(usage, true, CostBasis.Exact, "success",
+                    Attempt("success", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched));
             }
-            var succeeded = delivered && sawDone && usage is not null;
-            // A successful text request cannot establish that the vision route is
-            // healthy. The readiness probe evaluates all required execution routes.
-            if (!succeeded || catalog.ChatExecutionModels.Count() == 1)
-                dependencyHealth.Report("chat_provider", succeeded);
-            if (!succeeded)
+        }
+        finally
+        {
+            // Usage frames are cumulative and may be repeated. Record the last validated usage
+            // once per dispatch, including disposal after a failed or cancelled stream.
+            if (observedUsage is not null)
             {
-                await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.TransientFailure);
-                yield return usage is not null
-                    ? Failure("truncated_stream", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched, !delivered)
-                    : EstimatedStreamFailure("truncated_stream", !delivered);
-                yield break;
+                SnowShotTelemetry.ChatPromptTokens.Add(observedUsage.PromptTokens,
+                    new("model", access.Selection.LogicalModel), new("provider", access.Selection.Provider));
+                SnowShotTelemetry.ChatCachedPromptTokens.Add(observedUsage.CachedInputTokens,
+                    new("model", access.Selection.LogicalModel), new("provider", access.Selection.Provider));
             }
-            await clients.ReportAsync(access.Selection, ProviderCircuitOutcome.Success);
-            yield return new ChatProviderEvent.Terminal(usage, true, CostBasis.Exact, "success",
-                Attempt("success", null, usage, CostBasis.Exact, AttemptDispatchState.Dispatched));
         }
 
         // The stream was dispatched and content was observed, but the provider never sent

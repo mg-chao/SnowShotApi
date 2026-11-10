@@ -211,6 +211,7 @@ internal sealed class FakeChatClient : IChatProviderClient
     public bool ThrowAfterFrame { get; set; }
     public bool TruncateAfterFrames { get; set; }
     public bool FailFirstAttempt { get; set; }
+    public Task? ContinueAfterFirstFrame { get; set; }
 
     public async IAsyncEnumerable<ChatProviderEvent> StreamAsync(ChatProviderCommand command,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
@@ -228,6 +229,8 @@ internal sealed class FakeChatClient : IChatProviderClient
         }
         yield return new ChatProviderEvent.Frame(System.Text.Encoding.UTF8.GetBytes("{\"id\":\"chat-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"));
         await Task.Yield();
+        if (ContinueAfterFirstFrame is { } continuation)
+            await continuation.WaitAsync(cancellationToken);
         if (ThrowAfterFrame) throw new InvalidOperationException("Simulated post-frame failure.");
         if (TruncateAfterFrames)
         {
