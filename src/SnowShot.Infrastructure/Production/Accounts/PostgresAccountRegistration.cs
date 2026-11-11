@@ -35,11 +35,9 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
         await using (var preflight = await store.OpenAsync(token))
         {
             var normalized = AccountRules.NormalizeUsername(command.Username);
-            var now = clock.GetUtcNow();
-            if (await (from claim in preflight.AccountUsernameClaims
-                       join request in preflight.AccountPurchaseRequests on claim.RequestId equals request.Id
-                       where claim.NormalizedUsername == normalized && (request.State != "awaiting_payment" || request.ExpiresAt > now)
-                       select claim).AnyAsync(token))
+            var due = PostgresPurchaseRequests.DueRequests(preflight, clock.GetUtcNow());
+            if (await preflight.AccountUsernameClaims.AnyAsync(claim => claim.NormalizedUsername == normalized &&
+                !due.Any(request => request.Id == claim.RequestId), token))
                 throw new AccountException("username_unavailable", "This username is already in use or temporarily reserved.", 409);
         }
         var requestId = Guid.CreateVersion7();
@@ -49,13 +47,12 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
         // PasswordHasher does not use the user argument. Derive once, before
         // acquiring the identity gate and before execution-strategy retries.
         var passwordHash = passwords.HashPassword(null!, command.Password);
-        return await store.ExecuteAsync(async (db, now) =>
+        return await store.ExecuteIdentityChangeAsync(async (db, now) =>
         {
-            await AccountSynchronization.ChangeIdentityAsync(db, token);
             var committed = await db.AccountPurchaseRequests.AsNoTracking().SingleOrDefaultAsync(x => x.Id == requestId && x.AccountId == accountId && x.Purpose == "registration", token);
             if (committed?.ProofHash is { } committedProof && CryptographicOperations.FixedTimeEquals(committedProof, AccountSecrets.Hash(proof)))
                 return requests.View(committed, command.Username, now, true, proof);
-            await PostgresPurchaseRequests.ExpireRequestsAsync(db, now, token);
+            await PostgresPurchaseRequests.ExpireRequestsAsync(db, token);
             var normalized = AccountRules.NormalizeUsername(command.Username);
             if (await db.AccountUsernameClaims.AnyAsync(x => x.NormalizedUsername == normalized, token))
                 throw new AccountException("username_unavailable", "This username is already in use or temporarily reserved.", 409);
@@ -87,14 +84,19 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
     public async Task<AccountPurchaseRequest> RegistrationAsync(Guid requestId, string proof, bool refresh, CancellationToken token)
     {
         await requests.CheckProofAsync(requestId, proof, token);
-        if (refresh) await payments.RefreshRequestPaymentAsync(requestId, token);
         await requests.ExpireDueRequestsAsync(requestId, token);
+        if (refresh) await payments.RefreshRequestPaymentAsync(requestId, token);
         return await store.ExecuteAsync(async (db, now) =>
         {
             await AccountSynchronization.ReadIdentityAsync(db, token);
             var request = await db.AccountPurchaseRequests.SingleAsync(x => x.Id == requestId, token);
             var account = await db.Accounts.SingleAsync(x => x.Id == request.AccountId, token);
-            return requests.View(request, account.Username, now);
+            var view = requests.View(request, account.Username, now);
+            if (!AccountPurchaseLifecycle.HasRetainedRegistrationOrder(request)) return view;
+            var order = await db.AccountPaymentOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.OrderId, token);
+            if (order is null) return view;
+            var orderState = await AccountPurchaseLifecycle.ReportedOrderStateAsync(db, order, token);
+            return view with { State = ReportedRegistrationState(request, orderState), OrderState = orderState };
         }, token);
     }
     public async Task<AccountPurchaseRequest> TopUpAsync(AccountSessionIdentity identity, CancellationToken token)
@@ -163,9 +165,24 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
             await AccountSynchronization.ReadIdentityAsync(db, token);
             var request = await db.AccountPurchaseRequests.SingleOrDefaultAsync(x => x.Id == requestId, token) ?? throw NotFound();
             var username = await db.Accounts.Where(x => x.Id == request.AccountId).Select(x => x.Username).SingleAsync(token);
+            if (AccountPurchaseLifecycle.HasRetainedRegistrationOrder(request))
+            {
+                var retainedOrder = identity?.OpenId is { } payer
+                    ? await db.AccountPaymentOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.OrderId && x.OpenId == payer, token)
+                    : null;
+                var orderState = retainedOrder is null ? null : await AccountPurchaseLifecycle.ReportedOrderStateAsync(db, retainedOrder, token);
+                return requests.PublicView(request, username, now, retainedOrder is not null) with
+                {
+                    State = ReportedRegistrationState(request, orderState),
+                    OrderState = orderState
+                };
+            }
             var owns = identity?.AccountId == request.AccountId || (identity?.OpenId is not null &&
                 (request.PayerOpenId == identity.OpenId || await db.AccountPaymentOrders.AnyAsync(x => x.RequestId == requestId && x.OpenId == identity.OpenId, token)));
             return requests.PublicView(request, username, now, owns);
         }, token);
     }
+
+    private static string ReportedRegistrationState(AccountPurchaseRequestEntity request, string? orderState) =>
+        request.State == "failed" && orderState == "reconciliation_required" ? orderState : request.State;
 }

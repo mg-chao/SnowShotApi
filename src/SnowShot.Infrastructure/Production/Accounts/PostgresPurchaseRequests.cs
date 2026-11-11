@@ -26,26 +26,42 @@ internal sealed class PostgresPurchaseRequests(PostgresAccountStore store, IWech
     {
         await using var read = await store.OpenAsync(token);
         var now = clock.GetUtcNow();
-        if (!await read.AccountPurchaseRequests.AnyAsync(x => (requestId == null || x.Id == requestId) && x.State == "awaiting_payment" && x.ExpiresAt <= now, token)) return;
-        await store.ExecuteAsync(async (db, databaseNow) =>
+        if (!await DueRequests(read, now).AnyAsync(x => requestId == null || x.Id == requestId, token)) return;
+        await store.ExecuteIdentityChangeAsync(async (db, _) =>
         {
-            await AccountSynchronization.ChangeIdentityAsync(db, token);
-            await ExpireRequestsAsync(db, databaseNow, token, requestId);
+            await ExpireRequestsAsync(db, token, requestId);
             return true;
         }, token);
     }
 
-    internal static async Task ExpireRequestsAsync(SnowShotDbContext db, DateTimeOffset now, CancellationToken token, Guid? requestId = null)
+    internal static IQueryable<AccountPurchaseRequestEntity> DueRequests(SnowShotDbContext db, DateTimeOffset now) =>
+        db.AccountPurchaseRequests.Where(x => x.ExpiresAt <= now && (x.State == "awaiting_payment" ||
+            (x.Purpose == "registration" && x.OrderId != null && x.FulfilledAt == null &&
+             (x.State == "payment_pending" || x.State == "reconciliation_required" || x.State == "failed" ||
+              (x.State == "expired" && db.AccountPayerClaims.Any(claim => claim.RequestId == x.Id))))));
+
+    internal static async Task ExpireRequestsAsync(SnowShotDbContext db, CancellationToken token, Guid? requestId = null,
+        string? payerOpenId = null)
     {
+        // The order retains its original payer. The expired code no longer reserves that payer.
         await db.Database.ExecuteSqlInterpolatedAsync($"""
-            DELETE FROM snowshot.account_username_claims AS claim USING snowshot.account_purchase_requests AS request
-            WHERE claim."RequestId"=request."Id" AND request."State"='awaiting_payment' AND request."ExpiresAt"<={now}
-              AND ({requestId}::uuid IS NULL OR request."Id"={requestId});
-            DELETE FROM snowshot.account_payer_claims AS claim USING snowshot.account_purchase_requests AS request
-            WHERE claim."RequestId"=request."Id" AND request."State"='awaiting_payment' AND request."ExpiresAt"<={now}
-              AND ({requestId}::uuid IS NULL OR request."Id"={requestId});
-            UPDATE snowshot.account_purchase_requests SET "State"='expired' WHERE "State"='awaiting_payment' AND "ExpiresAt"<={now}
-              AND ({requestId}::uuid IS NULL OR "Id"={requestId})
+            WITH expired AS (
+                UPDATE snowshot.account_purchase_requests
+                SET "State"='expired', "CodeImage"=NULL
+                WHERE "ExpiresAt"<=statement_timestamp()
+                  AND (({requestId}::uuid IS NULL AND {payerOpenId}::text IS NULL) OR "Id"={requestId}
+                       OR EXISTS (SELECT 1 FROM snowshot.account_payer_claims AS payer
+                                  WHERE payer."OpenId"={payerOpenId} AND payer."RequestId"=account_purchase_requests."Id"))
+                  AND ("State"='awaiting_payment' OR ("Purpose"='registration' AND "OrderId" IS NOT NULL AND "FulfilledAt" IS NULL
+                       AND ("State" IN ('payment_pending', 'reconciliation_required', 'failed') OR
+                            ("State"='expired' AND EXISTS (SELECT 1 FROM snowshot.account_payer_claims AS claim
+                                                           WHERE claim."RequestId"=account_purchase_requests."Id")))))
+                RETURNING "Id"
+            ), released_payers AS (
+                DELETE FROM snowshot.account_payer_claims AS claim USING expired
+                WHERE claim."RequestId"=expired."Id"
+            )
+            DELETE FROM snowshot.account_username_claims AS claim USING expired WHERE claim."RequestId"=expired."Id"
             """, token);
     }
     internal AccountPurchaseRequest View(AccountPurchaseRequestEntity request, string username, DateTimeOffset now, bool image = false, string? proof = null) =>
@@ -67,7 +83,8 @@ internal sealed class PostgresPurchaseRequests(PostgresAccountStore store, IWech
             platform.PaymentsAvailable, owns ? request.OrderId : null, CompletionKind(request));
 
     internal static string? VisibleUsername(AccountPurchaseRequestEntity request, string username) =>
-        request.Purpose == "mini_registration" && request.FulfilledAt is null ? null : username;
+        (request.Purpose == "mini_registration" && request.FulfilledAt is null) || AccountPurchaseLifecycle.IsExpiredRegistration(request)
+            ? null : username;
 
     internal static string? CompletionKind(AccountPurchaseRequestEntity request) =>
         request.CompletionKind ?? (request.State == "fulfilled" && request.OrderId is not null ? "payment" : null);

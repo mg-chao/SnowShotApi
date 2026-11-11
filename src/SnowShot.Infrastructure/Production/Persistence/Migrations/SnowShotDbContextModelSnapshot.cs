@@ -172,6 +172,9 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
                     b.Property<Guid?>("CheckoutAttemptId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("ClosedWithPositivePaidFee")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 

@@ -12,7 +12,7 @@ public sealed class MigrationTests
     {
         using var context = Context();
         Assert.False(context.Database.HasPendingModelChanges());
-        Assert.Equal(14, context.Database.GetMigrations().Count());
+        Assert.Equal(15, context.Database.GetMigrations().Count());
     }
 
     [Fact]
@@ -59,6 +59,7 @@ public sealed class MigrationTests
         Assert.Contains("MerchantOrderId", script, StringComparison.Ordinal);
         Assert.Contains("RoutingMetadataComplete", script, StringComparison.Ordinal);
         Assert.Contains("ix_account_platform_events_unrouted_refunds", script, StringComparison.Ordinal);
+        Assert.Contains("ADD \"ClosedWithPositivePaidFee\" boolean NOT NULL DEFAULT FALSE", script, StringComparison.OrdinalIgnoreCase);
     }
 
     private static SnowShotDbContext Context() => new(new DbContextOptionsBuilder<SnowShotDbContext>()

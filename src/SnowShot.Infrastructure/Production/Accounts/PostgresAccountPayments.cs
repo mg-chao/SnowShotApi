@@ -19,10 +19,11 @@ internal sealed partial class PostgresAccountPayments(PostgresAccountStore store
         await RefreshPaymentAsync(orderId, token);
         await using var read = await store.OpenAsync(token);
         var order = await read.AccountPaymentOrders.SingleAsync(x => x.Id == orderId, token);
+        if (order.State == AccountPurchaseLifecycle.Refunded) return new(order.Id, order.RequestId, order.State, "completed");
         var refunds = await read.AccountRefunds.Where(x => x.OrderId == orderId).Select(x => x.State).ToListAsync(token);
         var refundState = refunds.Contains("processing", StringComparer.Ordinal) ? "processing" :
             refunds.Contains("failed", StringComparer.Ordinal) ? "failed" : refunds.Count > 0 ? "completed" : null;
-        return new(order.Id, order.RequestId, order.State, refundState);
+        return new(order.Id, order.RequestId, await AccountPurchaseLifecycle.ReportedOrderStateAsync(read, order, token), refundState);
     }
     internal async Task RefreshRequestPaymentAsync(Guid requestId, CancellationToken token)
     {
@@ -32,11 +33,16 @@ internal sealed partial class PostgresAccountPayments(PostgresAccountStore store
     }
     private async Task RefreshPaymentAsync(string orderId, CancellationToken token)
     {
-        if (!platform.ReconciliationAvailable) return;
         AccountPaymentOrderEntity? order;
         await using (var db = await store.OpenAsync(token))
+        {
             order = await db.AccountPaymentOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == orderId, token);
-        if (order is null) return;
+            if (order is null || order.State == AccountPurchaseLifecycle.Refunded) return;
+            if (!order.Fulfilled && (await AccountPurchaseLifecycle.RequiresClosureReconciliationAsync(db, order, token) ||
+                 (order.PaidFen is > 0 && await CompletedRefundAmountAsync(db, orderId, token) == order.PaidFen)) &&
+                await ReconcileRetainedPaymentAsync(order, token)) return;
+        }
+        if (!platform.ReconciliationAvailable) return;
         await using (var update = await store.OpenAsync(token))
         {
             var now = clock.GetUtcNow(); var before = now.AddSeconds(-3);
@@ -69,6 +75,10 @@ internal sealed partial class PostgresAccountPayments(PostgresAccountStore store
                 await AccountSynchronization.EvidenceAsync(db, "platform-payment", verified.TransactionId, token);
             var order = await db.AccountPaymentOrders.SingleOrDefaultAsync(x => x.Id == verified.OrderId, token);
             if (order is null) return false;
+            if (order.State == AccountPurchaseLifecycle.Refunded) return false;
+            if (!preservesIdentity && !order.Fulfilled && verified.State is ("paid" or "closed"))
+                await PostgresPurchaseRequests.ExpireRequestsAsync(db, token, order.RequestId,
+                    verified.State == "paid" ? order.OpenId : null);
             var request = await db.AccountPurchaseRequests.SingleAsync(x => x.Id == order.RequestId, token);
             var account = await db.Accounts.SingleAsync(x => x.Id == order.AccountId, token);
             if (account.DeletedAt is not null) return order.Fulfilled && order.State == "paid";
@@ -80,6 +90,13 @@ internal sealed partial class PostgresAccountPayments(PostgresAccountStore store
             order.VerifiedAt = now;
             if (verified.State == "closed" && !order.Fulfilled)
             {
+                // Retain a contradictory closure separately from verified payment evidence.
+                order.ClosedWithPositivePaidFee |= verified.PaidFen > 0;
+                if (await AccountPurchaseLifecycle.HasEvidenceAgainstUnpaidClosureAsync(db, order, token))
+                {
+                    await RetainPaymentForReconciliationAsync(db, order, request, token);
+                    return false;
+                }
                 AccountPurchaseLifecycle.CloseUnfulfilled(order, request);
                 await db.AccountPayerClaims.Where(x => x.RequestId == request.Id).ExecuteDeleteAsync(token);
                 if (!account.Active) await db.AccountUsernameClaims.Where(x => x.RequestId == request.Id).ExecuteDeleteAsync(token);
@@ -87,36 +104,49 @@ internal sealed partial class PostgresAccountPayments(PostgresAccountStore store
                 return true;
             }
             if (verified.State != "paid") return false;
-            if (verified.PaidFen <= 0 || verified.PaidFen > order.PriceFen || (verified.OrderFeeFen is not null && verified.OrderFeeFen != order.PriceFen) || string.IsNullOrWhiteSpace(verified.TransactionId))
-            { AccountPurchaseLifecycle.RequireReconciliation(order, request); return false; }
-            if (order.PlatformTransactionId is not null && order.PlatformTransactionId != verified.TransactionId)
-            { AccountPurchaseLifecycle.RequireReconciliation(order, request); return false; }
-            if (order.PaidFen is not null && order.PaidFen != verified.PaidFen)
+            if (!MatchesPaymentEvidence(order, verified))
             { AccountPurchaseLifecycle.RequireReconciliation(order, request); return false; }
             if (await db.AccountPaymentOrders.AnyAsync(x => x.Id != order.Id && x.PlatformTransactionId == verified.TransactionId, token))
             { AccountPurchaseLifecycle.RequireReconciliation(order, request); return false; }
             order.PaidFen = verified.PaidFen; order.PlatformTransactionId = verified.TransactionId; order.VerifiedAt = now;
-            if (await db.AccountRefunds.Where(x => x.OrderId == order.Id && x.State == "completed").SumAsync(x => (long)x.RefundFen, token) > verified.PaidFen)
+            var refundedFen = await CompletedRefundAmountAsync(db, order.Id, token);
+            if (refundedFen > verified.PaidFen ||
+                (!order.Fulfilled && refundedFen > 0 && !await UnappliedRefundsMatchPaymentAsync(db, order, token)))
             { AccountPurchaseLifecycle.RequireReconciliation(order, request); return false; }
+            if (!order.Fulfilled && refundedFen == verified.PaidFen && AccountPurchaseLifecycle.IsExpiredRegistration(request))
+            {
+                await CompleteRefundedRegistrationAsync(db, order, request, verified.PaidFen, now, token);
+                return false;
+            }
             order.State = "payment_pending";
             if (!order.Fulfilled)
             {
-                var claim = await db.AccountUsernameClaims.SingleOrDefaultAsync(x => x.NormalizedUsername == account.NormalizedUsername, token);
+                var expiredRegistration = AccountPurchaseLifecycle.IsExpiredRegistration(request);
+                var usernameClaims = db.AccountUsernameClaims.AsNoTracking().Where(x => x.NormalizedUsername == account.NormalizedUsername);
+                var claim = await usernameClaims.SingleOrDefaultAsync(token);
+                if (expiredRegistration && claim is not null && claim.AccountId != account.Id)
+                {
+                    await PostgresPurchaseRequests.ExpireRequestsAsync(db, token, claim.RequestId);
+                    claim = await usernameClaims.SingleOrDefaultAsync(token);
+                }
+                var usernameTaken = claim is not null && claim.AccountId != account.Id;
+                var useTemporaryAccount = !account.Active && (request.Purpose == "mini_registration" ||
+                    (expiredRegistration && (usernameTaken || account.PasswordHash.Length == 0 || request.ProofHash is null)));
                 var links = await db.AccountWechatLinks.Where(x => x.OpenId == order.OpenId || x.AccountId == account.Id).ToListAsync(token);
                 var provisional = await db.AccountPayerClaims.Where(x => x.OpenId == order.OpenId || x.AccountId == account.Id).ToListAsync(token);
                 // Top-ups keep identity unchanged. Missing established claims or
                 // links require reconciliation, never promotion under a shared gate.
                 if (request.Purpose == "top_up" && (claim?.AccountId != account.Id || links.Count != 1))
                 { AccountPurchaseLifecycle.RequireReconciliation(order, request); return false; }
-                if ((claim is not null && claim.AccountId != account.Id) || links.Any(x => x.OpenId != order.OpenId || x.AccountId != account.Id) ||
+                if ((usernameTaken && !(expiredRegistration && useTemporaryAccount)) || links.Any(x => x.OpenId != order.OpenId || x.AccountId != account.Id) ||
                     provisional.Any(x => x.OpenId != order.OpenId || x.AccountId != account.Id))
                 { AccountPurchaseLifecycle.RequireReconciliation(order, request); return false; }
-                if (request.Purpose == "mini_registration" && !account.Active)
+                if (useTemporaryAccount)
                 {
                     await db.AccountUsernameClaims.Where(x => x.AccountId == account.Id).ExecuteDeleteAsync(token);
-                    if (claim is not null) db.Entry(claim).State = EntityState.Detached;
                     account.Username = await PostgresPurchaseRequests.UnusedUsernameAsync(db, "wx_", token);
                     account.NormalizedUsername = AccountRules.NormalizeUsername(account.Username);
+                    account.PasswordHash = string.Empty;
                     account.IsTemporary = true;
                     claim = null;
                 }
@@ -128,8 +158,11 @@ internal sealed partial class PostgresAccountPayments(PostgresAccountStore store
                 var entry = await db.AccountFinancialEntries.SingleAsync(x => x.Id == "topup:" + order.Id, token);
                 entry.AmountNanoYuan = checked(verified.PaidFen * 10_000_000L); entry.Status = "completed"; entry.OccurredAt = now;
                 account.Active = true; account.ActivatedAt ??= now; order.Fulfilled = true;
-                request.FulfilledAt = now;
-                request.CompletionKind = "payment";
+                if (!expiredRegistration || !useTemporaryAccount)
+                {
+                    request.FulfilledAt = now;
+                    request.CompletionKind = "payment";
+                }
                 await db.AccountPayerClaims.Where(x => x.RequestId == request.Id).ExecuteDeleteAsync(token);
                 await ApplyRefundsAsync(db, order, request, wallet, now, token);
             }
@@ -141,11 +174,66 @@ internal sealed partial class PostgresAccountPayments(PostgresAccountStore store
         }, token);
     }
 
+    private static bool MatchesPaymentEvidence(AccountPaymentOrderEntity order, VerifiedVirtualOrder payment) =>
+        payment.State == "paid" && payment.OrderId == order.Id && payment.OpenId == order.OpenId &&
+        payment.PaidFen > 0 && payment.PaidFen <= order.PriceFen &&
+        (payment.OrderFeeFen is null || payment.OrderFeeFen == order.PriceFen) &&
+        !string.IsNullOrWhiteSpace(payment.TransactionId) &&
+        (order.PlatformTransactionId is null || order.PlatformTransactionId == payment.TransactionId) &&
+        (order.PaidFen is null || order.PaidFen == payment.PaidFen);
+
     private async Task NotifyDeliveryAsync(string orderId, CancellationToken token)
     {
         var lease = await retryQueue.ClaimAsync(AccountRetryKind.Delivery, orderId, token);
         if (lease is not null) await ExecuteRetryAsync(lease, token);
     }
+
+    private Task<bool> ReconcileRetainedPaymentAsync(AccountPaymentOrderEntity observed, CancellationToken token) =>
+        store.ExecuteAsync(async (db, now) =>
+        {
+            await AccountSynchronization.ReadIdentityAsync(db, token);
+            await AccountSynchronization.AccountAsync(db, observed.AccountId, token);
+            var order = await db.AccountPaymentOrders.SingleAsync(x => x.Id == observed.Id, token);
+            if (order.State == AccountPurchaseLifecycle.Refunded) return true;
+            if (order.Fulfilled) return false;
+            var request = await db.AccountPurchaseRequests.SingleAsync(x => x.Id == order.RequestId, token);
+            if (order.PaidFen is > 0 and var paidFen && !string.IsNullOrWhiteSpace(order.PlatformTransactionId) &&
+                AccountPurchaseLifecycle.IsExpiredRegistration(request) &&
+                await CompletedRefundAmountAsync(db, order.Id, token) == paidFen &&
+                await UnappliedRefundsMatchPaymentAsync(db, order, token))
+            {
+                await CompleteRefundedRegistrationAsync(db, order, request, paidFen, now, token);
+                return true;
+            }
+            if (await AccountPurchaseLifecycle.RequiresClosureReconciliationAsync(db, order, token))
+                await RetainPaymentForReconciliationAsync(db, order, request, token);
+            return false;
+        }, token);
+
+    private static async Task RetainPaymentForReconciliationAsync(SnowShotDbContext db, AccountPaymentOrderEntity order,
+        AccountPurchaseRequestEntity request, CancellationToken token)
+    {
+        AccountPurchaseLifecycle.RequireReconciliation(order, request);
+        var entry = await db.AccountFinancialEntries.SingleAsync(x => x.Id == "topup:" + order.Id, token);
+        entry.Status = "pending";
+    }
+
+    private static Task<long> CompletedRefundAmountAsync(SnowShotDbContext db, string orderId, CancellationToken token) =>
+        db.AccountRefunds.Where(x => x.OrderId == orderId && x.State == "completed").SumAsync(x => (long)x.RefundFen, token);
+
+    private static async Task CompleteRefundedRegistrationAsync(SnowShotDbContext db, AccountPaymentOrderEntity order,
+        AccountPurchaseRequestEntity request, int paidFen, DateTimeOffset now, CancellationToken token)
+    {
+        AccountPurchaseLifecycle.CompleteRefundedRegistration(order, request);
+        // The full verified refund offsets the payment without ever crediting or debiting a wallet.
+        await db.AccountRefunds.Where(x => x.OrderId == order.Id && x.State == "completed" && !x.Applied)
+            .ExecuteUpdateAsync(set => set.SetProperty(x => x.Applied, true).SetProperty(x => x.UpdatedAt, now), token);
+        var entry = await db.AccountFinancialEntries.SingleAsync(x => x.Id == "topup:" + order.Id, token);
+        entry.AmountNanoYuan = checked(paidFen * MembershipRules.NanoYuanPerFen);
+        entry.Status = "completed";
+        entry.OccurredAt = now;
+    }
+
     private static async Task ApplyRefundsAsync(SnowShotDbContext db, AccountPaymentOrderEntity order, AccountPurchaseRequestEntity request, AccountWalletEntity wallet, DateTimeOffset now, CancellationToken token)
     {
         var refunds = await db.AccountRefunds.Where(x => x.OrderId == order.Id).OrderBy(x => x.Id).ToListAsync(token);

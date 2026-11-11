@@ -12,7 +12,7 @@ public sealed record AccountRegistrationRequest(
     [property: JsonPropertyName("captcha_id")] Guid CaptchaId,
     [property: JsonPropertyName("captcha_answer")] string? CaptchaAnswer);
 public sealed record AccountOrderRequest([property: JsonPropertyName("request_id")] Guid RequestId,
-    [property: JsonPropertyName("package_id")] string? PackageId,
+    [property: JsonPropertyName("package_id")] string? PackageId = null,
     [property: JsonPropertyName("checkout_attempt_id")] Guid? CheckoutAttemptId = null);
 public sealed record AccountDeletionRequest(
     [property: JsonPropertyName("confirmation")] string? Confirmation,

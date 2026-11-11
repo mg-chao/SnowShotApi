@@ -8,6 +8,48 @@ namespace SnowShotApi.Tests.Domain;
 public sealed partial class AccountLifecycleIntegrationTests
 {
     [Fact, Trait("Category", "Integration")]
+    public async Task CheckoutWaitingForIdentityLockCannotIssueAfterRegistrationExpires()
+    {
+        var f = Fixture();
+        var payer = await Mini(f);
+        var registration = await Register(f, Name());
+        await using var db = new SnowShotDbContext(f.Options);
+        var connection = new Npgsql.NpgsqlConnectionStringBuilder(db.Database.GetConnectionString())
+        {
+            ApplicationName = Guid.NewGuid().ToString("N")
+        };
+        var service = AccountTestServices.Create(new DistributedIntegrationTests.ContextFactory(
+            DistributedIntegrationTests.DatabaseOptions(connection.ConnectionString)), f.Platform, f.Secrets, TimeProvider.System, new());
+
+        await using var gate = new SnowShotDbContext(f.Options);
+        await using var transaction = await gate.Database.BeginTransactionAsync(Token);
+        await AccountSynchronization.ChangeIdentityAsync(gate, Token);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(4);
+        await db.AccountPurchaseRequests.Where(x => x.Id == registration.RequestId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ExpiresAt, deadline), Token);
+        var checkout = service.CreateOrderAsync(payer, registration.RequestId, "cny-9-9", Token, Guid.NewGuid());
+        bool waiting;
+        do
+        {
+            waiting = await db.Database.SqlQuery<bool>($"""
+                SELECT EXISTS (SELECT FROM pg_stat_activity WHERE application_name={connection.ApplicationName}
+                    AND wait_event_type='Lock' AND wait_event='advisory') AS "Value"
+                """).SingleAsync(Token);
+            if (!waiting) await Task.Delay(30, Token);
+        } while (!waiting && DateTimeOffset.UtcNow < deadline);
+        Assert.True(waiting && DateTimeOffset.UtcNow < deadline);
+        await Task.Delay(deadline - DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(100), Token);
+        await transaction.CommitAsync(Token);
+
+        var error = await Assert.ThrowsAsync<AccountException>(() => checkout.WaitAsync(TimeSpan.FromSeconds(10), Token));
+        Assert.Equal("request_expired", error.Code);
+        Assert.Equal("expired", await db.AccountPurchaseRequests.Where(x => x.Id == registration.RequestId)
+            .Select(x => x.State).SingleAsync(Token));
+        Assert.False(await db.AccountPaymentOrders.AnyAsync(x => x.RequestId == registration.RequestId, Token));
+        Assert.False(await db.AccountUsernameClaims.AnyAsync(x => x.RequestId == registration.RequestId, Token));
+    }
+
+    [Fact, Trait("Category", "Integration")]
     public async Task LostCheckoutHttpResponseRecoversTheSameAttemptAfterServiceRestart()
     {
         var f = Fixture(); var registration = await Register(f, Name()); var payer = await Mini(f);
@@ -26,6 +68,41 @@ public sealed partial class AccountLifecycleIntegrationTests
         var stored = Assert.Single(await db.AccountPaymentOrders.Where(x => x.RequestId == registration.RequestId).ToListAsync(Token));
         Assert.Equal(attempt, stored.CheckoutAttemptId);
         Assert.Single(await db.AccountFinancialEntries.Where(x => x.OrderId == issued.OrderId).ToListAsync(Token));
+    }
+
+    [Fact, Trait("Category", "Integration")]
+    public async Task CheckoutWithWithdrawnPackageCanReselectOnlyBeforeAnOrderIsIssued()
+    {
+        var f = Fixture(allowPaymentTesting: true);
+        var payer = await Mini(f);
+        var unissued = await Register(f, Name());
+        var issued = await Register(f, Name());
+        var issuedPayer = await Mini(f);
+        var issuedAttempt = Guid.NewGuid();
+        var originalOrder = await f.Service.CreateOrderAsync(issuedPayer, issued.RequestId, "cny-0-1", Token, issuedAttempt);
+        var restarted = AccountTestServices.Create(new DistributedIntegrationTests.ContextFactory(f.Options),
+            f.Platform, f.Secrets, TimeProvider.System, new());
+
+        var unissuedAttempt = Guid.NewGuid();
+        foreach (var package in new[] { "cny-0-1", "" })
+        {
+            var error = await Assert.ThrowsAsync<AccountException>(() =>
+                restarted.CreateOrderAsync(payer, unissued.RequestId, package, Token, unissuedAttempt));
+            Assert.Equal("checkout_not_issued", error.Code);
+
+            var recovery = await restarted.CreateOrderAsync(issuedPayer, issued.RequestId, package, Token, issuedAttempt);
+            Assert.Equal(originalOrder.OrderId, recovery.OrderId);
+            Assert.Null(recovery.PaymentParameters);
+        }
+        var legacyError = await Assert.ThrowsAsync<AccountException>(() =>
+            restarted.CreateOrderAsync(payer, unissued.RequestId, "cny-0-1", Token));
+        Assert.Equal("package_unavailable", legacyError.Code);
+
+        await using var db = new SnowShotDbContext(f.Options);
+        Assert.False(await db.AccountPaymentOrders.AnyAsync(x => x.RequestId == unissued.RequestId, Token));
+        var replacement = await restarted.CreateOrderAsync(payer, unissued.RequestId, "cny-9-9", Token, Guid.NewGuid());
+        Assert.NotNull(replacement.PaymentParameters);
+        Assert.Single(await db.AccountPaymentOrders.Where(x => x.RequestId == issued.RequestId).ToListAsync(Token));
     }
 
     [Fact, Trait("Category", "Integration")]

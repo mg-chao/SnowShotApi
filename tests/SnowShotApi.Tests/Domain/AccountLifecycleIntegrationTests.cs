@@ -84,14 +84,14 @@ public sealed partial class AccountLifecycleIntegrationTests
         Assert.Null(repeated.PaymentParameters);
     }
 
-    private static string DeliveryPayload(string orderId, string openId, string platformId) => JsonSerializer.Serialize(new
+    private static string DeliveryPayload(string orderId, string openId, string platformId, string productId = "cny-9-9", int paid = 990) => JsonSerializer.Serialize(new
     {
         Event = "xpay_goods_deliver_notify",
         OpenId = openId,
         OutTradeNo = orderId,
         Env = 0,
         WeChatPayInfo = new { MchOrderNo = platformId },
-        GoodsInfo = new { ProductId = "cny-9-9", Quantity = 1, OrigPrice = 990, ActualPrice = 990, Attach = orderId }
+        GoodsInfo = new { ProductId = productId, Quantity = 1, OrigPrice = paid, ActualPrice = paid, Attach = orderId }
     });
 
     [Fact, Trait("Category", "Integration")]
@@ -166,19 +166,360 @@ public sealed partial class AccountLifecycleIntegrationTests
     }
 
     [Fact, Trait("Category", "Integration")]
-    public async Task PendingPaymentKeepsUsernameAndUnknownQueryDoesNotReleaseIt()
+    public async Task ExpiredRegistrationLatePaymentCreditsTemporaryAccountWhenUsernameWasReservedAgain()
     {
-        var f = Fixture(); var registration = await Register(f, Name()); var mini = await Mini(f);
-        var order = await f.Service.CreateOrderAsync(mini, registration.RequestId, "cny-9-9", Token);
+        var f = Fixture(); var registration = await Register(f, Name()); var originalPayer = await Mini(f);
+        var attemptId = Guid.NewGuid();
+        var order = await f.Service.CreateOrderAsync(originalPayer, registration.RequestId, "cny-9-9", Token, attemptId);
         await using (var db = new SnowShotDbContext(f.Options))
             await db.AccountPurchaseRequests.Where(x => x.Id == registration.RequestId).ExecuteUpdateAsync(x => x.SetProperty(y => y.ExpiresAt, DateTimeOffset.UtcNow.AddHours(-1)), Token);
+
+        var replacement = await Register(f, registration.Username!);
+        Assert.NotEqual(registration.RequestId, replacement.RequestId);
+        var replacementPayer = await Mini(f);
+        var replacementOrder = await f.Service.CreateOrderAsync(replacementPayer, replacement.RequestId, "cny-9-9", Token);
+        var replay = await Assert.ThrowsAsync<AccountException>(() =>
+            f.Service.CreateOrderAsync(originalPayer, registration.RequestId, "cny-9-9", Token, attemptId));
+        Assert.Equal("request_expired", replay.Code);
+        var retained = await f.Service.PublicRequestAsync(registration.RequestId, originalPayer, Token);
+        Assert.Equal("expired", retained.State);
+        Assert.Equal("payment_pending", retained.OrderState);
+        Assert.Equal(order.OrderId, retained.OrderId);
+        var otherView = await f.Service.PublicRequestAsync(registration.RequestId, replacementPayer, Token);
+        Assert.Null(otherView.OrderId);
+        Assert.Null(otherView.OrderState);
         f.Platform.FailQueries = true;
         await Assert.ThrowsAsync<HttpRequestException>(() => f.Service.RegistrationAsync(registration.RequestId, registration.RegistrationProof!, true, Token));
+        f.Platform.FailQueries = false;
+        var payload = DeliveryPayload(order.OrderId, originalPayer.OpenId!, "wx-" + order.OrderId);
+        await f.Service.VerifyCallbackAsync("", "", "", null, payload, "", Token);
+        await f.Service.VerifyCallbackAsync("", "", "", null, " " + payload, "", Token);
+
         var status = await f.Service.RegistrationAsync(registration.RequestId, registration.RegistrationProof!, false, Token);
-        Assert.Equal("payment_pending", status.State);
+        Assert.Equal("expired", status.State);
         Assert.Equal(order.OrderId, status.OrderId);
-        var conflict = await Assert.ThrowsAsync<AccountException>(() => Register(f, registration.Username!));
+        Assert.Equal("paid", (await f.Service.PublicRequestAsync(registration.RequestId, originalPayer, Token)).OrderState);
+        var claim = await Assert.ThrowsAsync<AccountException>(() => f.Service.ClaimAsync(registration.RequestId, registration.RegistrationProof!, Token));
+        Assert.Equal("payment_not_received", claim.Code);
+
+        await f.Service.VerifyCallbackAsync("", "", "", null,
+            DeliveryPayload(replacementOrder.OrderId, replacementPayer.OpenId!, "wx-" + replacementOrder.OrderId), "", Token);
+        var replacementSession = await f.Service.ClaimAsync(replacement.RequestId, replacement.RegistrationProof!, Token);
+        var normalizedUsername = registration.Username!.ToUpperInvariant();
+        await using var read = new SnowShotDbContext(f.Options);
+        var originalAccountId = await read.AccountWechatLinks.Where(x => x.OpenId == originalPayer.OpenId).Select(x => x.AccountId).SingleAsync(Token);
+        var originalAccount = await read.Accounts.SingleAsync(x => x.Id == originalAccountId, Token);
+        Assert.True(originalAccount.IsTemporary);
+        Assert.StartsWith("wx_", originalAccount.Username);
+        Assert.Empty(originalAccount.PasswordHash);
+        Assert.NotEqual(replacementSession.AccountId, originalAccountId);
+        Assert.Equal(originalAccountId, await read.AccountPaymentOrders.Where(x => x.Id == order.OrderId && x.State == "paid")
+            .Select(x => x.AccountId).SingleAsync(Token));
+        Assert.Equal(replacementSession.AccountId, await read.AccountUsernameClaims.Where(x => x.NormalizedUsername == normalizedUsername)
+            .Select(x => x.AccountId).SingleAsync(Token));
+        Assert.Equal(9_900_000_000L, await read.AccountWallets.Where(x => x.AccountId == originalAccountId).Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+        Assert.Equal(9_900_000_000L, await read.AccountWallets.Where(x => x.AccountId == replacementSession.AccountId).Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+    }
+
+    [Theory, InlineData(false), InlineData(true), Trait("Category", "Integration")]
+    public async Task RegistrationClosurePreservesLatePaymentRecovery(bool closedBeforeDeadline)
+    {
+        var f = Fixture();
+        var username = Name();
+        var registration = await Register(f, username);
+        var payer = await Mini(f);
+        var order = await f.Service.CreateOrderAsync(payer, registration.RequestId, "cny-9-9", Token);
+        await using var db = new SnowShotDbContext(f.Options);
+        var originalRequest = db.AccountPurchaseRequests.Where(x => x.Id == registration.RequestId);
+        if (!closedBeforeDeadline)
+            await originalRequest.ExecuteUpdateAsync(s =>
+                s.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)), Token);
+
+        f.Platform.Orders[order.OrderId] = new(order.OrderId, payer.OpenId!, 0, "closed", null, [], 990);
+        Assert.Equal("closed", (await f.Service.RefreshOrderAsync(payer, order.OrderId, Token)).State);
+        var status = await f.Service.RegistrationAsync(registration.RequestId, registration.RegistrationProof!, false, Token);
+        Assert.Equal(closedBeforeDeadline ? "failed" : "expired", status.State);
+        Assert.Equal("closed", status.OrderState);
+        Assert.Equal(order.OrderId, status.OrderId);
+        var publicStatus = await f.Service.PublicRequestAsync(registration.RequestId, payer, Token);
+        Assert.Equal(status.State, publicStatus.State);
+        Assert.Equal("closed", publicStatus.OrderState);
+        Assert.Equal(order.OrderId, publicStatus.OrderId);
+        var otherStatus = await f.Service.PublicRequestAsync(registration.RequestId, await Mini(f), Token);
+        Assert.Null(otherStatus.OrderId);
+        Assert.Null(otherStatus.OrderState);
+
+        var replacement = await Register(f, username);
+        if (closedBeforeDeadline)
+            await originalRequest.ExecuteUpdateAsync(s =>
+                s.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)), Token);
+        await ReleaseQueryCooldown(f, order.OrderId);
+        f.Platform.Orders[order.OrderId] = new(order.OrderId, payer.OpenId!, 990, "paid", "wx-" + order.OrderId, [], 990, Delivered: true);
+        Assert.Equal("paid", (await f.Service.RefreshOrderAsync(payer, order.OrderId, Token)).State);
+        var payerStatus = await f.Service.PublicRequestAsync(registration.RequestId, payer, Token);
+        Assert.Equal("expired", payerStatus.State);
+        Assert.Equal("paid", payerStatus.OrderState);
+        var account = await (from link in db.AccountWechatLinks
+                             join value in db.Accounts on link.AccountId equals value.Id
+                             where link.OpenId == payer.OpenId
+                             select value).SingleAsync(Token);
+        Assert.True(account.IsTemporary);
+        Assert.Equal(9_900_000_000L, await db.AccountWallets.Where(x => x.AccountId == account.Id)
+            .Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+        Assert.True(await db.AccountUsernameClaims.AnyAsync(x => x.RequestId == replacement.RequestId, Token));
+    }
+
+    [Fact, Trait("Category", "Integration")]
+    public async Task ExpiredRegistrationLatePaymentRestoresAvailableUsernameAndOriginalCredentials()
+    {
+        var f = Fixture(); var username = Name(); var registration = await Register(f, username); var payer = await Mini(f);
+        var order = await f.Service.CreateOrderAsync(payer, registration.RequestId, "cny-9-9", Token);
+        await using (var db = new SnowShotDbContext(f.Options))
+            await db.AccountPurchaseRequests.Where(x => x.Id == registration.RequestId).ExecuteUpdateAsync(s =>
+                s.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)), Token);
+        Assert.Equal("expired", (await f.Service.PublicRequestAsync(registration.RequestId, payer, Token)).State);
+        var expired = await f.Service.RegistrationAsync(registration.RequestId, registration.RegistrationProof!, false, Token);
+        Assert.Equal(order.OrderId, expired.OrderId);
+        Assert.Equal("payment_pending", expired.OrderState);
+
+        var payload = DeliveryPayload(order.OrderId, payer.OpenId!, "wx-" + order.OrderId);
+        await f.Service.VerifyCallbackAsync("", "", "", null, payload, "", Token);
+        await f.Service.VerifyCallbackAsync("", "", "", null, " " + payload, "", Token);
+
+        var status = await f.Service.RegistrationAsync(registration.RequestId, registration.RegistrationProof!, false, Token);
+        Assert.Equal("fulfilled", status.State);
+        Assert.Equal(username, status.Username);
+        var claimed = await f.Service.ClaimAsync(registration.RequestId, registration.RegistrationProof!, Token);
+        var login = await f.Service.LoginAsync(username, "password-123", Guid.NewGuid().ToString(), Token);
+        Assert.Equal(claimed.AccountId, login.AccountId);
+        await using var read = new SnowShotDbContext(f.Options);
+        Assert.Equal(claimed.AccountId, await read.AccountWechatLinks.Where(x => x.OpenId == payer.OpenId)
+            .Select(x => x.AccountId).SingleAsync(Token));
+        Assert.Equal(9_900_000_000L, await read.AccountWallets.Where(x => x.AccountId == claimed.AccountId)
+            .Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+    }
+
+    [Theory, InlineData(false), InlineData(true), Trait("Category", "Integration")]
+    public async Task ExpiredPayerClaimForAnotherUsernameDoesNotBlockLatePayment(bool alreadyMarkedExpired)
+    {
+        var f = Fixture();
+        var payer = await Mini(f);
+        var original = await Register(f, Name());
+        var order = await f.Service.CreateOrderAsync(payer, original.RequestId, "cny-9-9", Token);
+        await using var db = new SnowShotDbContext(f.Options);
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await db.AccountPurchaseRequests.Where(x => x.Id == original.RequestId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ExpiresAt, deadline), Token);
+        var replacement = await Register(f, Name());
+        await f.Service.CreateOrderAsync(payer, replacement.RequestId, "cny-9-9", Token);
+        await db.AccountPurchaseRequests.Where(x => x.Id == replacement.RequestId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ExpiresAt, deadline)
+                .SetProperty(x => x.State, alreadyMarkedExpired ? "expired" : "payment_pending"), Token);
+
+        var payload = DeliveryPayload(order.OrderId, payer.OpenId!, "wx-" + order.OrderId);
+        await f.Service.VerifyCallbackAsync("", "", "", null, payload, "", Token);
+        Assert.Equal("fulfilled", (await f.Service.RegistrationAsync(original.RequestId, original.RegistrationProof!, false, Token)).State);
+        Assert.Equal("expired", await db.AccountPurchaseRequests.Where(x => x.Id == replacement.RequestId)
+            .Select(x => x.State).SingleAsync(Token));
+        Assert.False(await db.AccountPayerClaims.AnyAsync(x => x.RequestId == replacement.RequestId, Token));
+        Assert.False(await db.AccountUsernameClaims.AnyAsync(x => x.RequestId == replacement.RequestId, Token));
+        var claimed = await f.Service.ClaimAsync(original.RequestId, original.RegistrationProof!, Token);
+        Assert.Equal(9_900_000_000L, await db.AccountWallets.Where(x => x.AccountId == claimed.AccountId)
+            .Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+    }
+
+    [Theory, InlineData(false), InlineData(true), Trait("Category", "Integration")]
+    public async Task SameWechatCanPayNewRegistrationAndOlderPaymentRequiresReconciliation(bool previousExpiryKeptPayerClaim)
+    {
+        var f = Fixture(); var username = Name(); var first = await Register(f, username); var payer = await Mini(f);
+        var oldOrder = await f.Service.CreateOrderAsync(payer, first.RequestId, "cny-9-9", Token);
+        await using (var db = new SnowShotDbContext(f.Options))
+        {
+            await db.AccountPurchaseRequests.Where(x => x.Id == first.RequestId).ExecuteUpdateAsync(s =>
+                s.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)), Token);
+            if (previousExpiryKeptPayerClaim)
+            {
+                await db.AccountPurchaseRequests.Where(x => x.Id == first.RequestId).ExecuteUpdateAsync(s =>
+                    s.SetProperty(x => x.State, "expired"), Token);
+                await db.AccountUsernameClaims.Where(x => x.RequestId == first.RequestId).ExecuteDeleteAsync(Token);
+            }
+        }
+
+        var replacement = await Register(f, username);
+        var newOrder = await f.Service.CreateOrderAsync(payer, replacement.RequestId, "cny-29-9", Token);
+        Assert.NotEqual(oldOrder.OrderId, newOrder.OrderId);
+        if (previousExpiryKeptPayerClaim)
+            await f.Service.VerifyCallbackAsync("", "", "", null, DeliveryPayload(newOrder.OrderId, payer.OpenId!,
+                "wx-" + newOrder.OrderId, "cny-29-9", 2990), "", Token);
+
+        f.Platform.Orders[oldOrder.OrderId] = new(oldOrder.OrderId, payer.OpenId!, 990, "paid", "wx-" + oldOrder.OrderId, [], 990);
+        var oldStatus = await f.Service.RefreshOrderAsync(payer, oldOrder.OrderId, Token);
+        Assert.Equal("reconciliation_required", oldStatus.State);
+        Assert.Equal("expired", (await f.Service.PublicRequestAsync(first.RequestId, payer, Token)).State);
+        if (!previousExpiryKeptPayerClaim)
+            await f.Service.VerifyCallbackAsync("", "", "", null, DeliveryPayload(newOrder.OrderId, payer.OpenId!,
+                "wx-" + newOrder.OrderId, "cny-29-9", 2990), "", Token);
+
+        var claimed = await f.Service.ClaimAsync(replacement.RequestId, replacement.RegistrationProof!, Token);
+        await using var read = new SnowShotDbContext(f.Options);
+        var old = await read.AccountPaymentOrders.SingleAsync(x => x.Id == oldOrder.OrderId, Token);
+        Assert.False(old.Fulfilled);
+        Assert.Equal(990, old.PaidFen);
+        Assert.Equal(0L, await read.AccountWallets.Where(x => x.AccountId == old.AccountId).Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+        Assert.Equal(29_900_000_000L, await read.AccountWallets.Where(x => x.AccountId == claimed.AccountId).Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+        Assert.Equal(claimed.AccountId, await read.AccountWechatLinks.Where(x => x.OpenId == payer.OpenId)
+            .Select(x => x.AccountId).SingleAsync(Token));
+    }
+
+    [Theory, InlineData(false), InlineData(true), Trait("Category", "Integration")]
+    public async Task FullRefundOfExpiredRegistrationSettlesWithoutTouchingReplacementAccount(bool paidEvidenceAlreadyRecorded)
+    {
+        var f = Fixture(); var username = Name(); var first = await Register(f, username); var payer = await Mini(f);
+        var oldOrder = await f.Service.CreateOrderAsync(payer, first.RequestId, "cny-9-9", Token);
+        await using (var db = new SnowShotDbContext(f.Options))
+            await db.AccountPurchaseRequests.Where(x => x.Id == first.RequestId).ExecuteUpdateAsync(s =>
+                s.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)), Token);
+        var replacement = await Register(f, username);
+        var newOrder = await f.Service.CreateOrderAsync(payer, replacement.RequestId, "cny-9-9", Token);
+        await f.Service.VerifyCallbackAsync("", "", "", null, DeliveryPayload(newOrder.OrderId, payer.OpenId!,
+            "wx-" + newOrder.OrderId), "", Token);
+        var claimed = await f.Service.ClaimAsync(replacement.RequestId, replacement.RegistrationProof!, Token);
+        var transactionId = "wx-" + oldOrder.OrderId;
+        f.Platform.Orders[oldOrder.OrderId] = new(oldOrder.OrderId, payer.OpenId!, 990, "paid", transactionId, [], 990);
+
+        if (paidEvidenceAlreadyRecorded)
+        {
+            Assert.Equal("reconciliation_required", (await f.Service.RefreshOrderAsync(payer, oldOrder.OrderId, Token)).State);
+            await SendRefundAsync(490);
+            Assert.Equal("reconciliation_required", (await f.Service.RefreshOrderAsync(payer, oldOrder.OrderId, Token)).State);
+            Assert.False((await f.Service.DeletionEligibilityAsync(payer, Token)).CanDelete);
+            await SendRefundAsync(500);
+        }
+        else await SendRefundAsync(990);
+
+        f.Platform.FailQueries = true;
+        var status = await f.Service.RefreshOrderAsync(payer, oldOrder.OrderId, Token);
+        Assert.Equal("refunded", status.State);
+        Assert.Equal("completed", status.RefundStatus);
+        var delivery = await Assert.ThrowsAsync<AccountException>(() =>
+            f.Service.VerifyCallbackAsync("", "", "", null, DeliveryPayload(oldOrder.OrderId, payer.OpenId!, transactionId), "", Token));
+        Assert.Equal("order_refunded", delivery.Code);
+        Assert.Equal("refunded", (await f.Service.PublicRequestAsync(first.RequestId, payer, Token)).OrderState);
+        Assert.Equal("refunded", (await f.Service.RegistrationAsync(first.RequestId, first.RegistrationProof!, false, Token)).OrderState);
+        Assert.True((await f.Service.DeletionEligibilityAsync(payer, Token)).CanDelete);
+        await using var read = new SnowShotDbContext(f.Options);
+        var old = await read.AccountPaymentOrders.SingleAsync(x => x.Id == oldOrder.OrderId, Token);
+        Assert.False(old.Fulfilled);
+        Assert.False(await read.Accounts.Where(x => x.Id == old.AccountId).Select(x => x.Active).SingleAsync(Token));
+        Assert.Equal(0L, await read.AccountWallets.Where(x => x.AccountId == old.AccountId).Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+        Assert.Equal(9_900_000_000L, await read.AccountWallets.Where(x => x.AccountId == claimed.AccountId).Select(x => x.AvailableNanoYuan).SingleAsync(Token));
+        var refunds = await read.AccountRefunds.Where(x => x.OrderId == oldOrder.OrderId).ToListAsync(Token);
+        Assert.Equal(990, refunds.Sum(x => x.RefundFen));
+        Assert.All(refunds, refund => Assert.True(refund.Applied));
+        var entries = await read.AccountFinancialEntries.Where(x => x.OrderId == oldOrder.OrderId).ToListAsync(Token);
+        Assert.Equal(0L, entries.Sum(x => x.AmountNanoYuan));
+        Assert.All(entries, entry => Assert.Equal("completed", entry.Status));
+        Assert.DoesNotContain(oldOrder.OrderId, f.Platform.DeliveryCalls);
+
+        async Task SendRefundAsync(int fen)
+        {
+            var refundId = Guid.NewGuid().ToString("N");
+            f.Platform.Orders[refundId] = new(refundId, payer.OpenId!, 0, "refund", "wx-" + refundId, [new(refundId, fen, "completed")]);
+            await f.Service.VerifyCallbackAsync("", "", "", null, JsonSerializer.Serialize(new
+            {
+                Event = "xpay_refund_notify",
+                MchOrderId = oldOrder.OrderId,
+                WxOrderId = transactionId,
+                MchRefundId = refundId,
+                WxRefundId = "wx-" + refundId,
+                RefundFee = fen,
+                RetCode = 0,
+                payer.OpenId
+            }), "", Token);
+            await f.Service.ReconcileAsync(Token);
+        }
+    }
+
+    [Theory, InlineData(true), InlineData(false), Trait("Category", "Integration")]
+    public async Task RecordedFullRefundOfExpiredRegistrationRequiresMatchingPaymentEvidence(bool matchingPayment)
+    {
+        var f = Fixture(); var registration = await Register(f, Name()); var payer = await Mini(f);
+        var order = await f.Service.CreateOrderAsync(payer, registration.RequestId, "cny-9-9", Token);
+        var refundId = Guid.NewGuid().ToString("N");
+        await using (var db = new SnowShotDbContext(f.Options))
+        {
+            await db.AccountPurchaseRequests.Where(x => x.Id == registration.RequestId).ExecuteUpdateAsync(s =>
+                s.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)), Token);
+            var retained = await db.AccountPaymentOrders.SingleAsync(x => x.Id == order.OrderId, Token);
+            retained.State = "reconciliation_required";
+            retained.PaidFen = 990;
+            retained.PlatformTransactionId = "wx-" + order.OrderId;
+            db.AccountRefunds.Add(new()
+            {
+                Id = refundId,
+                OrderId = order.OrderId,
+                RefundFen = 990,
+                State = "completed",
+                PlatformRefundId = "wx-" + refundId,
+                SuccessNotified = true,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+            db.AccountFinancialEntries.Add(new()
+            {
+                Id = "refund:" + refundId,
+                AccountId = retained.AccountId,
+                OrderId = order.OrderId,
+                Type = "refund",
+                Status = "completed",
+                AmountNanoYuan = -9_900_000_000L,
+                Description = "Platform refund",
+                OccurredAt = DateTimeOffset.UtcNow
+            });
+            var notice = JsonSerializer.Serialize(new
+            {
+                Event = "xpay_refund_notify",
+                MchOrderId = order.OrderId,
+                WxOrderId = matchingPayment ? retained.PlatformTransactionId : "different-payment",
+                MchRefundId = refundId,
+                WxRefundId = "wx-" + refundId,
+                RefundFee = 990,
+                RetCode = 0,
+                payer.OpenId
+            });
+            db.AccountPlatformEvents.Add(new()
+            {
+                Id = Convert.ToHexStringLower(AccountSecrets.Hash(notice)),
+                EventName = "xpay_refund_notify",
+                PayloadEncrypted = f.Secrets.Protect(notice),
+                State = "processed",
+                ReceivedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync(Token);
+        }
+        Assert.Equal("expired", (await f.Service.PublicRequestAsync(registration.RequestId, payer, Token)).State);
+        f.Platform.FailQueries = matchingPayment;
+        f.Platform.Orders[order.OrderId] = new(order.OrderId, payer.OpenId!, 990, "paid", "wx-" + order.OrderId, [], 990);
+        Assert.Equal(matchingPayment ? "refunded" : "reconciliation_required",
+            (await f.Service.RefreshOrderAsync(payer, order.OrderId, Token)).State);
+        Assert.Equal(matchingPayment, (await f.Service.DeletionEligibilityAsync(payer, Token)).CanDelete);
+    }
+
+    [Fact, Trait("Category", "Integration")]
+    public async Task ExpiryKeepsAnActivatedUsernameWhenPaymentRequiresReconciliation()
+    {
+        var f = Fixture(); var username = Name(); var registration = await Register(f, username); var payer = await Mini(f);
+        var order = await f.Service.CreateOrderAsync(payer, registration.RequestId, "cny-9-9", Token);
+        await f.Service.VerifyCallbackAsync("", "", "", null, DeliveryPayload(order.OrderId, payer.OpenId!, "wx-" + order.OrderId), "", Token);
+        await using (var db = new SnowShotDbContext(f.Options))
+            await db.AccountPurchaseRequests.Where(x => x.Id == registration.RequestId).ExecuteUpdateAsync(x => x.SetProperty(y => y.ExpiresAt, DateTimeOffset.UtcNow.AddHours(-1)), Token);
+        f.Platform.Orders[order.OrderId] = new(order.OrderId, payer.OpenId!, 990, "paid", "conflict-" + order.OrderId, [], 990);
+        var status = await f.Service.RefreshOrderAsync(payer, order.OrderId, Token);
+        Assert.Equal("reconciliation_required", status.State);
+
+        var conflict = await Assert.ThrowsAsync<AccountException>(() => Register(f, username));
         Assert.Equal("username_unavailable", conflict.Code);
+        var session = await f.Service.LoginAsync(username, "password-123", Guid.NewGuid().ToString(), Token);
+        Assert.NotNull(session.AccountId);
     }
 
     [Fact, Trait("Category", "Integration")]

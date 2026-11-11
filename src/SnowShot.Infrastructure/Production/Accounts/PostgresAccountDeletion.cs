@@ -114,12 +114,20 @@ internal sealed class PostgresAccountDeletion(PostgresAccountStore store, IWecha
     private async Task<DeletionState> DeletionStateAsync(SnowShotDbContext db, AccountSessionIdentity identity, CancellationToken token)
     {
         var linkedId = await db.AccountWechatLinks.Where(x => x.OpenId == identity.OpenId).Select(x => (Guid?)x.AccountId).SingleOrDefaultAsync(token);
-        var pendingIds = await db.AccountPayerClaims.Where(x => x.OpenId == identity.OpenId).Select(x => x.AccountId).ToListAsync(token);
-        var directIds = await db.AccountPurchaseRequests.Where(x => x.PayerOpenId == identity.OpenId && x.Purpose == "mini_registration")
-            .Select(x => x.AccountId).ToListAsync(token);
-        var ids = pendingIds.Concat(directIds).Concat(linkedId is { } id ? [id] : []).Distinct().Order().ToArray();
-        var accounts = await db.Accounts.Where(x => ids.Contains(x.Id) && x.DeletedAt == null).OrderBy(x => x.Id).ToListAsync(token);
-        ids = accounts.Select(x => x.Id).ToArray();
+        var pendingIds = db.AccountPayerClaims.Where(x => x.OpenId == identity.OpenId).Select(x => x.AccountId);
+        var directIds = db.AccountPurchaseRequests.Where(x => x.PayerOpenId == identity.OpenId && x.Purpose == "mini_registration")
+            .Select(x => x.AccountId);
+        // An expired desktop draft can lose both claims while its order still identifies the initiating WeChat.
+        var retiredRegistrationIds = from order in db.AccountPaymentOrders
+                                     join request in db.AccountPurchaseRequests on order.RequestId equals request.Id
+                                     where order.OpenId == identity.OpenId && !order.Fulfilled &&
+                                         (order.State == "closed" || order.State == "failed" || order.State == AccountPurchaseLifecycle.Refunded) &&
+                                         request.Purpose == "registration" && request.AccountId == order.AccountId && request.OrderId == order.Id
+                                     select order.AccountId;
+        var accounts = await db.Accounts.Where(x => x.DeletedAt == null &&
+            (x.Id == linkedId || pendingIds.Contains(x.Id) || directIds.Contains(x.Id) ||
+             (!x.Active && retiredRegistrationIds.Contains(x.Id)))).OrderBy(x => x.Id).ToListAsync(token);
+        var ids = accounts.Select(x => x.Id).ToArray();
         var wallets = new List<AccountWalletEntity>();
         foreach (var accountId in ids)
             wallets.Add(await WalletAsync(db, accountId, token));
@@ -137,8 +145,10 @@ internal sealed class PostgresAccountDeletion(PostgresAccountStore store, IWecha
         if (wallets.Any(x => x.OutstandingNanoYuan > 0)) blockers.Add("outstanding_balance");
         // Financial history from an already deleted account must not keep a new
         // WeChat registration tied to that account or block it forever.
-        if (orders.Any(x => (x.State != "closed" && x.State != "failed") &&
-            (x.State != "paid" || !x.Fulfilled || !x.DeliveryConfirmed))) blockers.Add("pending_payment");
+        if (orders.Any(x => x.State != AccountPurchaseLifecycle.Refunded &&
+            ((!x.Fulfilled && AccountPurchaseLifecycle.HasRetainedPaymentEvidence(x)) ||
+             (x.State is not ("closed" or "failed") && (x.State != "paid" || !x.Fulfilled || !x.DeliveryConfirmed)))))
+            blockers.Add("pending_payment");
         if (wallets.Any(x => x.HeldNanoYuan > 0) || await db.UsageOperations.AnyAsync(x => x.AccountId != null && ids.Contains(x.AccountId.Value) &&
             (x.State == ReservationState.Reserved || x.State == ReservationState.Dispatched), token)) blockers.Add("active_usage");
         var version = secrets.Fingerprint(DeletionConsent + ":" + identity.SessionId.ToString("N") + ":" + JsonSerializer.Serialize(new

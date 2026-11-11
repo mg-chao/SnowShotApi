@@ -102,6 +102,7 @@ internal sealed class AccountPaymentOrderEntity
     public required string PackageId { get; set; }
     public int PriceFen { get; set; }
     public int? PaidFen { get; set; }
+    public bool ClosedWithPositivePaidFee { get; set; }
     public required string State { get; set; }
     public string? PlatformTransactionId { get; set; }
     public required string PaymentParametersEncrypted { get; set; }

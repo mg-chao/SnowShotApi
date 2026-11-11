@@ -166,11 +166,15 @@ match merchant order, environment and immutable signed order price. Actual
 credits equal `paid_fee`, without subtracting platform commissions. Customer
 callbacks and desktop refresh buttons cannot mark an order paid.
 
-Registration expires ten minutes after code generation only while it has no
-issued payment parameters. Issuance reserves both identity directions and keeps
-the username until definitive platform closure. Status 0, network errors and
-missing query results remain pending. Checkout preparation lives separately in
-`PostgresAccountCheckout`; settlement remains in `PostgresAccountPayments`.
+An unfulfilled desktop registration expires ten minutes after code generation
+and releases its username and temporary payer reservation. The same WeChat can
+pay from a fresh code. Any issued order keeps its original payer and remains
+available for reconciliation. Status 0, network errors and missing query
+results leave the order pending. The expired registration proof still allows
+desktop status reads. The original payer can query the old order in the Mini
+Program after signing in on the expired code's page.
+Checkout preparation lives in `PostgresAccountCheckout` and settlement lives in
+`PostgresAccountPayments`.
 The optional `checkout_attempt_id` binds HTTP recovery to the original request,
 package and payer, with database uniqueness across orders. Repeating an uninvoked
 attempt recovers the original merchant order and signed document. A fresh WeChat
@@ -181,10 +185,11 @@ Legacy callers and different attempts receive null payment parameters.
 The Mini Program persists the attempt before sending HTTP, and verifies a durable
 per-order invocation marker before entering `wx.requestVirtualPayment`. Failure
 to persist either record prevents payment. Lost HTTP responses and page reloads
-before SDK invocation can resume the same attempt through an explicit action;
-login, polling and page load never launch payment. Recorded SDK invocation is
-query-only even after cancellation, timeout or restart. No local expiry or client
-report closes an uncertain order or releases its identity claims.
+before SDK invocation can resume the same attempt through an explicit action
+while checkout is available. Login, polling and page load never launch payment.
+Recorded SDK invocation is query-only even after cancellation, timeout or restart.
+An uncertain order remains open until verified platform evidence resolves it.
+An expired desktop registration always rejects checkout for its old code.
 
 The [official SDK contract](https://developers.weixin.qq.com/miniprogram/dev/api/payment/wx.requestVirtualPayment.md)
 makes merchant IDs single-use and warns that uniqueness is not guaranteed in
@@ -203,10 +208,23 @@ metadata and indexes; legacy refund routing is backfilled by the bounded worker.
 
 Verified payments promote the identity claim, activate the account and add funds
 in the same PostgreSQL transaction. Repeated queries/events cannot repeat this
-effect. Historical orders always retain their original account ID. A late
-payment conflicting with a reused username or identity enters
-`reconciliation_required`; retain its received-money evidence and resolve it
-through operator review/platform refund. Never credit the replacement account.
+effect. Historical orders always retain their original account ID. A verified
+late payment activates the original account with its original credentials if
+the username is still available. When the username has been taken or the
+original credentials are unavailable, the original account becomes a
+passwordless `wx_` temporary account for the payer. If another request has
+reserved the payer or another account is already linked to that WeChat, the old
+payment enters `reconciliation_required` for operator review or a platform refund.
+When verified refunds cover the full payment of an unfulfilled expired
+registration, the order moves to `refunded`. Both the payment and refund
+entries are settled with no wallet changes or account activation. Previously
+recorded payment and refund evidence can resolve such orders during refresh
+without another platform query.
+An unpaid closure result that conflicts with retained payment evidence leaves
+the order in reconciliation. A closure that reports a positive paid fee is
+retained separately from verified payment evidence and blocks subsequent unpaid
+closure. Orders closed by older versions that still carry
+an unfulfilled payment are eligible for reconciliation and block deletion.
 
 Refund callbacks use `MchOrderId`, `WxOrderId`, `MchRefundId`, `WxRefundId`,
 `RefundFee` and `RetCode`. Match their payer, original payment and refund IDs and
@@ -215,6 +233,14 @@ confirmed customer-received refund-order result completes a refund. Status 5
 means merchant debit/processing; only status 8 means customer receipt. A refund
 request acknowledgement never completes a refund. Out-of-order completed
 refunds are retained and netted atomically when their payment is fulfilled.
+Refund settlement checks the original transaction against the retained payment
+under the account lock. Retried and unapplied historical refunds also require a
+matching authenticated success notice from the inbox before funds are applied.
+Callback and retry processing use the same state transition. An authenticated
+success notification is retained while the platform query is still pending.
+Only a verified platform failure marks the attempt failed. A subsequent success
+notification can resume verification for a previously failed attempt when the
+original payment still has a refundable amount.
 
 There is no self-service refund route and no server refund submission in v1.
 Completed refunds deduct available credits and create outstanding debt for the
@@ -258,8 +284,14 @@ recovered with the retained encryption key before deletion can proceed. Each
 attempt records database time, so unreadable rows rotate behind evidence that
 has not been attempted and cannot monopolize the bounded batches. Duplicate
 callbacks also upgrade their retained routing metadata without repeating the
-financial effect. Apply the additive routing migration before starting the new
-API; stop old callback writers during the upgrade.
+financial effect. An authenticated callback that matches an applied refund is
+already settled even if it carries a delayed failure result. An exact,
+authenticated success replay can requeue its existing
+processed event when the matching refund is failed and unapplied and the order
+still has enough refundable balance. Settlement still requires a verified
+platform result. Replays leave active inbox leases in place. Apply the additive
+routing migration before starting the new API. Stop old callback writers during
+the upgrade.
 Monitor event 5505 for unreadable retained routing evidence; its event ID and
 error category exclude ciphertext and credentials.
 
@@ -315,9 +347,9 @@ lengths, delivery signatures, and production/sandbox callback environments.
 
 Account financial entries, usage idempotency tombstones, purchase requests,
 orders, identity links and platform evidence are retained independently of the
-90-day operational usage cleanup. Expiring a request only removes its username
-claim; it never deletes an order or financial record. CAPTCHA and throttle rows
-are disposable and expire separately.
+90-day operational usage cleanup. Desktop registration expiry releases the
+username and temporary payer reservation even for an issued order. Orders and
+financial records are retained. CAPTCHA and throttle rows expire separately.
 Delivery callbacks validate `Env`, payer, product, quantity, original price,
 actual price, attach, and `WeChatPayInfo.MchOrderNo` against the immutable signed
 order. XML and JSON nested fields are supported. The verified callback fulfills

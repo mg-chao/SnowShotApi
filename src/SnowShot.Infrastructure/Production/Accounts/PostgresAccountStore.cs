@@ -10,13 +10,20 @@ internal sealed class PostgresAccountStore(IDbContextFactory<SnowShotDbContext> 
 {
     internal Task<SnowShotDbContext> OpenAsync(CancellationToken token) => factory.CreateDbContextAsync(token);
 
-    internal async Task<T> ExecuteAsync<T>(Func<SnowShotDbContext, DateTimeOffset, Task<T>> action, CancellationToken token)
+    internal Task<T> ExecuteAsync<T>(Func<SnowShotDbContext, DateTimeOffset, Task<T>> action, CancellationToken token) =>
+        ExecuteAsync(action, changeIdentity: false, token);
+
+    internal Task<T> ExecuteIdentityChangeAsync<T>(Func<SnowShotDbContext, DateTimeOffset, Task<T>> action, CancellationToken token) =>
+        ExecuteAsync(action, changeIdentity: true, token);
+
+    private async Task<T> ExecuteAsync<T>(Func<SnowShotDbContext, DateTimeOffset, Task<T>> action, bool changeIdentity, CancellationToken token)
     {
         await using var strategyDb = await factory.CreateDbContextAsync(token);
         return await strategyDb.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
             await using var db = await factory.CreateDbContextAsync(token);
             await using var transaction = await db.Database.BeginTransactionAsync(token);
+            if (changeIdentity) await AccountSynchronization.ChangeIdentityAsync(db, token);
             var now = await db.Database.SqlQuery<DateTimeOffset>($"SELECT clock_timestamp() AS \"Value\"").SingleAsync(token);
             var result = await action(db, now); await db.SaveChangesAsync(token); await transaction.CommitAsync(token); return result;
         });

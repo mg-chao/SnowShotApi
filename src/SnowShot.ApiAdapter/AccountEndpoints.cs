@@ -77,7 +77,9 @@ internal static class AccountEndpoints
         {
             var body = await ApiResponse.ReadJsonAsync<AccountOrderRequest>(c, 8192, m["Validation failed"], t);
             return body.Error ?? await Auth(c, i => s.CreateOrderAsync(i, body.Value!.RequestId, body.Value.PackageId ?? "", t, body.Value.CheckoutAttemptId));
-        }).Accepts<AccountOrderRequest>("application/json").Produces<AppEnvelope>();
+        }).Accepts<AccountOrderRequest>("application/json")
+            .WithDescription("Provide package_id to create an order. Omit package_id and supply checkout_attempt_id to look up a retained order without issuing payment parameters.")
+            .Produces<AppEnvelope>();
         group.MapPost("/purchases/orders/{id}/refresh", (string id, HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.RefreshOrderAsync(i, id, t))).Produces<AppEnvelope>();
         group.MapGet("/account", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.SummaryAsync(i, t))).Produces<AppEnvelope>();
         group.MapGet("/account/transactions", (HttpContext c, IAccountService s, string? cursor, int? limit, CancellationToken t) => Auth(c, i => s.TransactionsAsync(i, cursor, limit ?? 20, t))).Produces<AppEnvelope>();

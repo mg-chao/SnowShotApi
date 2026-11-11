@@ -16,11 +16,10 @@ internal sealed partial class PostgresAccountPurchases
         await store.ThrottleAsync("mini-purchase:" + identity.OpenId, 10, token);
         var requestId = Guid.CreateVersion7();
         var accountId = Guid.CreateVersion7();
-        return await store.ExecuteAsync(async (db, now) =>
+        return await store.ExecuteIdentityChangeAsync(async (db, now) =>
         {
-            await AccountSynchronization.ChangeIdentityAsync(db, token);
             await RequireLiveSessionAsync(db, identity, now, token, requireWechat: true);
-            await PostgresPurchaseRequests.ExpireRequestsAsync(db, now, token);
+            await PostgresPurchaseRequests.ExpireRequestsAsync(db, token);
             // Resolve the permanent link again under the purchase lock: the bearer
             // may have been resolved immediately before a payment was fulfilled.
             var linkedId = await db.AccountWechatLinks.Where(x => x.OpenId == identity.OpenId)
@@ -75,11 +74,10 @@ internal sealed partial class PostgresAccountPurchases
     {
         if (identity.OpenId is null) throw InvalidSession();
         await store.ThrottleAsync("mini-link:" + identity.OpenId, 30, token);
-        return await store.ExecuteAsync(async (db, now) =>
+        return await store.ExecuteIdentityChangeAsync(async (db, now) =>
         {
-            await AccountSynchronization.ChangeIdentityAsync(db, token);
             await RequireLiveSessionAsync(db, identity, now, token, requireWechat: true);
-            await PostgresPurchaseRequests.ExpireRequestsAsync(db, now, token);
+            await PostgresPurchaseRequests.ExpireRequestsAsync(db, token);
             var request = await db.AccountPurchaseRequests.SingleOrDefaultAsync(x => x.Id == requestId && x.Purpose == "registration", token) ?? throw NotFound();
             if (request.State == "expired") throw new AccountException("request_expired", "This registration code has expired.", 410);
             var target = await db.Accounts.SingleAsync(x => x.Id == request.AccountId, token);

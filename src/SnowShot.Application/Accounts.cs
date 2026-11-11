@@ -20,10 +20,10 @@ public sealed record MembershipPackages(bool PaymentsAvailable, IReadOnlyList<Me
 public sealed record AccountPurchaseRequest(Guid RequestId, string? Username, string Purpose, string State,
     DateTimeOffset GeneratedAt, DateTimeOffset ExpiresAt, DateTimeOffset ServerTime,
     string? MiniProgramCodeDataUrl, string? OrderId, bool PaymentsAvailable, string? RegistrationProof = null,
-    string? CompletionKind = null);
+    string? CompletionKind = null, string? OrderState = null);
 public sealed record PublicPurchaseRequest(Guid RequestId, string? Username, string Purpose, string State,
     DateTimeOffset ExpiresAt, DateTimeOffset ServerTime, bool PaymentsAvailable, string? OrderId = null,
-    string? CompletionKind = null);
+    string? CompletionKind = null, string? OrderState = null);
 public sealed record VirtualPaymentParameters(string Mode, string SignData, string PaySig, string Signature);
 public sealed record AccountPurchaseOrder(string OrderId, Guid RequestId, string State, VirtualPaymentParameters? PaymentParameters);
 public sealed record AccountOrderStatus(string OrderId, Guid RequestId, string State, string? RefundStatus);

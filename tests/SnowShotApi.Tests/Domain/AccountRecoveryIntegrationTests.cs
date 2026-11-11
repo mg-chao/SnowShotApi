@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SnowShot.Application;
 using SnowShot.Infrastructure.Accounts;
@@ -16,11 +17,38 @@ public sealed partial class AccountLifecycleIntegrationTests
         var ids = await SeedRecoveryAsync(f, delivery, 21);
         foreach (var id in ids.Take(20)) f.Platform.UnavailableDeliveries.Add(id);
         var newest = ids[^1];
-        if (!delivery)
-            f.Platform.Orders[newest] = new(newest, "recovery", 0, "refund", "wx-" + newest, [new(newest, 1, "completed")]);
-        await f.Service.ReconcileAsync(Token);
-        await f.Service.ReconcileAsync(Token);
         await using var db = new SnowShotDbContext(f.Options);
+        if (!delivery)
+        {
+            f.Platform.Orders[newest] = new(newest, "recovery", 0, "refund", "wx-" + newest, [new(newest, 1, "completed")]);
+            var orderId = await db.AccountRefunds.Where(x => x.Id == newest).Select(x => x.OrderId).SingleAsync(Token);
+            var transactionId = "paid-" + orderId;
+            f.Platform.Orders[orderId] = new(orderId, "recovery", 10, "paid", transactionId, [], 10);
+            var notice = JsonSerializer.Serialize(new
+            {
+                Event = "xpay_refund_notify",
+                MchOrderId = orderId,
+                WxOrderId = transactionId,
+                MchRefundId = newest,
+                WxRefundId = "wx-" + newest,
+                RefundFee = 1,
+                RetCode = 0,
+                OpenId = "recovery"
+            });
+            db.AccountPlatformEvents.Add(new()
+            {
+                Id = Convert.ToHexStringLower(AccountSecrets.Hash(notice)),
+                EventName = "xpay_refund_notify",
+                MerchantOrderId = orderId,
+                RoutingMetadataComplete = true,
+                PayloadEncrypted = f.Secrets.Protect(notice),
+                State = "processed",
+                ReceivedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync(Token);
+        }
+        await f.Service.ReconcileAsync(Token);
+        await f.Service.ReconcileAsync(Token);
         if (delivery)
             Assert.True(await db.AccountPaymentOrders.Where(x => x.Id == newest).Select(x => x.DeliveryConfirmed).SingleAsync(Token));
         else
@@ -133,12 +161,13 @@ public sealed partial class AccountLifecycleIntegrationTests
         for (var index = 0; index < count; index++)
         {
             var id = ids[index];
+            var orderId = delivery ? id : Guid.NewGuid().ToString("N");
             var requestId = Guid.NewGuid();
             var created = now.AddDays(-1).AddSeconds(index);
-            db.AccountPurchaseRequests.Add(new() { Id = requestId, AccountId = accountId, Purpose = "top_up", State = "fulfilled", GeneratedAt = created, ExpiresAt = created, OrderId = id });
-            db.AccountPaymentOrders.Add(new() { Id = id, RequestId = requestId, AccountId = accountId, OpenId = "recovery", PackageId = "cny-0-1", PriceFen = 10, PaidFen = 10, State = "paid", Fulfilled = true, DeliveryConfirmed = !delivery, PaymentParametersEncrypted = "", CreatedAt = created });
+            db.AccountPurchaseRequests.Add(new() { Id = requestId, AccountId = accountId, Purpose = "top_up", State = "fulfilled", GeneratedAt = created, ExpiresAt = created, OrderId = orderId });
+            db.AccountPaymentOrders.Add(new() { Id = orderId, RequestId = requestId, AccountId = accountId, OpenId = "recovery", PackageId = "cny-0-1", PriceFen = 10, PaidFen = 10, PlatformTransactionId = "paid-" + orderId, State = "paid", Fulfilled = true, DeliveryConfirmed = !delivery, PaymentParametersEncrypted = "", CreatedAt = created });
             if (!delivery)
-                db.AccountRefunds.Add(new() { Id = id, OrderId = id, RefundFen = 1, State = "processing", SuccessNotified = true, PlatformRefundId = "wx-" + id, UpdatedAt = created });
+                db.AccountRefunds.Add(new() { Id = id, OrderId = orderId, RefundFen = 1, State = "processing", SuccessNotified = true, PlatformRefundId = "wx-" + id, UpdatedAt = created });
         }
         await db.SaveChangesAsync(Token);
         return ids;

@@ -7,9 +7,11 @@ mitigating an incident.
 
 ## Change and rollback
 
-The [3 November production release record](production-release-20261103.md)
-records the active API and recognition workers, account migrations and production
-payment configuration. Policy remains at revision 17. The
+The [10 November production release record](production-release-20261110.md)
+records the active API, validation and retained rollback release. The
+[3 November record](production-release-20261103.md) documents the retained
+recognition workers, account migrations and production payment configuration.
+Policy remains at revision 17. The
 [22 October record](production-release-20261022.md) documents the previous API
 and retained revision-18 recovery settings; the
 [20 October record](production-release-20261020.md) is historical.
