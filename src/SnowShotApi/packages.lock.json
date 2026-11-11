@@ -216,7 +216,8 @@
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.0, )",
           "SnowShot.Application": "[1.0.0, )",
           "SnowShot.Domain": "[1.0.0, )",
-          "StackExchange.Redis": "[2.8.58, )"
+          "StackExchange.Redis": "[2.8.58, )",
+          "StbImageSharp": "[2.30.16, )"
         }
       },
       "Microsoft.EntityFrameworkCore": {
@@ -258,6 +259,12 @@
         "dependencies": {
           "Pipelines.Sockets.Unofficial": "2.2.8"
         }
+      },
+      "StbImageSharp": {
+        "type": "CentralTransitive",
+        "requested": "[2.30.16, )",
+        "resolved": "2.30.16",
+        "contentHash": "qg1i+NHihXVKLKYacGKrauhSQIGL31eBWcTC4Vc7jnGmBFj87LkRuCdXB5aDZisWMRnB6x2mcfwYXQxMWEG/lw=="
       }
     }
   }

@@ -1,7 +1,4 @@
-using System.Buffers.Binary;
-using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace SnowShot.Infrastructure.Accounts;
 
@@ -74,33 +71,6 @@ internal static class CaptchaImage
                                 Dot(originX + x * PixelScale + dx + y % (MaximumHorizontalShift + 1),
                                     originY + y * PixelScale + dy, 30, 63, 99);
         }
-        using var scan = new MemoryStream();
-        for (var y = 0; y < height; y++)
-        {
-            scan.WriteByte(0);
-            scan.Write(pixels, y * width * 3, width * 3);
-        }
-        using var compressed = new MemoryStream();
-        using (var z = new ZLibStream(compressed, CompressionLevel.Fastest, true))
-            z.Write(scan.ToArray());
-        using var png = new MemoryStream();
-        png.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
-        var header = new byte[13];
-        BinaryPrimitives.WriteInt32BigEndian(header, width);
-        BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
-        header[8] = 8;
-        header[9] = 2;
-        Chunk(png, "IHDR", header);
-        Chunk(png, "IDAT", compressed.ToArray());
-        Chunk(png, "IEND", []);
-        return png.ToArray();
-    }
-    private static void Chunk(Stream output, string type, byte[] data)
-    {
-        var buffer = new byte[data.Length + 4]; Encoding.ASCII.GetBytes(type).CopyTo(buffer, 0); data.CopyTo(buffer, 4);
-        Span<byte> value = stackalloc byte[4]; BinaryPrimitives.WriteInt32BigEndian(value, data.Length); output.Write(value); output.Write(buffer);
-        var crc = uint.MaxValue;
-        foreach (var item in buffer) { crc ^= item; for (var bit = 0; bit < 8; bit++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xedb88320U : crc >> 1; }
-        BinaryPrimitives.WriteUInt32BigEndian(value, ~crc); output.Write(value);
+        return PngImage.EncodeRgb(pixels, width, height);
     }
 }

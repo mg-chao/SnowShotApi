@@ -5,12 +5,17 @@ using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 using SnowShot.Application;
+using StbImageSharp;
 
 namespace SnowShot.Infrastructure.Accounts;
 
 internal sealed partial class WechatAccountPlatform(IHttpClientFactory clients, WechatAccountOptions options,
     TimeProvider clock, ILogger<WechatAccountPlatform>? logger = null) : IWechatAccountPlatform, IDisposable
 {
+    private const int MaxCodeBytes = 2 * 1024 * 1024;
+    private const int MaxCodeDimension = 1280;
+    private static ReadOnlySpan<byte> JpegSignature => [0xff, 0xd8, 0xff];
+
     private readonly SemaphoreSlim _tokenGate = new(1, 1);
     private string? _accessToken;
     private DateTimeOffset _accessExpires;
@@ -40,12 +45,47 @@ internal sealed partial class WechatAccountPlatform(IHttpClientFactory clients, 
         var access = await AccessTokenAsync(token);
         using var response = await PostJsonAsync(
             "wxa/getwxacodeunlimit?access_token=" + Uri.EscapeDataString(access),
-            new { scene = requestId.ToString("N"), page = options.PurchasePage,
-                check_path = options.MiniProgramCodeCheckPath, env_version = options.MiniProgramCodeVersion, width = 430 }, token);
+            new
+            {
+                scene = requestId.ToString("N"),
+                page = options.PurchasePage,
+                check_path = options.MiniProgramCodeCheckPath,
+                env_version = options.MiniProgramCodeVersion,
+                width = 430
+            }, token);
+        if (!response.IsSuccessStatusCode)
+        {
+            ReportInvalidResponse(response, "http_status");
+            throw Unavailable();
+        }
         var bytes = await response.Content.ReadAsByteArrayAsync(token);
-        if (!response.IsSuccessStatusCode || bytes.Length > 2 * 1024 * 1024 || bytes.Length < 8 ||
-            (!bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }) && !(bytes[0] == 255 && bytes[1] == 216))) throw Unavailable();
-        return bytes;
+        if (bytes.Length > MaxCodeBytes)
+        {
+            ReportInvalidResponse(response, "response_size");
+            throw Unavailable();
+        }
+        if (bytes.AsSpan().StartsWith(PngImage.Signature)) return bytes;
+
+        // Installed desktop builds support PNG without Qt's optional JPEG plugin.
+        if (bytes.AsSpan().StartsWith(JpegSignature) &&
+            ConvertCodeToPng(bytes) is { Length: <= MaxCodeBytes } png)
+            return png;
+
+        ReportInvalidResponse(response, "code_image");
+        throw Unavailable();
+    }
+
+    private static byte[]? ConvertCodeToPng(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        if (ImageInfo.FromStream(stream) is not
+            { Width: > 0 and <= MaxCodeDimension, Height: > 0 and <= MaxCodeDimension })
+            return null;
+
+        ImageResult image;
+        try { image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlue); }
+        catch (InvalidOperationException) { return null; }
+        return PngImage.EncodeRgb(image.Data, image.Width, image.Height);
     }
 
     public VirtualPaymentParameters Payment(string orderId, string openId, string sessionKey, string packageId, int priceFen)

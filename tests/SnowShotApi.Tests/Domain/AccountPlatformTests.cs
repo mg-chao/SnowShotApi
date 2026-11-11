@@ -6,6 +6,7 @@ using System.Text.Json;
 using SnowShot.Application;
 using SnowShot.Infrastructure.Accounts;
 using SnowShot.Infrastructure.Configuration;
+using StbImageSharp;
 
 namespace SnowShotApi.Tests.Domain;
 
@@ -101,6 +102,38 @@ public sealed class AccountPlatformTests
         Assert.NotNull(await platform.QueryAsync("test-order", "openid", token));
         await platform.NotifyDeliveryAsync("test-order", token);
         Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, await platform.CodeAsync(Guid.NewGuid(), token));
+    }
+
+    [Fact]
+    public async Task JpegMiniProgramCodeIsReturnedAsPngWithoutResizing()
+    {
+        // 16×16 grayscale JPEG, black on the left and white on the right.
+        using var handler = new StubHandler
+        {
+            CodeImage = Convert.FromBase64String(
+                "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/" +
+                "wAALCAAQABABAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAC//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AP/P8ABz/AA//2Q==")
+        };
+        using var platform = new WechatAccountPlatform(new Clients(handler), Options(), TimeProvider.System);
+        var png = await platform.CodeAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, png[..8]);
+        var image = ImageResult.FromMemory(png, ColorComponents.Grey);
+        Assert.Equal(16, image.Width);
+        Assert.Equal(16, image.Height);
+        Assert.Equal(0, image.Data[0]);
+        Assert.Equal(255, image.Data[15]);
+    }
+
+    [Fact]
+    public async Task MalformedJpegMiniProgramCodeIsRejected()
+    {
+        using var handler = new StubHandler { CodeImage = [0xff, 0xd8, 0xff, 0xe0, 0, 2, 0xff, 0xd9] };
+        using var platform = new WechatAccountPlatform(new Clients(handler), Options(), TimeProvider.System);
+
+        var error = await Assert.ThrowsAsync<AccountException>(() =>
+            platform.CodeAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
+        Assert.Equal("payments_unavailable", error.Code);
     }
 
     [Theory]
@@ -304,6 +337,7 @@ public sealed class AccountPlatformTests
         public bool RequireContentLength { get; set; }
         public string? DeliveryResponse { get; set; }
         public string? QueryResponse { get; set; }
+        public byte[] CodeImage { get; set; } = [137, 80, 78, 71, 13, 10, 26, 10];
         public string? CodeBody { get; private set; }
         public string? QueryBody { get; private set; }
         public string? QueryUri { get; private set; }
@@ -324,7 +358,7 @@ public sealed class AccountPlatformTests
             {
                 CodeBody = await request.Content!.ReadAsStringAsync(token);
                 return new HttpResponseMessage(HttpStatusCode.OK)
-                { Content = new ByteArrayContent([137, 80, 78, 71, 13, 10, 26, 10]) };
+                { Content = new ByteArrayContent(CodeImage) };
             }
             if (request.RequestUri!.AbsolutePath == "/xpay/query_order")
             {
