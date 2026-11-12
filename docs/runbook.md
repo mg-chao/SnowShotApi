@@ -20,9 +20,29 @@ For API/recognition releases with an unchanged policy, use the
 [blue/green deployment procedure](bluegreen-deployment.md). Policy-changing
 releases require the separate maintenance procedure in that guide.
 
+### Monthly free request rollout
+
+Policy revision 21 gives each IP separate monthly allowances for table extraction
+(10), LaTeX extraction (10), and `ai-model` (5). Counters start empty at rollout
+and reset at the start of each Asia/Shanghai calendar month. A slot is held while
+a request runs and consumed on delivery. Linked accounts use wallet credits when
+slots are unavailable. The recognition membership benefit bypasses the quota.
+
+Use `deployment/policy/policy-revision-21.json` with the policy maintenance
+procedure and apply `AddMonthlyFreeRequests` before starting the candidate.
+Remove the legacy `PrincipalDailyAllowanceNanoYuan` setting from production
+configuration layers. Verify all three limits and the `Retry-After` behavior in
+staging. For recovery, use a higher policy revision and a binary that can settle
+monthly operations. To restore the daily monetary allowance, prepare the recovery
+settings with the matching historical overlay. The preparation script sets
+`Policy:AllowanceMode` to `DailyNanoYuan` to override the base monthly policy.
+Drain or reconcile monthly operations before restarting a
+binary that predates the migration. Keep the additive schema and accounting data.
+
 ### Fast and Expert Model rollout
 
-The revision-19 candidate uses `deployment/policy/policy-revision-19.json`.
+Revision 19 introduced the Expert Model profile. Revision 21 carries its model
+settings forward with the monthly free request allowances.
 Fast Model keeps `ai-model`, the Flash execution routes, aliases, and free
 allowance. Expert Model uses `expert-model` with the Beijing Qwen3.8-Max route
 for text and image input. It requires a linked account and wallet credit.
@@ -33,7 +53,7 @@ See [Alibaba Cloud's model prices](https://help.aliyun.com/zh/model-studio/qwen3
 1. Verify the active database revision and the mounted settings revision. Prepare
    the candidate with `scripts/Prepare-AiModelPolicy.py` and validate it with
    `scripts/Verify-DeploymentConfiguration.ps1`. Use `--revision` and
-   `-ExpectedPolicyRevision` when the active or mounted revision is 19 or higher.
+   `-ExpectedPolicyRevision` when the active or mounted revision is 21 or higher.
    Verify the effective provider endpoint is in Beijing and the staging key has
    access to Qwen3.8-Max. Keep credentials out of validation output.
 2. Follow the policy maintenance procedure. The existing tariff snapshot and

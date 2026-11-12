@@ -30,7 +30,7 @@ public sealed class PublicMessages
         ["Request ownership lost"] = ("Request ownership was lost", "请求所有权已丢失", "請求所有權已遺失"),
         ["Request limit reached"] = ("The request limit has been reached", "已达到请求限额", "已達請求上限"),
         ["Request rate limit reached"] = ("Too many requests in a short time. Wait before retrying.", "短时间内请求过多，请稍后重试。", "短時間內請求過多，請稍後再試。"),
-        ["Daily allowance exhausted"] = ("The daily usage allowance has been exhausted.", "今日使用额度已用尽。", "今日使用額度已用盡。"),
+        ["Free allowance exhausted"] = ("The free usage allowance for this service has been exhausted.", "此服务的免费使用额度已用尽。", "此服務的免費使用額度已用盡。"),
         ["Insufficient available credit for this request"] = ("Insufficient available credit for this request.", "可用点数不足以预留本次请求所需额度。", "可用點數不足以預留本次請求所需額度。"),
         ["Sign in with a Snow Shot account to use this service"] = ("Sign in with a Snow Shot account to use this service.", "请登录 Snow Shot 账号后使用此服务。", "請登入 Snow Shot 帳號後使用此服務。"),
         ["Credits temporarily reserved by other requests"] = ("Credits are temporarily reserved by other requests. Retry after they complete.", "部分点数正由其他请求预留，请在其完成后重试。", "部分點數已由其他請求預留，請等候這些請求完成後再試。"),

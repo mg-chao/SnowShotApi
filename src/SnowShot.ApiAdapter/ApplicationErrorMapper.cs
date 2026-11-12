@@ -12,7 +12,7 @@ internal static class ApplicationErrorMapper
         ApplicationErrorCode.LeaseLost => new(StatusCodes.Status409Conflict, "ownership_lost", "Request ownership lost", false),
         ApplicationErrorCode.RateLimited => new(StatusCodes.Status429TooManyRequests, "rate_limited", "Request rate limit reached", true),
         ApplicationErrorCode.QueueFull => new(StatusCodes.Status429TooManyRequests, "queue_full", "Request queue full", true),
-        ApplicationErrorCode.AllowanceExhausted => new(StatusCodes.Status429TooManyRequests, "allowance_exhausted", "Daily allowance exhausted", true),
+        ApplicationErrorCode.AllowanceExhausted => new(StatusCodes.Status429TooManyRequests, "allowance_exhausted", "Free allowance exhausted", true),
         ApplicationErrorCode.OperatorBudgetExhausted => new(StatusCodes.Status503ServiceUnavailable, "operator_budget_exhausted", "Operator budget exhausted", true),
         ApplicationErrorCode.DependencyUnavailable => new(StatusCodes.Status503ServiceUnavailable, "dependency_unavailable", "Service unavailable", true),
         ApplicationErrorCode.PolicyUnavailable => new(StatusCodes.Status503ServiceUnavailable, "policy_unavailable", "Service unavailable", false),

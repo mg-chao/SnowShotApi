@@ -77,7 +77,10 @@ class DeploymentConfigurationTests(unittest.TestCase):
 
     def test_higher_retained_revision_preserves_the_historical_profile(self):
         self.retained["Policy"]["Revision"] = 16
+        self.retained["Policy"]["AllowanceMode"] = "DailyNanoYuan"
         self.assert_valid(self.verify(None, self.retained))
+        self.retained["Policy"]["AllowanceMode"] = "MonthlyRequests"
+        self.assert_invalid(self.verify(None, self.retained), "historical policy")
 
     def test_retained_policy_does_not_inherit_the_candidate_limits(self):
         self.retained["Policy"]["Resources"]["ai-model"].update(RequestsPerMinute=600, PerPrincipalConcurrency=8)
@@ -94,7 +97,7 @@ class DeploymentConfigurationTests(unittest.TestCase):
     def test_current_profile_can_be_selected_for_a_new_recovery_configuration(self):
         recovery = copy.deepcopy(self.candidate)
         recovery["Policy"]["Revision"] += 1
-        reference = str(ROOT / "deployment/policy/policy-revision-19.json")
+        reference = str(ROOT / "deployment/policy/policy-revision-21.json")
         self.assert_valid(self.verify(None, recovery, "-RestorePolicyReferencePath", reference))
 
     def test_explicit_revision_cannot_downgrade_the_selected_profile(self):
@@ -103,8 +106,17 @@ class DeploymentConfigurationTests(unittest.TestCase):
 
     def test_common_accounting_and_resource_checks_remain_enforced(self):
         invalid = copy.deepcopy(self.candidate)
+        invalid["Policy"]["DailyOperatorBudgetNanoYuan"] = 1
+        self.assert_invalid(self.verify(invalid), "operator budgets")
+        invalid = copy.deepcopy(self.candidate)
+        invalid["Policy"]["MonthlyFreeRequests"]["ai-model"] = 1
+        self.assert_invalid(self.verify(invalid), "monthly free request allowances")
+        invalid = copy.deepcopy(self.candidate)
+        invalid["Policy"]["AllowanceMode"] = "DailyNanoYuan"
+        self.assert_invalid(self.verify(invalid), "monthly free request allowances")
+        invalid = copy.deepcopy(self.candidate)
         invalid["Policy"]["PrincipalDailyAllowanceNanoYuan"] = 1
-        self.assert_invalid(self.verify(invalid), "allowances and budgets")
+        self.assert_invalid(self.verify(invalid), "monthly free request allowances")
         invalid = copy.deepcopy(self.candidate)
         invalid["Policy"]["Resources"]["qwen-mt-flash"] = {}
         self.assert_invalid(self.verify(invalid), "match the public resources")

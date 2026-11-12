@@ -654,6 +654,37 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
                     b.ToTable("daily_aggregates", "snowshot");
                 });
 
+            modelBuilder.Entity("SnowShot.Infrastructure.Persistence.MonthlyFreeRequestPeriodEntity", b =>
+                {
+                    b.Property<Guid>("PrincipalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Resource")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateOnly>("MonthStart")
+                        .HasColumnType("date");
+
+                    b.Property<int>("CommittedRequests")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReservedRequests")
+                        .HasColumnType("integer");
+
+                    b.HasKey("PrincipalId", "Resource", "MonthStart");
+
+                    b.HasIndex("MonthStart")
+                        .HasDatabaseName("ix_monthly_free_requests_retention");
+
+                    b.ToTable("monthly_free_request_periods", "snowshot", t =>
+                        {
+                            t.HasCheckConstraint("ck_monthly_free_requests_month_start", "EXTRACT(DAY FROM \"MonthStart\") = 1");
+
+                            t.HasCheckConstraint("ck_monthly_free_requests_nonnegative", "\"CommittedRequests\" >= 0 AND \"ReservedRequests\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("SnowShot.Infrastructure.Persistence.OperatorBudgetPeriodEntity", b =>
                 {
                     b.Property<int>("Kind")
@@ -955,6 +986,11 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
                     b.Property<DateOnly>("AllowanceDate")
                         .HasColumnType("date");
 
+                    b.Property<int>("AllowanceFunding")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<long>("AllowanceLimitNanoYuan")
                         .HasColumnType("bigint");
 
@@ -1038,7 +1074,8 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
                     b.Property<int>("State")
                         .HasColumnType("integer");
 
-                    b.HasKey("Id");
+                    b.HasKey("Id")
+                        .HasName("PK_usage_operations");
 
                     b.HasIndex("AccountId");
 
@@ -1058,6 +1095,8 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
                     b.ToTable("usage_operations", "snowshot", t =>
                         {
                             t.HasCheckConstraint("ck_account_usage_funding", "\"ReservedFreeNanoYuan\" >= 0 AND \"ReservedWalletNanoYuan\" >= 0 AND (\"AccountId\" IS NULL OR \"ReservedFreeNanoYuan\" + \"ReservedWalletNanoYuan\" = \"ReservedPublicNanoYuan\")");
+
+                            t.HasCheckConstraint("ck_usage_operation_allowance_funding", "\"AllowanceFunding\" IN (0, 1, 2) AND (\"AllowanceFunding\" <> 2 OR (\"ReservedPublicNanoYuan\" = 0 AND \"ReservedFreeNanoYuan\" = 0 AND \"ReservedWalletNanoYuan\" = 0 AND NOT \"MembershipRecognitionFree\"))");
 
                             t.HasCheckConstraint("ck_usage_operation_costs", "\"InputRateNanoYuan\" >= 0 AND \"OutputRateNanoYuan\" >= 0 AND \"ReservedPublicNanoYuan\" >= 0 AND \"ReservedOperatorNanoYuan\" >= 0 AND \"ActualPublicNanoYuan\" >= 0 AND \"ActualOperatorNanoYuan\" >= 0 AND \"OperatorOverageNanoYuan\" >= 0");
 
@@ -1165,6 +1204,15 @@ namespace SnowShot.Infrastructure.Production.Persistence.Migrations
                 });
 
             modelBuilder.Entity("SnowShot.Infrastructure.Persistence.AllowancePeriodEntity", b =>
+                {
+                    b.HasOne("SnowShot.Infrastructure.Persistence.PrincipalEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SnowShot.Infrastructure.Persistence.MonthlyFreeRequestPeriodEntity", b =>
                 {
                     b.HasOne("SnowShot.Infrastructure.Persistence.PrincipalEntity", null)
                         .WithMany()

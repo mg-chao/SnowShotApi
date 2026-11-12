@@ -11,7 +11,7 @@ internal static class TableEndpoints
     public static IEndpointRouteBuilder MapTableEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/api/v1/table/extract", ExtractAsync).WithName("TableExtraction").WithTags("Table")
-            .WithDescription("Extract one table from a JPEG, PNG or WebP image. Upload one multipart file named image, at most 800 KiB and 2880 x 2880 pixels. Returns data.html; account authentication is optional.")
+            .WithDescription("Extract one table from a JPEG, PNG or WebP image. Upload one multipart file named image, at most 800 KiB and 2880 x 2880 pixels. Returns data.html. Account authentication is optional. Includes 10 free requests per IP address per month.")
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<AppEnvelope>(StatusCodes.Status200OK)
             .Produces<PublicProblem>(StatusCodes.Status400BadRequest, "application/problem+json")

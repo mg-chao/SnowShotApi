@@ -258,7 +258,7 @@ def assert_crash_reconciliation() -> None:
 def assert_accounting() -> None:
     assert sql('SELECT count(*) FROM snowshot.policy_revisions WHERE "Revision" = 1;') == "1"
     assert sql('SELECT "ActiveRevision" FROM snowshot.policy_state WHERE "Id" = 1;') == "1"
-    assert sql('SELECT count(*) FROM snowshot.allowance_periods WHERE "AppliedPolicyRevision" <> 1;') == "0"
+    assert sql('SELECT count(*) FROM snowshot.allowance_periods;') == "0"
     assert sql('SELECT count(*) FROM snowshot.operator_budget_periods WHERE "AppliedPolicyRevision" <> 1;') == "0"
     assert sql('SELECT count(*) FROM (SELECT "IdempotencyHash" FROM snowshot.usage_operations GROUP BY "IdempotencyHash" HAVING count(*) > 1) AS duplicates;') == "0"
     assert sql('SELECT count(*) FROM (SELECT "OperationId" FROM snowshot.usage_events GROUP BY "OperationId" HAVING count(*) <> 1) AS invalid;') == "0"
@@ -267,7 +267,7 @@ def assert_accounting() -> None:
     assert operations == events, f"terminal operation/event mismatch: operations={operations}, events={events}"
     aggregate = sql('SELECT coalesce(sum("Requests"), 0) FROM snowshot.daily_aggregates;')
     assert aggregate == events, f"aggregate contribution mismatch: aggregate={aggregate}, events={events}"
-    assert sql('SELECT coalesce(sum("ReservedNanoYuan"), 0) FROM snowshot.allowance_periods;') == "0"
+    assert sql('SELECT sum("ReservedRequests" + "CommittedRequests") FROM snowshot.monthly_free_request_periods;') == "0"
     assert sql('SELECT coalesce(sum("ReservedNanoYuan"), 0) FROM snowshot.operator_budget_periods;') == "0"
     assert sql('SELECT count(*) FROM snowshot.usage_operations WHERE "Resource" = \'translation\' AND "ReservedFreeNanoYuan" <> 0;') == "0"
     assert sql('SELECT coalesce(sum("HeldNanoYuan"), 0) FROM snowshot.account_wallets;') == "0"

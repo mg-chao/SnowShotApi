@@ -28,6 +28,17 @@ internal sealed class AllowancePeriodEntity
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+internal sealed class MonthlyFreeRequestPeriodEntity
+{
+    public Guid PrincipalId { get; set; }
+    public required string Resource { get; set; }
+    public DateOnly MonthStart { get; set; }
+    public int CommittedRequests { get; set; }
+    public int ReservedRequests { get; set; }
+}
+
+internal enum AllowanceFunding { LegacyDaily, None, MonthlyRequest }
+
 internal enum BudgetPeriodKind { Daily, Monthly }
 
 internal sealed class OperatorBudgetPeriodEntity
@@ -49,6 +60,7 @@ internal sealed class UsageOperationEntity
     public bool MembershipRecognitionFree { get; set; }
     public long ReservedFreeNanoYuan { get; set; }
     public long ReservedWalletNanoYuan { get; set; }
+    public AllowanceFunding AllowanceFunding { get; set; }
     public DateOnly AllowanceDate { get; set; }
     public UsageKind Kind { get; set; }
     public required string Resource { get; set; }

@@ -16,7 +16,7 @@ internal static class ChatEndpoints
     {
         endpoints.MapPost("/api/v1/chat/completions", CompleteAsync)
             .WithName("ChatCompletions").WithTags("Chat").Accepts<ChatRequest>("application/json")
-            .WithDescription("Fast Model (ai-model) is eligible for the daily free allowance. Expert Model (expert-model) and legacy aliases require a Snow Shot account and use wallet credits.")
+            .WithDescription("Fast Model (ai-model) includes 5 free requests per IP address per month. Linked accounts use wallet credits after the allowance. Expert Model (expert-model) and legacy aliases require a Snow Shot account and use wallet credits.")
             .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
             .Produces<PublicProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
             .Produces<PublicProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")

@@ -12,6 +12,7 @@ public sealed partial class SnowShotDbContext(DbContextOptions<SnowShotDbContext
     internal DbSet<PrincipalEntity> Principals => Set<PrincipalEntity>();
     internal DbSet<PrincipalFingerprintEntity> PrincipalFingerprints => Set<PrincipalFingerprintEntity>();
     internal DbSet<AllowancePeriodEntity> AllowancePeriods => Set<AllowancePeriodEntity>();
+    internal DbSet<MonthlyFreeRequestPeriodEntity> MonthlyFreeRequestPeriods => Set<MonthlyFreeRequestPeriodEntity>();
     internal DbSet<OperatorBudgetPeriodEntity> OperatorBudgetPeriods => Set<OperatorBudgetPeriodEntity>();
     internal DbSet<UsageOperationEntity> UsageOperations => Set<UsageOperationEntity>();
     internal DbSet<ProviderAttemptEntity> ProviderAttempts => Set<ProviderAttemptEntity>();
@@ -50,6 +51,18 @@ public sealed partial class SnowShotDbContext(DbContextOptions<SnowShotDbContext
             entity.HasIndex(value => value.PeriodDate).HasDatabaseName("ix_allowance_periods_retention");
             entity.HasOne<PrincipalEntity>().WithMany().HasForeignKey(value => value.PrincipalId).OnDelete(DeleteBehavior.Restrict);
         });
+        modelBuilder.Entity<MonthlyFreeRequestPeriodEntity>(entity =>
+        {
+            entity.ToTable("monthly_free_request_periods", table =>
+            {
+                table.HasCheckConstraint("ck_monthly_free_requests_nonnegative", "\"CommittedRequests\" >= 0 AND \"ReservedRequests\" >= 0");
+                table.HasCheckConstraint("ck_monthly_free_requests_month_start", "EXTRACT(DAY FROM \"MonthStart\") = 1");
+            });
+            entity.HasKey(value => new { value.PrincipalId, value.Resource, value.MonthStart });
+            entity.Property(value => value.Resource).HasMaxLength(64);
+            entity.HasIndex(value => value.MonthStart).HasDatabaseName("ix_monthly_free_requests_retention");
+            entity.HasOne<PrincipalEntity>().WithMany().HasForeignKey(value => value.PrincipalId).OnDelete(DeleteBehavior.Restrict);
+        });
         modelBuilder.Entity<OperatorBudgetPeriodEntity>(entity =>
         {
             entity.ToTable("operator_budget_periods", table =>
@@ -66,6 +79,7 @@ public sealed partial class SnowShotDbContext(DbContextOptions<SnowShotDbContext
             entity.ToTable("usage_operations", table =>
             {
                 table.HasCheckConstraint("ck_usage_operation_kind", "\"Kind\" IN (0, 1, 2, 3)");
+                table.HasCheckConstraint("ck_usage_operation_allowance_funding", "\"AllowanceFunding\" IN (0, 1, 2) AND (\"AllowanceFunding\" <> 2 OR (\"ReservedPublicNanoYuan\" = 0 AND \"ReservedFreeNanoYuan\" = 0 AND \"ReservedWalletNanoYuan\" = 0 AND NOT \"MembershipRecognitionFree\"))");
                 table.HasCheckConstraint("ck_usage_operation_state", "\"State\" BETWEEN 0 AND 5");
                 table.HasCheckConstraint("ck_usage_operation_hashes", "octet_length(\"IdempotencyHash\") = 32 AND octet_length(\"OwnerToken\") = 32 AND octet_length(\"PolicyFingerprint\") = 32 AND \"PolicyRevision\" > 0 AND (\"SettlementFingerprint\" IS NULL OR octet_length(\"SettlementFingerprint\") = 32)");
                 table.HasCheckConstraint("ck_usage_operation_fence", "\"Fence\" > 0");
@@ -75,6 +89,7 @@ public sealed partial class SnowShotDbContext(DbContextOptions<SnowShotDbContext
             });
             entity.HasKey(value => value.Id).HasName(UsageOperationPrimaryKey);
             entity.Property(value => value.Resource).HasMaxLength(64);
+            entity.Property(value => value.AllowanceFunding).HasDefaultValue(AllowanceFunding.LegacyDaily);
             entity.Property(value => value.IdempotencyHash).HasColumnType("bytea").HasMaxLength(32);
             entity.Property(value => value.OwnerToken).HasColumnType("bytea").HasMaxLength(32);
             entity.Property(value => value.PolicyFingerprint).HasColumnType("bytea").HasMaxLength(32);

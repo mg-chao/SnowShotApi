@@ -1,0 +1,224 @@
+{
+  "Policy": {
+    "Revision": 21,
+    "AllowanceMode": "MonthlyRequests",
+    "MonthlyFreeRequests": {
+      "table-extraction": 10,
+      "latex-extraction": 10,
+      "ai-model": 5
+    },
+    "DailyOperatorBudgetNanoYuan": 50000000000,
+    "MonthlyOperatorBudgetNanoYuan": 1000000000000,
+    "ActiveLeaseTtlSeconds": 30,
+    "LeaseRenewalSeconds": 10,
+    "Estimation": {
+      "BytesPerInputToken": 3,
+      "CharsPerOutputToken": 2
+    },
+    "Resources": {
+      "translation": {
+        "RequestsPerMinute": 30,
+        "PerPrincipalConcurrency": 4,
+        "GlobalConcurrency": 32,
+        "GlobalQueueLength": 64,
+        "QueueWaitSeconds": 30,
+        "ExecutionDeadlineSeconds": 300,
+        "OperatorMaximumNanoYuan": 30000000
+      },
+      "ai-model": {
+        "RequestsPerMinute": 600,
+        "PerPrincipalConcurrency": 8,
+        "GlobalConcurrency": 64,
+        "GlobalQueueLength": 128,
+        "QueueWaitSeconds": 30,
+        "ExecutionDeadlineSeconds": 300,
+        "OperatorMaximumNanoYuan": 30000000
+      },
+      "table-extraction": {
+        "RequestsPerMinute": 6,
+        "PerPrincipalConcurrency": 1,
+        "GlobalConcurrency": 1,
+        "GlobalQueueLength": 8,
+        "QueueWaitSeconds": 30,
+        "ExecutionDeadlineSeconds": 60,
+        "OperatorMaximumNanoYuan": 30000000
+      },
+      "latex-extraction": {
+        "RequestsPerMinute": 6,
+        "PerPrincipalConcurrency": 1,
+        "GlobalConcurrency": 1,
+        "GlobalQueueLength": 8,
+        "QueueWaitSeconds": 30,
+        "ExecutionDeadlineSeconds": 60,
+        "OperatorMaximumNanoYuan": 30000000
+      },
+      "expert-model": {
+        "RequestsPerMinute": 600,
+        "PerPrincipalConcurrency": 8,
+        "GlobalConcurrency": 64,
+        "GlobalQueueLength": 128,
+        "QueueWaitSeconds": 30,
+        "ExecutionDeadlineSeconds": 300,
+        "OperatorMaximumNanoYuan": 12983400000
+      }
+    },
+    "Pricing": {
+      "translation": {
+        "InputRateNanoYuan": 2000,
+        "OutputRateNanoYuan": 8000
+      },
+      "ai-model": {
+        "InputRateNanoYuan": 200,
+        "OutputRateNanoYuan": 800
+      },
+      "table-extraction": {
+        "InputRateNanoYuan": 30000000,
+        "OutputRateNanoYuan": 0
+      },
+      "latex-extraction": {
+        "InputRateNanoYuan": 15000000,
+        "OutputRateNanoYuan": 0
+      },
+      "expert-model": {
+        "InputRateNanoYuan": 12000,
+        "OutputRateNanoYuan": 36000
+      }
+    },
+    "ModelPricing": {
+      "qwen3.7-flash": [
+        {
+          "MaximumInputTokens": 32000,
+          "InputRateNanoYuan": 200,
+          "OutputRateNanoYuan": 800,
+          "CachedInputRateNanoYuan": 40
+        },
+        {
+          "MaximumInputTokens": 256000,
+          "InputRateNanoYuan": 600,
+          "OutputRateNanoYuan": 2400,
+          "CachedInputRateNanoYuan": 120
+        },
+        {
+          "MaximumInputTokens": 1000000,
+          "InputRateNanoYuan": 1200,
+          "OutputRateNanoYuan": 4800,
+          "CachedInputRateNanoYuan": 240
+        }
+      ],
+      "qwen3.8-flash": [
+        {
+          "MaximumInputTokens": 1000000,
+          "InputRateNanoYuan": 800,
+          "OutputRateNanoYuan": 2700,
+          "CachedInputRateNanoYuan": 100
+        }
+      ],
+      "qwen3.8-max": [
+        {
+          "MaximumInputTokens": 1000000,
+          "InputRateNanoYuan": 12000,
+          "OutputRateNanoYuan": 36000,
+          "CachedInputRateNanoYuan": 1500
+        }
+      ]
+    }
+  },
+  "Providers": {
+    "Models": {
+      "qwen3.7-flash": {
+        "BillingEnvelope": {
+          "MaximumInputTokens": 991808,
+          "MaximumThinkingInputTokens": 983616,
+          "CompletionTolerance": 10,
+          "TextInput": {
+            "RequestOverheadTokens": 64,
+            "MessageOverheadTokens": 16
+          }
+        },
+        "Order": 10,
+        "Thinking": true,
+        "TranslationMode": "default",
+        "SupportVision": false,
+        "Accesses": {
+          "aliyun": {
+            "Provider": "aliyun",
+            "UpstreamModel": "qwen3.7-flash",
+            "MaxConcurrentRequests": 64
+          }
+        }
+      },
+      "qwen3.8-flash": {
+        "BillingEnvelope": {
+          "MaximumInputTokens": 991808,
+          "MaximumThinkingInputTokens": 983616,
+          "CompletionTolerance": 10,
+          "TextInput": {
+            "RequestOverheadTokens": 64,
+            "MessageOverheadTokens": 16
+          }
+        },
+        "Order": 10,
+        "Thinking": true,
+        "TranslationMode": "default",
+        "SupportVision": true,
+        "Accesses": {
+          "aliyun": {
+            "Provider": "aliyun",
+            "UpstreamModel": "qwen3.8-flash",
+            "MaxConcurrentRequests": 64
+          }
+        }
+      },
+      "qwen3.8-max": {
+        "BillingEnvelope": {
+          "MaximumInputTokens": 991808,
+          "MaximumThinkingInputTokens": 983616,
+          "CompletionTolerance": 10,
+          "TextInput": {
+            "RequestOverheadTokens": 64,
+            "MessageOverheadTokens": 16
+          }
+        },
+        "Order": 20,
+        "Thinking": true,
+        "TranslationMode": "default",
+        "SupportVision": true,
+        "Accesses": {
+          "aliyun": {
+            "Provider": "aliyun",
+            "UpstreamModel": "qwen3.8-max",
+            "MaxConcurrentRequests": 64
+          }
+        }
+      }
+    },
+    "PublicModels": {
+      "ai-model": {
+        "Order": 10,
+        "Thinking": true,
+        "TextModel": "qwen3.7-flash",
+        "VisionModel": "qwen3.8-flash",
+        "Aliases": [
+          "qwen3.8-flash",
+          "qwen-mt-flash"
+        ]
+      },
+      "expert-model": {
+        "Order": 20,
+        "Thinking": true,
+        "TextModel": "qwen3.8-max",
+        "VisionModel": "qwen3.8-max"
+      }
+    },
+    "Translation": {
+      "LogicalModels": [
+        "qwen3.7-flash"
+      ],
+      "MaximumConcurrentConversations": 8,
+      "MaximumAttemptsPerConversation": 3,
+      "AttemptTimeoutSeconds": 90,
+      "InitialRetryDelayMilliseconds": 250,
+      "MaximumRetryDelayMilliseconds": 2000
+    }
+  }
+}

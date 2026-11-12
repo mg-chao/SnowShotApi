@@ -30,11 +30,15 @@ public sealed class IdentityOptions
     }
 }
 
+public enum FreeAllowanceMode { DailyNanoYuan, MonthlyRequests }
+
 public sealed class PolicyOptions
 {
     public const string SectionName = "Policy";
     [Range(1, long.MaxValue)] public long Revision { get; init; } = 1;
     [Range(1, long.MaxValue)] public long PrincipalDailyAllowanceNanoYuan { get; init; } = 3_000_000_000;
+    public FreeAllowanceMode? AllowanceMode { get; init; }
+    public Dictionary<string, int>? MonthlyFreeRequests { get; init; }
     [Range(1, long.MaxValue)] public long DailyOperatorBudgetNanoYuan { get; init; } = 50_000_000_000;
     [Range(1, long.MaxValue)] public long MonthlyOperatorBudgetNanoYuan { get; init; } = 200_000_000_000;
     [Range(2, 3600)] public int ActiveLeaseTtlSeconds { get; init; } = 30;
@@ -47,6 +51,14 @@ public sealed class PolicyOptions
     public ServicePolicy Build(IEnumerable<string>? additionalResources = null, string routingIdentity = "",
         bool publishedModelsOnly = false)
     {
+        var monthlyFreeRequests = AllowanceMode switch
+        {
+            null => MonthlyFreeRequests,
+            FreeAllowanceMode.DailyNanoYuan => null,
+            FreeAllowanceMode.MonthlyRequests => MonthlyFreeRequests ??
+                throw new PolicyValidationException("Monthly allowance mode requires free request limits."),
+            _ => throw new PolicyValidationException("Invalid allowance mode."),
+        };
         var defaults = ServicePolicy.Defaults();
         var additional = (additionalResources ?? []).ToHashSet(StringComparer.Ordinal);
         var fastResource = SnowShot.Domain.Resources.FastTranslation;
@@ -91,7 +103,7 @@ public sealed class PolicyOptions
             new(MonthlyOperatorBudgetNanoYuan), TimeSpan.FromSeconds(ActiveLeaseTtlSeconds), TimeSpan.FromSeconds(LeaseRenewalSeconds),
             additional, new(Estimation.BytesPerInputToken, Estimation.CharsPerOutputToken),
             ModelPricing.ToDictionary(pair => pair.Key, pair => new TokenTariff([.. pair.Value]), StringComparer.Ordinal),
-            routingIdentity);
+            routingIdentity, monthlyFreeRequests);
     }
 
     private UnitPrice Price(string resource)

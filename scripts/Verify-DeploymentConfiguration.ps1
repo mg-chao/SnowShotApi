@@ -3,7 +3,7 @@ param(
     [string]$NginxConfigurationPath = "deployment/nginx/snowshot.top.conf",
     [string]$RestorePolicyPath = "deployment/policy/policy-revision-15.json",
     [Nullable[long]]$ExpectedPolicyRevision,
-    [string]$PolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-19.json",
+    [string]$PolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-21.json",
     [string]$RestorePolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-15.json"
 )
 
@@ -58,10 +58,25 @@ foreach ($profile in $profiles) {
     if ([long]$document.Policy.Revision -lt [long]$profile.Reference.Policy.Revision) {
         throw "The policy revision must be at least its reference revision ($($profile.Reference.Policy.Revision))."
     }
-    if ([long]$document.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000 -or
-        [long]$document.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000 -or
+    if ([long]$document.Policy.DailyOperatorBudgetNanoYuan -ne 50000000000 -or
         [long]$document.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
-        throw "The policy must preserve the 3/50/1000 yuan allowances and budgets."
+        throw "The policy must preserve the 50/1000 yuan operator budgets."
+    }
+    $monthlyAllowance = $document.Policy.MonthlyFreeRequests
+    $allowanceMode = $document.Policy.AllowanceMode
+    if ($null -ne $profile.Reference.Policy.MonthlyFreeRequests) {
+        $names = @($monthlyAllowance.PSObject.Properties.Name | Sort-Object) -join ','
+        if (($null -ne $allowanceMode -and $allowanceMode -ne 'MonthlyRequests') -or
+            $null -ne $document.Policy.PrincipalDailyAllowanceNanoYuan -or
+            $names -ne 'ai-model,latex-extraction,table-extraction' -or
+            $monthlyAllowance.'ai-model' -ne 5 -or
+            $monthlyAllowance.'latex-extraction' -ne 10 -or
+            $monthlyAllowance.'table-extraction' -ne 10) {
+            throw "The policy must use the 5/10/10 monthly free request allowances and remove the daily monetary allowance."
+        }
+    } elseif (($null -ne $allowanceMode -and $allowanceMode -ne 'DailyNanoYuan') -or
+        $null -ne $monthlyAllowance -or [long]$document.Policy.PrincipalDailyAllowanceNanoYuan -ne 3000000000) {
+        throw "The historical policy must preserve the 3 yuan daily allowance."
     }
     $expertEnabled = $null -ne $profile.Reference.Providers.PublicModels.'expert-model'
     $expectedResources = @('ai-model', 'latex-extraction', 'table-extraction', 'translation')

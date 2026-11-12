@@ -11,6 +11,7 @@ internal static class LatexEndpoints
     public static IEndpointRouteBuilder MapLatexEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/api/v1/latex/extract", ExtractAsync).WithName("LatexExtraction").WithTags("Latex")
+            .WithDescription("Extract LaTeX from an image. Includes 10 free requests per IP address per month.")
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<AppEnvelope>(StatusCodes.Status200OK)
             .Produces<PublicProblem>(StatusCodes.Status400BadRequest, "application/problem+json")

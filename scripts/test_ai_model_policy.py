@@ -11,7 +11,7 @@ SPEC = importlib.util.spec_from_file_location("prepare_policy", HERE / "Prepare-
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 OVERLAY = json.loads((HERE.parent / "deployment/policy/policy-revision-15.json").read_text(encoding="utf8"))
-CURRENT_OVERLAY_PATH = HERE.parent / "deployment/policy/policy-revision-19.json"
+CURRENT_OVERLAY_PATH = HERE.parent / "deployment/policy/policy-revision-21.json"
 CURRENT_OVERLAY = json.loads(CURRENT_OVERLAY_PATH.read_text(encoding="utf8"))
 
 
@@ -57,6 +57,16 @@ class AiModelPolicyTests(unittest.TestCase):
             with self.subTest(revision=revision), self.assertRaisesRegex(ValueError, "selected overlay"):
                 MODULE.prepare({"Policy": {"Revision": 13}}, CURRENT_OVERLAY, 13, revision)
 
+    def test_preparation_removes_the_other_allowance_mode(self):
+        settings = {"Policy": {"Revision": 19, "PrincipalDailyAllowanceNanoYuan": 3_000_000_000}}
+        monthly = MODULE.prepare(settings, CURRENT_OVERLAY, 19, 21)
+        self.assertNotIn("PrincipalDailyAllowanceNanoYuan", monthly["Policy"])
+        self.assertEqual(monthly["Policy"]["AllowanceMode"], "MonthlyRequests")
+        restored = MODULE.prepare(monthly, OVERLAY, 21, 22)
+        self.assertNotIn("MonthlyFreeRequests", restored["Policy"])
+        self.assertEqual(restored["Policy"]["AllowanceMode"], "DailyNanoYuan")
+        self.assertEqual(restored["Policy"]["PrincipalDailyAllowanceNanoYuan"], 3_000_000_000)
+
     def test_cli_selects_matching_overlay_and_revision_by_default(self):
         with tempfile.TemporaryDirectory() as temporary:
             source, output = Path(temporary) / "source.json", Path(temporary) / "output.json"
@@ -82,6 +92,7 @@ class AiModelPolicyTests(unittest.TestCase):
             prepared = json.loads(output.read_text(encoding="utf8"))
             expected = json.loads(json.dumps(OVERLAY["Policy"]))
             expected["Revision"] = 16
+            expected["AllowanceMode"] = "DailyNanoYuan"
             self.assertEqual(prepared["Policy"], expected)
 
 

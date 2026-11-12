@@ -992,7 +992,7 @@ public sealed class DistributedIntegrationTests
         return principalId;
     }
 
-    private static DbContextOptions<SnowShotDbContext> FaultOptions(
+    internal static DbContextOptions<SnowShotDbContext> FaultOptions(
         string connectionString,
         params IInterceptor[] interceptors) =>
         new DbContextOptionsBuilder<SnowShotDbContext>()
@@ -1023,7 +1023,7 @@ public sealed class DistributedIntegrationTests
         public SnowShotDbContext CreateDbContext() => new(options);
     }
 
-    private sealed class FixedAllowanceDate(DateOnly date) : DbCommandInterceptor
+    internal sealed class FixedAllowanceDate(DateOnly date) : DbCommandInterceptor
     {
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData,
             InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
@@ -1051,7 +1051,7 @@ public sealed class DistributedIntegrationTests
         }
     }
 
-    private sealed class CommitAcknowledgementLossInterceptor : DbTransactionInterceptor
+    internal sealed class CommitAcknowledgementLossInterceptor : DbTransactionInterceptor
     {
         private int _armed;
 

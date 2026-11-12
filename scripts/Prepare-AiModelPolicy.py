@@ -21,6 +21,12 @@ def prepare(settings, overlay, active_revision, revision):
     result = copy.deepcopy(settings)
     policy = result.setdefault("Policy", {})
     providers = result.setdefault("Providers", {})
+    if "MonthlyFreeRequests" in overlay["Policy"]:
+        policy.pop("PrincipalDailyAllowanceNanoYuan", None)
+        policy["AllowanceMode"] = "MonthlyRequests"
+    else:
+        policy.pop("MonthlyFreeRequests", None)
+        policy["AllowanceMode"] = "DailyNanoYuan"
     # .NET configuration merges dictionary children across layers. Merely adding
     # the new model leaves obsolete resources and native translation flags alive.
     for section in ("Resources", "Pricing", "ModelPricing"):
@@ -48,7 +54,7 @@ def main():
     parser.add_argument("--active-revision", type=int, required=True, help="Verified database active revision")
     parser.add_argument("--revision", type=int, help="Defaults to the selected overlay's revision")
     parser.add_argument("--overlay", type=Path, default=Path(__file__).resolve().parents[1] /
-                        "deployment/policy/policy-revision-19.json")
+                        "deployment/policy/policy-revision-21.json")
     args = parser.parse_args()
     settings = json.loads(args.settings.read_text(encoding="utf-8-sig"))
     overlay = json.loads(args.overlay.read_text(encoding="utf-8-sig"))

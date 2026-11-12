@@ -894,8 +894,9 @@ public sealed class PublicContractTests
     [Theory]
     [InlineData(true, "en-US", "Too many requests in a short time. Wait before retrying.")]
     [InlineData(true, "zh-CN", "短时间内请求过多，请稍后重试。")]
-    [InlineData(false, "en-US", "The daily usage allowance has been exhausted.")]
-    [InlineData(false, "zh-CN", "今日使用额度已用尽。")]
+    [InlineData(false, "en-US", "The free usage allowance for this service has been exhausted.")]
+    [InlineData(false, "zh-CN", "此服务的免费使用额度已用尽。")]
+    [InlineData(false, "zh-TW", "此服務的免費使用額度已用盡。")]
     public async Task ChatRateAndAllowanceLimitsHaveDistinctLocalizedReasonsAndRetryMetadata(
         bool temporary, string language, string detail)
     {

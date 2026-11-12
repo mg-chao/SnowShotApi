@@ -194,7 +194,8 @@ def main():
         assert sql("SELECT count(*) FROM snowshot.usage_events;") == "7"
         assert sql('SELECT sum("Requests") FROM snowshot.daily_aggregates;') == "7"
         assert sql('SELECT count(*) FROM (SELECT "OperationId" FROM snowshot.usage_events GROUP BY 1 HAVING count(*)<>1) x;') == "0"
-        assert sql('SELECT sum("ReservedNanoYuan") FROM snowshot.allowance_periods;') == "0"
+        assert sql('SELECT sum("ReservedRequests") FROM snowshot.monthly_free_request_periods;') == "0"
+        assert sql('SELECT sum("CommittedRequests") FROM snowshot.monthly_free_request_periods;') == "7"
         assert sql('SELECT sum("ReservedNanoYuan") FROM snowshot.operator_budget_periods;') == "0"
         print("Rehearsing rollback and final forward switch", flush=True)
         api.switch("blue")

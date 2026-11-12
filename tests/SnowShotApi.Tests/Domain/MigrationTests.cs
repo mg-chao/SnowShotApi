@@ -12,7 +12,7 @@ public sealed class MigrationTests
     {
         using var context = Context();
         Assert.False(context.Database.HasPendingModelChanges());
-        Assert.Equal(15, context.Database.GetMigrations().Count());
+        Assert.Equal(16, context.Database.GetMigrations().Count());
     }
 
     [Fact]
@@ -29,6 +29,9 @@ public sealed class MigrationTests
         Assert.Contains("ix_usage_operations_reconciliation", script, StringComparison.Ordinal);
         Assert.Contains("ix_usage_operations_retention", script, StringComparison.Ordinal);
         Assert.Contains("ix_allowance_periods_retention", script, StringComparison.Ordinal);
+        Assert.Contains("ix_monthly_free_requests_retention", script, StringComparison.Ordinal);
+        Assert.Contains("ck_monthly_free_requests_nonnegative", script, StringComparison.Ordinal);
+        Assert.Contains("ADD \"AllowanceFunding\" integer NOT NULL DEFAULT 0", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ix_operator_budget_periods_retention", script, StringComparison.Ordinal);
         Assert.Contains("ix_principals_retention", script, StringComparison.Ordinal);
         Assert.Contains("ix_usage_events_retention", script, StringComparison.Ordinal);

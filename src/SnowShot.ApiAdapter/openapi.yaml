@@ -33,9 +33,10 @@ paths:
     post:
       tags:
       - Chat
-      description: Fast Model (ai-model) is eligible for the daily free allowance.
-        Expert Model (expert-model) and legacy aliases require a Snow Shot account
-        and use wallet credits.
+      description: Fast Model (ai-model) includes 5 free requests per IP address per
+        month. Linked accounts use wallet credits after the allowance. Expert Model
+        (expert-model) and legacy aliases require a Snow Shot account and use wallet
+        credits.
       operationId: ChatCompletions
       parameters:
       - name: X-Request-ID
@@ -243,8 +244,9 @@ paths:
       tags:
       - Table
       description: Extract one table from a JPEG, PNG or WebP image. Upload one multipart
-        file named image, at most 800 KiB and 2880 x 2880 pixels. Returns data.html;
-        account authentication is optional.
+        file named image, at most 800 KiB and 2880 x 2880 pixels. Returns data.html.
+        Account authentication is optional. Includes 10 free requests per IP address
+        per month.
       operationId: TableExtraction
       parameters:
       - name: X-Request-ID
@@ -331,6 +333,8 @@ paths:
     post:
       tags:
       - Latex
+      description: Extract LaTeX from an image. Includes 10 free requests per IP address
+        per month.
       operationId: LatexExtraction
       parameters:
       - name: X-Request-ID

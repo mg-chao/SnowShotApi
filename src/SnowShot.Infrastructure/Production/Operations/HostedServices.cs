@@ -161,6 +161,7 @@ public sealed class RetentionService(
             $"SELECT clock_timestamp() AS \"Value\"").SingleAsync(cancellationToken);
         var operationCutoff = databaseNow.AddDays(-options.OperationDays);
         var aggregateCutoff = DateOnly.FromDateTime(databaseNow.AddDays(-options.AggregateDays).UtcDateTime);
+        var monthlyAllowanceCutoff = new DateOnly(aggregateCutoff.Year, aggregateCutoff.Month, 1);
         var identityCutoff = databaseNow.AddDays(-options.IdentityDays);
         var operations = await context.Database.ExecuteSqlInterpolatedAsync($"""
             WITH expired AS (
@@ -196,6 +197,18 @@ public sealed class RetentionService(
             WHERE target."PrincipalId" = expired."PrincipalId"
               AND target."PeriodDate" = expired."PeriodDate"
             """, cancellationToken);
+        var monthlyAllowancePeriods = await context.Database.ExecuteSqlInterpolatedAsync($"""
+            WITH expired AS (
+                SELECT "PrincipalId", "Resource", "MonthStart" FROM snowshot.monthly_free_request_periods
+                WHERE "MonthStart" < {monthlyAllowanceCutoff} AND "ReservedRequests" = 0
+                ORDER BY "MonthStart", "PrincipalId", "Resource" LIMIT {batchSize}
+            )
+            DELETE FROM snowshot.monthly_free_request_periods AS target USING expired
+            WHERE target."PrincipalId" = expired."PrincipalId"
+              AND target."Resource" = expired."Resource"
+              AND target."MonthStart" = expired."MonthStart"
+              AND target."ReservedRequests" = 0
+            """, cancellationToken);
         var budgetPeriods = await context.Database.ExecuteSqlInterpolatedAsync($"""
             WITH expired AS (
                 SELECT "Kind", "PeriodKey" FROM snowshot.operator_budget_periods
@@ -215,6 +228,9 @@ public sealed class RetentionService(
                   AND NOT EXISTS (
                     SELECT 1 FROM snowshot.allowance_periods AS allowance
                     WHERE allowance."PrincipalId" = fingerprint."PrincipalId")
+                  AND NOT EXISTS (
+                    SELECT 1 FROM snowshot.monthly_free_request_periods AS allowance
+                    WHERE allowance."PrincipalId" = fingerprint."PrincipalId")
                 ORDER BY fingerprint."LastSeenAt", fingerprint."Fingerprint" LIMIT {batchSize}
             )
             DELETE FROM snowshot.principal_fingerprints AS target USING expired
@@ -233,13 +249,16 @@ public sealed class RetentionService(
                   AND NOT EXISTS (
                     SELECT 1 FROM snowshot.allowance_periods AS allowance
                     WHERE allowance."PrincipalId" = principal."Id")
+                  AND NOT EXISTS (
+                    SELECT 1 FROM snowshot.monthly_free_request_periods AS allowance
+                    WHERE allowance."PrincipalId" = principal."Id")
                 ORDER BY principal."CreatedAt", principal."Id" LIMIT {batchSize}
             )
             DELETE FROM snowshot.principals AS target USING expired
             WHERE target."Id" = expired."Id"
             """, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new(operations, aggregates, allowancePeriods, budgetPeriods, fingerprints, principals);
+        return new(operations, aggregates, checked(allowancePeriods + monthlyAllowancePeriods), budgetPeriods, fingerprints, principals);
     }
 }
 
@@ -254,7 +273,7 @@ internal readonly record struct RetentionSweepResult(
     public static RetentionSweepResult Empty => default;
 
     public bool HasFullCategory(int batchSize) =>
-        Operations == batchSize || Aggregates == batchSize || AllowancePeriods == batchSize ||
+        Operations == batchSize || Aggregates == batchSize || AllowancePeriods >= batchSize ||
         BudgetPeriods == batchSize || Fingerprints == batchSize || Principals == batchSize;
 
     public static RetentionSweepResult operator +(RetentionSweepResult left, RetentionSweepResult right) => new(

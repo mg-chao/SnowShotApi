@@ -84,26 +84,37 @@ internal sealed class PostgresOperationLedger(
         var allowanceDate = await DatabaseAllowanceDateAsync(context, cancellationToken);
         var dailyKey = allowanceDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         var monthlyKey = allowanceDate.ToString("yyyyMM", CultureInfo.InvariantCulture);
-        await context.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO snowshot.allowance_periods ("PrincipalId", "PeriodDate", "LimitNanoYuan", "CommittedNanoYuan", "ReservedNanoYuan", "AppliedPolicyRevision", "UpdatedAt")
-            VALUES ({operation.PrincipalId}, {allowanceDate}, {policy.PrincipalDailyAllowance.Value}, 0, 0, {policy.Revision}, {now})
-            ON CONFLICT ("PrincipalId", "PeriodDate") DO NOTHING
-            """, cancellationToken);
-        await EnsureBudgetsAsync(context, dailyKey, monthlyKey, now, cancellationToken);
-
         // Accounting locks are always allowance, daily budget, then monthly budget.
-        var allowance = await context.AllowancePeriods.FromSqlInterpolated($"""
-            SELECT * FROM snowshot.allowance_periods
-            WHERE "PrincipalId" = {operation.PrincipalId} AND "PeriodDate" = {allowanceDate}
-            FOR UPDATE
-            """).SingleAsync(cancellationToken);
-        var budgets = await LockBudgetsAsync(context, dailyKey, monthlyKey, cancellationToken);
-        if (allowance.AppliedPolicyRevision != policy.Revision || allowance.LimitNanoYuan != policy.PrincipalDailyAllowance.Value)
+        AllowancePeriodEntity? dailyAllowance = null;
+        MonthlyFreeRequestPeriodEntity? monthlyAllowance = null;
+        var monthlyLimit = 0;
+        var monthStart = FirstOfMonth(allowanceDate);
+        if (policy.MonthlyFreeRequests is null)
         {
-            allowance.LimitNanoYuan = policy.PrincipalDailyAllowance.Value;
-            allowance.AppliedPolicyRevision = policy.Revision;
-            allowance.UpdatedAt = now;
+            await context.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO snowshot.allowance_periods ("PrincipalId", "PeriodDate", "LimitNanoYuan", "CommittedNanoYuan", "ReservedNanoYuan", "AppliedPolicyRevision", "UpdatedAt")
+                VALUES ({operation.PrincipalId}, {allowanceDate}, {policy.PrincipalDailyAllowance.Value}, 0, 0, {policy.Revision}, {now})
+                ON CONFLICT ("PrincipalId", "PeriodDate") DO NOTHING
+                """, cancellationToken);
+            dailyAllowance = await LockDailyAllowanceAsync(context, operation.PrincipalId, allowanceDate, cancellationToken);
+            if (dailyAllowance.AppliedPolicyRevision != policy.Revision || dailyAllowance.LimitNanoYuan != policy.PrincipalDailyAllowance.Value)
+            {
+                dailyAllowance.LimitNanoYuan = policy.PrincipalDailyAllowance.Value;
+                dailyAllowance.AppliedPolicyRevision = policy.Revision;
+                dailyAllowance.UpdatedAt = now;
+            }
         }
+        else if (operation.UsesFreeAllowance && policy.MonthlyFreeRequests.TryGetValue(operation.Snapshot.Resource, out monthlyLimit))
+        {
+            await context.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO snowshot.monthly_free_request_periods ("PrincipalId", "Resource", "MonthStart", "CommittedRequests", "ReservedRequests")
+                VALUES ({operation.PrincipalId}, {operation.Snapshot.Resource}, {monthStart}, 0, 0)
+                ON CONFLICT ("PrincipalId", "Resource", "MonthStart") DO NOTHING
+                """, cancellationToken);
+            monthlyAllowance = await LockMonthlyAllowanceAsync(context, operation.PrincipalId, operation.Snapshot.Resource, monthStart, cancellationToken);
+        }
+        await EnsureBudgetsAsync(context, dailyKey, monthlyKey, now, cancellationToken);
+        var budgets = await LockBudgetsAsync(context, dailyKey, monthlyKey, cancellationToken);
         foreach (var budget in budgets)
         {
             var limit = budget.Kind == BudgetPeriodKind.Daily ? policy.DailyOperatorBudget.Value : policy.MonthlyOperatorBudget.Value;
@@ -128,8 +139,7 @@ internal sealed class PostgresOperationLedger(
             return new(false, null, existing.State, ReservationRejectionReason.DuplicateRequest);
         }
         AccountWalletEntity? wallet = null;
-        var freeHold = operation.Snapshot.PublicReservation.Value;
-        var walletHold = 0L;
+        var freeRecognition = false;
         if (operation.AccountId is { } accountId)
         {
             // Payment/refund transactions lock only account rows. Usage always takes
@@ -146,40 +156,63 @@ internal sealed class PostgresOperationLedger(
             }
             // Decide the benefit while holding the same wallet lock as payments and
             // refunds, then retain it for settlement and uncertain-commit recovery.
-            var freeRecognition = MembershipRules.HasFreeRecognition(wallet.CumulativeRechargeNanoYuan) &&
+            freeRecognition = MembershipRules.HasFreeRecognition(wallet.CumulativeRechargeNanoYuan) &&
                 ((operation.Kind == UsageKind.TableExtraction && operation.Snapshot.Resource == Resources.TableExtraction) ||
                  (operation.Kind == UsageKind.LatexExtraction && operation.Snapshot.Resource == Resources.LatexExtraction));
+        }
+
+        var monthlyLimitReached = monthlyAllowance is not null && ReservationRules.WouldExceed(
+            monthlyAllowance.CommittedRequests, monthlyAllowance.ReservedRequests, 1, monthlyLimit);
+        var useMonthlySlot = monthlyAllowance is not null && !monthlyLimitReached && !freeRecognition;
+        if (freeRecognition || useMonthlySlot)
+        {
             operation = operation with
             {
                 Snapshot = operation.Snapshot with
                 {
                     MembershipRecognitionFree = freeRecognition,
-                    PublicReservation = freeRecognition ? NanoYuan.Zero : operation.Snapshot.PublicReservation,
+                    PublicReservation = NanoYuan.Zero,
                 },
             };
-            var freeLimit = operation.UsesFreeAllowance ? allowance.LimitNanoYuan : 0;
+        }
+        var freeHold = dailyAllowance is null ? 0 : operation.Snapshot.PublicReservation.Value;
+        var walletHold = 0L;
+        if (wallet is not null)
+        {
+            var freeLimit = operation.UsesFreeAllowance ? dailyAllowance?.LimitNanoYuan ?? 0 : 0;
             var allocation = AccountFunding.Reserve(operation.Snapshot.PublicReservation.Value, freeLimit,
-                allowance.CommittedNanoYuan, allowance.ReservedNanoYuan, wallet.AvailableNanoYuan,
+                dailyAllowance?.CommittedNanoYuan ?? 0, dailyAllowance?.ReservedNanoYuan ?? 0, wallet.AvailableNanoYuan,
                 wallet.HeldNanoYuan, wallet.OutstandingNanoYuan);
             if (!allocation.Accepted)
             {
                 await transaction.CommitAsync(cancellationToken);
-                return Rejected(allocation.Rejection switch
+                var reason = allocation.Rejection switch
                 {
                     FundingRejection.OutstandingBalance => ReservationRejectionReason.OutstandingBalance,
                     FundingRejection.TemporarilyReserved => ReservationRejectionReason.FundsTemporarilyReserved,
+                    _ when monthlyAllowance is not null && monthlyAllowance.CommittedRequests < monthlyLimit =>
+                        ReservationRejectionReason.FundsTemporarilyReserved,
                     _ => ReservationRejectionReason.InsufficientCredits,
-                }, allocation.Rejection == FundingRejection.TemporarilyReserved ? TimeSpan.FromSeconds(2) : null);
+                };
+                return Rejected(reason, reason == ReservationRejectionReason.FundsTemporarilyReserved ? TimeSpan.FromSeconds(2) : null);
             }
             freeHold = allocation.Free;
             walletHold = allocation.Wallet;
         }
-        else if (ReservationRules.WouldExceed(allowance.CommittedNanoYuan, allowance.ReservedNanoYuan,
-            operation.Snapshot.PublicReservation.Value, allowance.LimitNanoYuan))
+        else if (dailyAllowance is not null && ReservationRules.WouldExceed(dailyAllowance.CommittedNanoYuan, dailyAllowance.ReservedNanoYuan,
+            operation.Snapshot.PublicReservation.Value, dailyAllowance.LimitNanoYuan))
         {
             await transaction.CommitAsync(cancellationToken);
             return Rejected(ReservationRejectionReason.AllowanceExhausted,
                 await DatabaseDailyRetryAfterAsync(context, cancellationToken));
+        }
+        else if (dailyAllowance is null && !useMonthlySlot)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return Rejected(ReservationRejectionReason.AllowanceExhausted,
+                monthlyAllowance is not null && monthlyAllowance.CommittedRequests < monthlyLimit
+                    ? TimeSpan.FromSeconds(2)
+                    : await DatabaseQuotaRetryAfterAsync(context, monthStart, cancellationToken));
         }
         if (budgets.Any(value => ReservationRules.WouldExceed(value.CommittedNanoYuan, value.ReservedNanoYuan,
             operation.Snapshot.OperatorMaximum.Value, value.LimitNanoYuan)))
@@ -193,7 +226,13 @@ internal sealed class PostgresOperationLedger(
                 : await DatabaseDailyRetryAfterAsync(context, cancellationToken));
         }
 
-        allowance.ReservedNanoYuan = checked(allowance.ReservedNanoYuan + freeHold);
+        if (dailyAllowance is not null)
+        {
+            dailyAllowance.ReservedNanoYuan = checked(dailyAllowance.ReservedNanoYuan + freeHold);
+            dailyAllowance.UpdatedAt = now;
+        }
+        if (useMonthlySlot)
+            monthlyAllowance!.ReservedRequests = checked(monthlyAllowance.ReservedRequests + 1);
         if (wallet is not null)
         {
             wallet.AvailableNanoYuan = checked(wallet.AvailableNanoYuan - walletHold);
@@ -206,7 +245,6 @@ internal sealed class PostgresOperationLedger(
                 CreatedAt = now,
             });
         }
-        allowance.UpdatedAt = now;
         foreach (var budget in budgets)
         {
             budget.ReservedNanoYuan = checked(budget.ReservedNanoYuan + operation.Snapshot.OperatorMaximum.Value);
@@ -222,6 +260,8 @@ internal sealed class PostgresOperationLedger(
             MembershipRecognitionFree = operation.Snapshot.MembershipRecognitionFree,
             ReservedFreeNanoYuan = freeHold,
             ReservedWalletNanoYuan = walletHold,
+            AllowanceFunding = dailyAllowance is not null ? AllowanceFunding.LegacyDaily :
+                useMonthlySlot ? AllowanceFunding.MonthlyRequest : AllowanceFunding.None,
             AllowanceDate = allowanceDate,
             Kind = operation.Kind,
             Resource = operation.Snapshot.Resource,
@@ -528,18 +568,20 @@ internal sealed class PostgresOperationLedger(
             return new(false, null, SettlementRejectionReason.LeaseLost);
         if (!ReservationRules.CanTransition(operation.State, decision.State))
             return new(false, null, SettlementRejectionReason.Conflict);
-        if (operation.AccountId.HasValue && !snapshot.MembershipRecognitionFree && effective.Delivered &&
+        if (operation.AccountId.HasValue && !snapshot.MembershipRecognitionFree &&
+            operation.AllowanceFunding != AllowanceFunding.MonthlyRequest && effective.Delivered &&
             effective.ReportedPublicCost > snapshot.PublicReservation)
             BillingEnvelopeExceeded(logger, operation.Id, effective.ReportedPublicCost.Value,
                 snapshot.PublicReservation.Value, null);
 
         var dailyKey = operation.AllowanceDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         var monthlyKey = operation.AllowanceDate.ToString("yyyyMM", CultureInfo.InvariantCulture);
-        var allowance = await context.AllowancePeriods.FromSqlInterpolated($"""
-            SELECT * FROM snowshot.allowance_periods
-            WHERE "PrincipalId" = {operation.PrincipalId} AND "PeriodDate" = {operation.AllowanceDate}
-            FOR UPDATE
-            """).SingleAsync(cancellationToken);
+        var dailyAllowance = operation.AllowanceFunding == AllowanceFunding.LegacyDaily
+            ? await LockDailyAllowanceAsync(context, operation.PrincipalId, operation.AllowanceDate, cancellationToken)
+            : null;
+        var monthlyAllowance = operation.AllowanceFunding == AllowanceFunding.MonthlyRequest
+            ? await LockMonthlyAllowanceAsync(context, operation.PrincipalId, operation.Resource, FirstOfMonth(operation.AllowanceDate), cancellationToken)
+            : null;
         var budgets = await LockBudgetsAsync(context, dailyKey, monthlyKey, cancellationToken);
         var freeCharge = decision.PublicCost.Value;
         if (operation.AccountId is { } accountId)
@@ -565,10 +607,18 @@ internal sealed class PostgresOperationLedger(
                     Description = operation.Resource,
                 });
         }
-        allowance.ReservedNanoYuan = checked(allowance.ReservedNanoYuan -
-            (operation.AccountId.HasValue ? operation.ReservedFreeNanoYuan : operation.ReservedPublicNanoYuan));
-        allowance.CommittedNanoYuan = checked(allowance.CommittedNanoYuan + freeCharge);
-        allowance.UpdatedAt = now;
+        if (dailyAllowance is not null)
+        {
+            dailyAllowance.ReservedNanoYuan = checked(dailyAllowance.ReservedNanoYuan -
+                (operation.AccountId.HasValue ? operation.ReservedFreeNanoYuan : operation.ReservedPublicNanoYuan));
+            dailyAllowance.CommittedNanoYuan = checked(dailyAllowance.CommittedNanoYuan + freeCharge);
+            dailyAllowance.UpdatedAt = now;
+        }
+        if (monthlyAllowance is not null)
+        {
+            monthlyAllowance.ReservedRequests--;
+            if (effective.Delivered) monthlyAllowance.CommittedRequests = checked(monthlyAllowance.CommittedRequests + 1);
+        }
         foreach (var budget in budgets)
         {
             budget.ReservedNanoYuan = checked(budget.ReservedNanoYuan - operation.ReservedOperatorNanoYuan);
@@ -716,7 +766,9 @@ internal sealed class PostgresOperationLedger(
         existing.OutputRateNanoYuan == requested.Snapshot.Price.Output.Value &&
         existing.ModelPricingSnapshot == SerializePricing(requested.Snapshot.ModelPricing) &&
         existing.AllowanceLimitNanoYuan == requested.Snapshot.AllowanceLimit.Value &&
-        existing.ReservedPublicNanoYuan == (existing.MembershipRecognitionFree ? 0 : requested.Snapshot.PublicReservation.Value) &&
+        (existing.AllowanceFunding != AllowanceFunding.MonthlyRequest || requested.UsesFreeAllowance) &&
+        existing.ReservedPublicNanoYuan == (existing.MembershipRecognitionFree || existing.AllowanceFunding == AllowanceFunding.MonthlyRequest
+            ? 0 : requested.Snapshot.PublicReservation.Value) &&
         existing.ReservedOperatorNanoYuan == requested.Snapshot.OperatorMaximum.Value &&
         existing.LeaseExpiresAt > now && existing.AbsoluteDeadline > now;
 
@@ -729,7 +781,7 @@ internal sealed class PostgresOperationLedger(
         new(value.ReservedPublicNanoYuan), new(value.ReservedOperatorNanoYuan),
         value.ModelPricingSnapshot is null ? null :
             System.Text.Json.JsonSerializer.Deserialize<ModelPricingSnapshot>(value.ModelPricingSnapshot),
-        StrictPublicReservation: value.AccountId.HasValue,
+        StrictPublicReservation: value.AccountId.HasValue || value.AllowanceFunding == AllowanceFunding.MonthlyRequest,
         MembershipRecognitionFree: value.MembershipRecognitionFree);
 
     private static string? SerializePricing(ModelPricingSnapshot? pricing) =>
@@ -759,6 +811,22 @@ internal sealed class PostgresOperationLedger(
             ORDER BY "Kind", "PeriodKey" FOR UPDATE
             """).ToListAsync(token);
 
+    private static Task<AllowancePeriodEntity> LockDailyAllowanceAsync(
+        SnowShotDbContext context, Guid principalId, DateOnly date, CancellationToken token) =>
+        context.AllowancePeriods.FromSqlInterpolated($"""
+            SELECT * FROM snowshot.allowance_periods
+            WHERE "PrincipalId" = {principalId} AND "PeriodDate" = {date}
+            FOR UPDATE
+            """).SingleAsync(token);
+
+    private static Task<MonthlyFreeRequestPeriodEntity> LockMonthlyAllowanceAsync(
+        SnowShotDbContext context, Guid principalId, string resource, DateOnly monthStart, CancellationToken token) =>
+        context.MonthlyFreeRequestPeriods.FromSqlInterpolated($"""
+            SELECT * FROM snowshot.monthly_free_request_periods
+            WHERE "PrincipalId" = {principalId} AND "Resource" = {resource} AND "MonthStart" = {monthStart}
+            FOR UPDATE
+            """).SingleAsync(token);
+
     private Task<int> EnsureBudgetsAsync(SnowShotDbContext context, string dailyKey, string monthlyKey, DateTimeOffset now, CancellationToken token) =>
         context.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO snowshot.operator_budget_periods ("Kind", "PeriodKey", "LimitNanoYuan", "CommittedNanoYuan", "ReservedNanoYuan", "AppliedPolicyRevision", "UpdatedAt")
@@ -784,6 +852,14 @@ internal sealed class PostgresOperationLedger(
             SELECT (((date_trunc('month', clock_timestamp() AT TIME ZONE 'Asia/Shanghai') + interval '1 month')
                 AT TIME ZONE 'Asia/Shanghai') - clock_timestamp()) AS "Value"
             """).SingleAsync(token);
+
+    private static Task<TimeSpan> DatabaseQuotaRetryAfterAsync(SnowShotDbContext context, DateOnly monthStart, CancellationToken token) =>
+        context.Database.SqlQuery<TimeSpan>($"""
+            SELECT GREATEST(interval '1 second', ({monthStart.AddMonths(1)}::timestamp AT TIME ZONE 'Asia/Shanghai')
+                - clock_timestamp()) AS "Value"
+            """).SingleAsync(token);
+
+    private static DateOnly FirstOfMonth(DateOnly date) => new(date.Year, date.Month, 1);
 
     private static DateTimeOffset Minimum(DateTimeOffset left, DateTimeOffset right) => left <= right ? left : right;
 

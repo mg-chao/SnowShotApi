@@ -19,7 +19,7 @@ Completed refunds reduce the cumulative amount and can downgrade membership.
 Activation and permanent account links survive refunds.
 
 At a cumulative net recharge of at least CNY 188, dedicated table and LaTeX
-recognition cost zero, consuming neither wallet credit nor daily free allowance.
+recognition cost zero, consuming neither wallet credit nor monthly free allowance.
 The benefit remains usable with zero balance or outstanding debt. Admission
 limits, provider costs and operator budgets still apply. Eligibility is decided
 under the wallet lock during reservation and retained in the operation snapshot;

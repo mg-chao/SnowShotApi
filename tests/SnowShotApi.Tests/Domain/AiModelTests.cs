@@ -44,7 +44,7 @@ public sealed class AiModelTests
         Assert.False(catalog.Contains("qwen3.8-max"));
         Assert.Equal([Resources.AiModel, Resources.ExpertModel, Resources.LatexExtraction, Resources.TableExtraction, Resources.Translation],
             policy.ResourcePolicies.Select(value => value.Resource).Order(StringComparer.Ordinal).ToArray());
-        Assert.Equal(19, policy.Revision);
+        Assert.Equal(21, policy.Revision);
         Assert.Equal(600, policy.Get(Resources.AiModel).Admission.RequestsPerMinute);
         Assert.Equal(8, policy.Get(Resources.AiModel).Admission.PerPrincipalConcurrency);
         Assert.Equal(8, policy.Get(Resources.AiModel).Admission.PerPrincipalQueueLength);
@@ -52,7 +52,30 @@ public sealed class AiModelTests
         Assert.Equal(128, policy.Get(Resources.AiModel).Admission.GlobalQueueLength);
         Assert.Equal(TimeSpan.FromSeconds(30), policy.Get(Resources.AiModel).Admission.QueueWait);
         Assert.Equal(TimeSpan.FromSeconds(300), policy.Get(Resources.AiModel).ExecutionDeadline);
+        var allowances = Assert.IsAssignableFrom<IReadOnlyDictionary<string, int>>(policy.MonthlyFreeRequests);
+        Assert.Equal(5, allowances[Resources.AiModel]);
+        Assert.Equal(10, allowances[Resources.TableExtraction]);
+        Assert.Equal(10, allowances[Resources.LatexExtraction]);
+    }
+
+    [Fact]
+    public void RecoveryOverlayCanSelectDailyAllowanceWithInheritedMonthlyLimits()
+    {
+        using var recovery = new MemoryStream(Encoding.UTF8.GetBytes("""
+            { "Policy": { "Revision": 22, "AllowanceMode": "DailyNanoYuan", "PrincipalDailyAllowanceNanoYuan": 3000000000 } }
+            """));
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"))
+            .AddJsonStream(recovery)
+            .Build();
+        var options = configuration.GetSection(PolicyOptions.SectionName).Get<PolicyOptions>()!;
+        Assert.NotNull(options.MonthlyFreeRequests);
+
+        var policy = options.Build([Resources.AiModel, Resources.ExpertModel], publishedModelsOnly: true);
+
+        Assert.Equal(22, policy.Revision);
         Assert.Equal(3_000_000_000, policy.PrincipalDailyAllowance.Value);
+        Assert.Null(policy.MonthlyFreeRequests);
     }
 
     [Fact]
@@ -259,17 +282,24 @@ public sealed class AiModelTests
     }
 
     [Fact]
-    public void TariffAndRoutingChangesAffectPolicyFingerprint()
+    public void TariffRoutingAndFreeRequestLimitsAffectPolicyFingerprint()
     {
         var (_, policy) = Configuration();
-        ServicePolicy Copy(IReadOnlyDictionary<string, TokenTariff> prices, string routing) =>
+        ServicePolicy Copy(IReadOnlyDictionary<string, TokenTariff> prices, string routing,
+            IReadOnlyDictionary<string, int>? allowances = null) =>
             new(policy.Revision, policy.ResourcePolicies, policy.PrincipalDailyAllowance, policy.DailyOperatorBudget,
                 policy.MonthlyOperatorBudget, policy.ActiveLeaseTtl, policy.LeaseRenewalInterval,
-                estimation: policy.Estimation, modelPricing: prices, routingIdentity: routing);
+                estimation: policy.Estimation, modelPricing: prices, routingIdentity: routing,
+                monthlyFreeRequests: allowances ?? policy.MonthlyFreeRequests);
+        Assert.Equal(policy.Fingerprint, Copy(policy.ModelPricing, policy.RoutingIdentity).Fingerprint);
         var changed = policy.ModelPricing.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         changed[Resources.QwenTextFlash] = new([new(1_000_000, 201, 800, 40)]);
         Assert.NotEqual(policy.Fingerprint, Copy(changed, policy.RoutingIdentity).Fingerprint);
         Assert.NotEqual(policy.Fingerprint, Copy(policy.ModelPricing, "different-route").Fingerprint);
+        var allowances = new Dictionary<string, int>(policy.MonthlyFreeRequests!) { [Resources.AiModel] = 6 };
+        Assert.NotEqual(policy.Fingerprint, Copy(policy.ModelPricing, policy.RoutingIdentity, allowances).Fingerprint);
+        allowances.Remove(Resources.LatexExtraction);
+        Assert.Throws<PolicyValidationException>(() => Copy(policy.ModelPricing, policy.RoutingIdentity, allowances));
         var snapshot = policy.PricingFor(Resources.QwenTextFlash)!;
         var restored = JsonSerializer.Deserialize<ModelPricingSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Assert.Equal(snapshot.ExecutionModel, restored.ExecutionModel);

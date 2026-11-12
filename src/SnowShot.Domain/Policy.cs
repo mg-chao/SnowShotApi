@@ -96,7 +96,8 @@ public sealed class ServicePolicy
         IEnumerable<string>? additionalResources = null,
         EstimationRatios? estimation = null,
         IReadOnlyDictionary<string, TokenTariff>? modelPricing = null,
-        string routingIdentity = "")
+        string routingIdentity = "",
+        IReadOnlyDictionary<string, int>? monthlyFreeRequests = null)
     {
         Revision = revision;
         _resources = resources.ToDictionary(value => value.Resource, StringComparer.Ordinal);
@@ -110,12 +111,14 @@ public sealed class ServicePolicy
         ModelPricing = (modelPricing ?? new Dictionary<string, TokenTariff>())
             .ToImmutableDictionary(StringComparer.Ordinal);
         RoutingIdentity = routingIdentity;
+        MonthlyFreeRequests = monthlyFreeRequests?.ToImmutableDictionary(StringComparer.Ordinal);
         Validate();
         Fingerprint = ComputeFingerprint();
     }
 
     public long Revision { get; }
     public NanoYuan PrincipalDailyAllowance { get; }
+    public IReadOnlyDictionary<string, int>? MonthlyFreeRequests { get; }
     public NanoYuan DailyOperatorBudget { get; }
     public NanoYuan MonthlyOperatorBudget { get; }
     public TimeSpan ActiveLeaseTtl { get; }
@@ -146,6 +149,13 @@ public sealed class ServicePolicy
         if (PrincipalDailyAllowance == NanoYuan.Zero || DailyOperatorBudget == NanoYuan.Zero || MonthlyOperatorBudget == NanoYuan.Zero)
         {
             throw new PolicyValidationException("Allowance and operator budgets must be positive.");
+        }
+        if (MonthlyFreeRequests is { } limits &&
+            (limits.Count != 3 || limits.Values.Any(limit => limit <= 0) ||
+             !limits.ContainsKey(Resources.TableExtraction) || !limits.ContainsKey(Resources.LatexExtraction) ||
+             !limits.ContainsKey(Resources.AiModel)))
+        {
+            throw new PolicyValidationException("Monthly free request limits must be positive for table extraction, LaTeX extraction, and Fast Model.");
         }
         if (DailyOperatorBudget > MonthlyOperatorBudget)
         {
@@ -214,7 +224,10 @@ public sealed class ServicePolicy
             $"|{Estimation.BytesPerInputToken}|{Estimation.CharsPerOutputToken}" +
             (ModelPricing.Count == 0 && RoutingIdentity.Length == 0 ? "" :
                 "\n" + RoutingIdentity + "\n" + string.Join('\n', ModelPricing.OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                    .Select(pair => $"{pair.Key}|{pair.Value.CanonicalDocument}")));
+                    .Select(pair => $"{pair.Key}|{pair.Value.CanonicalDocument}"))) +
+            (MonthlyFreeRequests is null ? "" : "\nmonthly-free-requests\n" +
+                string.Join('\n', MonthlyFreeRequests.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => $"{pair.Key}|{pair.Value}")));
     }
 
     public static ServicePolicy Defaults() => new(
