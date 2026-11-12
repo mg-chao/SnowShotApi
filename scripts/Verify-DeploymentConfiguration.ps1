@@ -3,7 +3,7 @@ param(
     [string]$NginxConfigurationPath = "deployment/nginx/snowshot.top.conf",
     [string]$RestorePolicyPath = "deployment/policy/policy-revision-15.json",
     [Nullable[long]]$ExpectedPolicyRevision,
-    [string]$PolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-17.json",
+    [string]$PolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-19.json",
     [string]$RestorePolicyReferencePath = "$PSScriptRoot/../deployment/policy/policy-revision-15.json"
 )
 
@@ -63,16 +63,32 @@ foreach ($profile in $profiles) {
         [long]$document.Policy.MonthlyOperatorBudgetNanoYuan -ne 1000000000000) {
         throw "The policy must preserve the 3/50/1000 yuan allowances and budgets."
     }
+    $expertEnabled = $null -ne $profile.Reference.Providers.PublicModels.'expert-model'
     $expectedResources = @('ai-model', 'latex-extraction', 'table-extraction', 'translation')
+    if ($expertEnabled) { $expectedResources += 'expert-model' }
+    $fastAdmission = $document.Policy.Resources.'fast-translation'
+    $fastPrice = $document.Policy.Pricing.'fast-translation'
+    if ($null -ne $fastAdmission -or $null -ne $fastPrice -or $document.Providers.YoudaoBatchTranslation.Enabled) {
+        if ($null -eq $fastAdmission -or $null -eq $fastPrice -or
+            $fastPrice.InputRateNanoYuan -ne 100000 -or $fastPrice.OutputRateNanoYuan -ne 0) {
+            throw "Fast Translation requires its resource policy and source-only tariff."
+        }
+        $expectedResources += 'fast-translation'
+    }
     foreach ($section in @('Resources', 'Pricing')) {
         $names = @($document.Policy.$section.PSObject.Properties.Name | Sort-Object)
-        if (($names -join ',') -ne ($expectedResources -join ',')) {
-            throw "Policy:$section must contain only the four public resources. Remove obsolete layered keys."
+        if (($names -join ',') -ne (($expectedResources | Sort-Object) -join ',')) {
+            throw "Policy:$section must match the public resources in the reference. Remove obsolete layered keys."
         }
     }
     foreach ($resource in $document.Policy.Resources.PSObject.Properties) {
-        if ([long]$resource.Value.OperatorMaximumNanoYuan -ne 30000000) {
-            throw "Every resource operator reservation maximum must remain 0.03 yuan."
+        $maximum = switch ($resource.Name) {
+            'expert-model' { 12983400000 }
+            'fast-translation' { 500000000 }
+            default { 30000000 }
+        }
+        if ([long]$resource.Value.OperatorMaximumNanoYuan -ne $maximum) {
+            throw "Incorrect operator reservation maximum for '$($resource.Name)'."
         }
     }
     foreach ($resource in @('table-extraction', 'latex-extraction')) {
@@ -106,8 +122,10 @@ foreach ($profile in $profiles) {
         'qwen3.7-flash' = @(@(32000, 200, 800, 40), @(256000, 600, 2400, 120), @(1000000, 1200, 4800, 240))
         'qwen3.8-flash' = ,@(1000000, 800, 2700, 100)
     }
+    if ($expertEnabled) { $expectedTariffs['qwen3.8-max'] = ,@(1000000, 12000, 36000, 1500) }
+    $expectedExecutionModels = ($expectedTariffs.Keys | Sort-Object) -join ','
     if ((@($document.Policy.ModelPricing.PSObject.Properties.Name | Sort-Object) -join ',') -ne
-        'qwen3.7-flash,qwen3.8-flash') { throw "Both execution tariffs are required." }
+        $expectedExecutionModels) { throw "The reference's execution tariffs are required." }
     foreach ($model in $expectedTariffs.Keys) {
         $tiers = @($document.Policy.ModelPricing.$model)
         $expected = $expectedTariffs[$model]
@@ -119,9 +137,10 @@ foreach ($profile in $profiles) {
         }
     }
     if ((@($document.Providers.Models.PSObject.Properties.Name | Sort-Object) -join ',') -ne
-        'qwen3.7-flash,qwen3.8-flash') { throw "Only the text and vision execution models may remain." }
-    if ((@($document.Providers.PublicModels.PSObject.Properties.Name) -join ',') -ne 'ai-model') {
-        throw "AI Model must be the only public model."
+        $expectedExecutionModels) { throw "Execution models must match the reference." }
+    $expectedPublicModels = if ($expertEnabled) { 'ai-model,expert-model' } else { 'ai-model' }
+    if ((@($document.Providers.PublicModels.PSObject.Properties.Name | Sort-Object) -join ',') -ne $expectedPublicModels) {
+        throw "The public models must match the reference."
     }
     $public = $document.Providers.PublicModels.'ai-model'
     if ($public.TextModel -ne 'qwen3.7-flash' -or $public.VisionModel -ne 'qwen3.8-flash' -or
@@ -135,6 +154,28 @@ foreach ($profile in $profiles) {
     }
     if (-not $document.Providers.Models.'qwen3.8-flash'.SupportVision -or
         $document.Providers.Models.'qwen3.7-flash'.SupportVision) { throw "Incorrect execution modalities." }
+    if ($expertEnabled) {
+        $expert = $document.Providers.PublicModels.'expert-model'
+        $expertExecution = $document.Providers.Models.'qwen3.8-max'
+        $expertPrice = $document.Policy.Pricing.'expert-model'
+        if ($expert.Order -le $public.Order -or $expert.TextModel -ne 'qwen3.8-max' -or
+            $expert.VisionModel -ne 'qwen3.8-max' -or -not $expert.Thinking -or $expert.Aliases -or
+            -not $expertExecution.SupportVision -or -not $expertExecution.Thinking -or
+            $expertPrice.InputRateNanoYuan -ne 12000 -or $expertPrice.OutputRateNanoYuan -ne 36000) {
+            throw "Incorrect Expert Model route, capabilities, order, or pricing."
+        }
+        $expertAdmission = $document.Policy.Resources.'expert-model'
+        $expectedExpertAdmission = $profile.Reference.Policy.Resources.'expert-model'
+        foreach ($key in @('RequestsPerMinute', 'PerPrincipalConcurrency', 'GlobalConcurrency',
+                'GlobalQueueLength', 'QueueWaitSeconds', 'ExecutionDeadlineSeconds')) {
+            if ($expertAdmission.$key -ne $expectedExpertAdmission.$key) {
+                throw "Expert Model admission '$key' must match policy reference '$($profile.Path)'."
+            }
+        }
+        if ((Get-PrincipalQueueLength $expertAdmission) -ne (Get-PrincipalQueueLength $expectedExpertAdmission)) {
+            throw "Expert Model queue length must match the policy reference."
+        }
+    }
     if ((@($document.Providers.Translation.LogicalModels) -join ',') -ne 'qwen3.7-flash') {
         throw "Dedicated translation must use only Qwen3.7-Flash."
     }

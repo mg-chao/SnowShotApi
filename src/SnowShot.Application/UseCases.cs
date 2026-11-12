@@ -35,6 +35,12 @@ public sealed class ChatUseCase(
         }
         var requestedModel = request.Model;
         request = ChatRequestResolver.Resolve(request, modelCatalog);
+        var expert = request.Model == Resources.ExpertModel;
+        if (expert && !context.AccountId.HasValue)
+        {
+            yield return new ChatApplicationEvent.Failed(new(ApplicationErrorCode.AccountRequired, "account_required"));
+            yield break;
+        }
         var resourcePolicy = policy.Get(request.Model);
         var maximumCharge = new NanoYuan(1);
         ApplicationError? authorizationError = null;
@@ -54,8 +60,14 @@ public sealed class ChatUseCase(
             yield return new ChatApplicationEvent.Failed(authorizationError);
             yield break;
         }
+        if (expert && maximumCharge > resourcePolicy.OperatorMaximum)
+        {
+            yield return new ChatApplicationEvent.Failed(new(ApplicationErrorCode.PolicyUnavailable, "paid_billing_envelope_unavailable"));
+            yield break;
+        }
         var started = await operations.StartAsync(request.Model, UsageKind.Chat, context, maximumCharge,
-            resourcePolicy.OperatorMaximum, cancellationToken, policy.PricingFor(request.ExecutionModel), requestedModel);
+            expert ? maximumCharge : resourcePolicy.OperatorMaximum, cancellationToken,
+            policy.PricingFor(request.ExecutionModel), requestedModel);
         if (!started.IsSuccess) { yield return new ChatApplicationEvent.Failed(started.Error!); yield break; }
 
         await using var scope = started.Value!;

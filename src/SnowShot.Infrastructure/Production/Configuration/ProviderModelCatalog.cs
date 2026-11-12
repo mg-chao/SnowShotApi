@@ -103,7 +103,7 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
             if (options.PublicModels.TryGetValue(Resources.AiModel, out var aiModel) &&
                 (aiModel is null || aiModel.VisionModel is null || logicalModels.Count != 1 ||
                     logicalModels[0] != aiModel.TextModel))
-                throw new InvalidOperationException("AI Model requires dedicated translation to share its single text route.");
+                throw new InvalidOperationException("Fast Model requires dedicated translation to share its single text route.");
             foreach (var (id, model) in options.PublicModels)
             {
                 ValidateIdentifier(id, "public model");
@@ -117,6 +117,18 @@ public sealed class ProviderModelCatalog : IChatModelCatalog
                     if (!_routes.TryAdd(alias, (id, model.TextModel, model.VisionModel)))
                         throw new InvalidOperationException($"Public model alias '{alias}' is ambiguous.");
                 }
+            }
+            if (_routes.TryGetValue(Resources.ExpertModel, out var expert))
+            {
+                const string model = "qwen3.8-max";
+                if (expert.TextModel != model || expert.VisionModel != model ||
+                    BillingEnvelope(model)?.TextInput is null || _models[model].Count != 1)
+                    throw new InvalidOperationException("Expert Model requires one Qwen3.8-Max text and vision route with a billing envelope.");
+                var access = _models[model].Values.Single();
+                if (access.Selection.UpstreamModel != model ||
+                    requireHttps && access.Endpoint.Host != "dashscope.aliyuncs.com" &&
+                    !access.Endpoint.Host.EndsWith(".cn-beijing.maas.aliyuncs.com", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Expert Model pricing requires the Beijing Qwen3.8-Max endpoint.");
             }
             _chatModels = options.PublicModels.OrderBy(pair => pair.Value.Order).ThenBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair => new ChatModelDefinition(pair.Key, pair.Value.Thinking, "default",

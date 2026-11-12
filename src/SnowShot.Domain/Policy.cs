@@ -7,7 +7,9 @@ namespace SnowShot.Domain;
 public static class Resources
 {
     public const string Translation = "translation";
+    public const string FastTranslation = "fast-translation";
     public const string AiModel = "ai-model";
+    public const string ExpertModel = "expert-model";
     public const string QwenTextFlash = "qwen3.7-flash";
     public const string QwenFlash = "qwen3.8-flash";
     public const string QwenMtFlash = "qwen-mt-flash";
@@ -16,7 +18,7 @@ public static class Resources
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        Translation, AiModel, QwenFlash,
+        Translation, FastTranslation, AiModel, ExpertModel, QwenFlash,
         QwenMtFlash, TableExtraction, LatexExtraction,
     };
 }

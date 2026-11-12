@@ -11,7 +11,7 @@ SPEC = importlib.util.spec_from_file_location("prepare_policy", HERE / "Prepare-
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 OVERLAY = json.loads((HERE.parent / "deployment/policy/policy-revision-15.json").read_text(encoding="utf8"))
-CURRENT_OVERLAY_PATH = HERE.parent / "deployment/policy/policy-revision-17.json"
+CURRENT_OVERLAY_PATH = HERE.parent / "deployment/policy/policy-revision-19.json"
 CURRENT_OVERLAY = json.loads(CURRENT_OVERLAY_PATH.read_text(encoding="utf8"))
 
 

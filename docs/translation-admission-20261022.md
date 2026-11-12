@@ -74,9 +74,10 @@ drain the old API before activating revision 17, and prepare a compatible
 revision-18 recovery configuration. Do not restart a lower-revision policy
 after activation. No database schema migration is needed.
 
-`Prepare-AiModelPolicy.py` defaults to the revision-17 overlay and its revision.
-`Verify-DeploymentConfiguration.ps1` checks candidate admission against that
-overlay, including the effective per-principal queue limit. Its separate retained
+`Prepare-AiModelPolicy.py` selects the revision-17 overlay for this historical
+profile with `--overlay deployment/policy/policy-revision-17.json`.
+Pass the same file as `-PolicyReferencePath` to `Verify-DeploymentConfiguration.ps1`
+to check admission, including the effective per-principal queue limit. Its separate retained
 policy check still uses the historical revision-15 reference. To prepare a
 revision-18 recovery with the candidate's admission profile, pass `--revision 18`
 to preparation and `-ExpectedPolicyRevision 18` when verifying that settings file.

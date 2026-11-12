@@ -47,6 +47,18 @@ class DeploymentConfigurationTests(unittest.TestCase):
         self.candidate["Policy"]["Revision"] += 1
         self.assert_valid(self.verify(self.candidate, None, "-ExpectedPolicyRevision", str(self.candidate["Policy"]["Revision"])))
 
+    def test_fast_translation_opt_in_validates_its_cap_and_source_only_tariff(self):
+        opt_in = json.loads((ROOT / "deployment/policy/fast-translation.example.json").read_text(encoding="utf8"))["Policy"]
+        self.candidate["Policy"]["Revision"] = opt_in["Revision"]
+        self.candidate["Providers"]["YoudaoBatchTranslation"] = {"Enabled": True}
+        arguments = ("-ExpectedPolicyRevision", str(opt_in["Revision"]))
+        self.assert_invalid(self.verify(self.candidate, None, *arguments), "Fast Translation requires")
+        for section in ("Resources", "Pricing"):
+            self.candidate["Policy"][section].update(opt_in[section])
+        self.assert_valid(self.verify(self.candidate, None, *arguments))
+        self.candidate["Policy"]["Resources"]["fast-translation"]["OperatorMaximumNanoYuan"] = 30000000
+        self.assert_invalid(self.verify(self.candidate, None, *arguments), "Incorrect operator reservation maximum")
+
     def test_revision_mismatch_is_rejected(self):
         self.candidate["Policy"]["Revision"] -= 1
         self.assert_invalid(self.verify(self.candidate), "expected revision")
@@ -74,6 +86,7 @@ class DeploymentConfigurationTests(unittest.TestCase):
     def test_historical_candidate_requires_an_explicit_policy_reference(self):
         historical = copy.deepcopy(self.candidate)
         historical["Policy"] = copy.deepcopy(self.retained["Policy"])
+        historical["Providers"].update(copy.deepcopy(self.retained["Providers"]))
         historical["Policy"]["Revision"] = 16
         reference = str(ROOT / "deployment/policy/policy-revision-15.json")
         self.assert_valid(self.verify(historical, None, "-PolicyReferencePath", reference, "-ExpectedPolicyRevision", "16"))
@@ -81,7 +94,7 @@ class DeploymentConfigurationTests(unittest.TestCase):
     def test_current_profile_can_be_selected_for_a_new_recovery_configuration(self):
         recovery = copy.deepcopy(self.candidate)
         recovery["Policy"]["Revision"] += 1
-        reference = str(ROOT / "deployment/policy/policy-revision-17.json")
+        reference = str(ROOT / "deployment/policy/policy-revision-19.json")
         self.assert_valid(self.verify(None, recovery, "-RestorePolicyReferencePath", reference))
 
     def test_explicit_revision_cannot_downgrade_the_selected_profile(self):
@@ -94,7 +107,15 @@ class DeploymentConfigurationTests(unittest.TestCase):
         self.assert_invalid(self.verify(invalid), "allowances and budgets")
         invalid = copy.deepcopy(self.candidate)
         invalid["Policy"]["Resources"]["qwen-mt-flash"] = {}
-        self.assert_invalid(self.verify(invalid), "only the four public resources")
+        self.assert_invalid(self.verify(invalid), "match the public resources")
+
+    def test_expert_requires_beijing_cache_rate_and_qwen_max_vision_route(self):
+        invalid = copy.deepcopy(self.candidate)
+        invalid["Policy"]["ModelPricing"]["qwen3.8-max"][0]["CachedInputRateNanoYuan"] = 2400
+        self.assert_invalid(self.verify(invalid), "Incorrect Beijing tariff")
+        invalid = copy.deepcopy(self.candidate)
+        invalid["Providers"]["PublicModels"]["expert-model"]["VisionModel"] = "qwen3.8-flash"
+        self.assert_invalid(self.verify(invalid), "Incorrect Expert Model route")
 
 
 if __name__ == "__main__":

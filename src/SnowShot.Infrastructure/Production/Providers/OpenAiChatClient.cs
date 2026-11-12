@@ -126,7 +126,7 @@ public sealed class OpenAiChatClient(
                             observedUsage = parsedUsage;
                         }
                         deliveredContentChars += ReadContentLength(root);
-                        frame = request.Model == Resources.AiModel
+                        frame = request.Model is Resources.AiModel or Resources.ExpertModel
                             ? RewriteResponseModel(root, request.RequestedModel) : Encoding.UTF8.GetBytes(data);
                     }
                     catch (Exception exception) when (exception is JsonException or InvalidDataException or OverflowException)

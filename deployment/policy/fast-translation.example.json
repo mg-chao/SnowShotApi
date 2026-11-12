@@ -1,0 +1,22 @@
+{
+  "Policy": {
+    "Revision": 20,
+    "Resources": {
+      "fast-translation": {
+        "RequestsPerMinute": 30,
+        "PerPrincipalConcurrency": 4,
+        "GlobalConcurrency": 32,
+        "GlobalQueueLength": 64,
+        "QueueWaitSeconds": 30,
+        "ExecutionDeadlineSeconds": 300,
+        "OperatorMaximumNanoYuan": 500000000
+      }
+    },
+    "Pricing": {
+      "fast-translation": {
+        "InputRateNanoYuan": 100000,
+        "OutputRateNanoYuan": 0
+      }
+    }
+  }
+}

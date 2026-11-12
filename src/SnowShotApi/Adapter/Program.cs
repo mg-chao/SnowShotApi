@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Localization;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using SnowShot.Api;
+using SnowShot.Contracts;
 using SnowShot.Infrastructure;
 using SnowShot.Infrastructure.Configuration;
 
@@ -13,7 +15,15 @@ var describeDeployment = args.Contains("--describe-deployment", StringComparer.O
 var builder = WebApplication.CreateBuilder(args.Where(value => value != "--describe-deployment").ToArray());
 builder.Configuration.AddMountedSecrets(builder.Environment.EnvironmentName);
 builder.Services.AddSnowShotApiAdapter();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, context, _) =>
+{
+    if (context.JsonTypeInfo.Type == typeof(TranslationType))
+    {
+        schema.Enum = Enum.GetValues<TranslationType>().Select(value => (JsonNode)JsonValue.Create((int)value)).ToList();
+        schema.Default = JsonValue.Create((int)TranslationType.AI);
+    }
+    return Task.CompletedTask;
+}));
 var otlpConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource.AddService("SnowShotApi"))
@@ -71,19 +81,24 @@ app.UseRequestLocalization(new RequestLocalizationOptions
     [
         new CultureInfo("en-US"), new CultureInfo("en"),
         new CultureInfo("zh-CN"), new CultureInfo("zh-Hans"), new CultureInfo("zh"),
+        new CultureInfo("zh-TW"), new CultureInfo("zh-Hant"),
     ],
     SupportedUICultures =
     [
         new CultureInfo("en-US"), new CultureInfo("en"),
         new CultureInfo("zh-CN"), new CultureInfo("zh-Hans"), new CultureInfo("zh"),
+        new CultureInfo("zh-TW"), new CultureInfo("zh-Hant"),
     ],
     RequestCultureProviders = [new AcceptLanguageHeaderRequestCultureProvider()],
 });
 app.Use(async (context, next) =>
 {
-    context.Response.Headers.ContentLanguage = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "zh"
-        ? "zh-CN"
-        : "en-US";
+    context.Response.Headers.ContentLanguage = CultureInfo.CurrentUICulture.Name switch
+    {
+        "zh-TW" or "zh-Hant" => "zh-TW",
+        "zh-CN" or "zh-Hans" or "zh" => "zh-CN",
+        _ => "en-US",
+    };
     context.Response.Headers.Vary = "Accept-Language";
     await next(context);
 });

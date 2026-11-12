@@ -9,7 +9,7 @@ public static class ChatRequestResolver
     public static ChatCommand Resolve(ChatCommand request, IChatModelCatalog catalog)
     {
         var canonical = catalog.CanonicalModel(request.Model);
-        if (canonical != Resources.AiModel) return request;
+        if (canonical is not (Resources.AiModel or Resources.ExpertModel)) return request;
         using var document = JsonDocument.Parse(request.Utf8Json);
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object ||

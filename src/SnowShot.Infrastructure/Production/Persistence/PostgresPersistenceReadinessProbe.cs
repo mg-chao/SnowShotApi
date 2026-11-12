@@ -28,7 +28,11 @@ internal sealed class PostgresPersistenceReadinessProbe(
             .Where(value => value.Kind == BudgetPeriodKind.Daily && value.PeriodKey == dailyKey ||
                 value.Kind == BudgetPeriodKind.Monthly && value.PeriodKey == monthlyKey)
             .ToListAsync(cancellationToken);
-        var required = configuredPolicy.ResourcePolicies.Max(value => value.OperatorMaximum.Value);
+        // Expert and Fast Translation reserve per request. Use fixed reservations for
+        // readiness so smaller requests can still be admitted with available headroom.
+        var required = configuredPolicy.ResourcePolicies
+            .Where(value => value.Resource is not (Resources.ExpertModel or Resources.FastTranslation))
+            .Max(value => value.OperatorMaximum.Value);
         var daily = periods.SingleOrDefault(value => value.Kind == BudgetPeriodKind.Daily);
         var monthly = periods.SingleOrDefault(value => value.Kind == BudgetPeriodKind.Monthly);
         var headroom = HasHeadroom(daily, configuredPolicy.DailyOperatorBudget.Value, required) &&

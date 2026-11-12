@@ -20,6 +20,40 @@ For API/recognition releases with an unchanged policy, use the
 [blue/green deployment procedure](bluegreen-deployment.md). Policy-changing
 releases require the separate maintenance procedure in that guide.
 
+### Fast and Expert Model rollout
+
+The revision-19 candidate uses `deployment/policy/policy-revision-19.json`.
+Fast Model keeps `ai-model`, the Flash execution routes, aliases, and free
+allowance. Expert Model uses `expert-model` with the Beijing Qwen3.8-Max route
+for text and image input. It requires a linked account and wallet credit.
+Its real-time tariff is ¥12 per million uncached input tokens, ¥1.50 per million
+implicit cache hits, and ¥36 per million output tokens including reasoning.
+See [Alibaba Cloud's model prices](https://help.aliyun.com/zh/model-studio/qwen3-8-max).
+
+1. Verify the active database revision and the mounted settings revision. Prepare
+   the candidate with `scripts/Prepare-AiModelPolicy.py` and validate it with
+   `scripts/Verify-DeploymentConfiguration.ps1`. Use `--revision` and
+   `-ExpectedPolicyRevision` when the active or mounted revision is 19 or higher.
+   Verify the effective provider endpoint is in Beijing and the staging key has
+   access to Qwen3.8-Max. Keep credentials out of validation output.
+2. Follow the policy maintenance procedure. The existing tariff snapshot and
+   wallet ledger support this change. Verify readiness and convergence, and check
+   both catalogs in en-US, zh-CN, and zh-TW. Fast should appear first with Expert
+   immediately after it.
+3. In staging, send a Fast request and a legacy alias request. Then use a signed-in
+   account to send an Expert text request and an Expert image request. Check that
+   public frames use `expert-model`, attempts identify `qwen3.8-max`, and exact
+   usage settles from the wallet without drawing from the free allowance.
+   Verify anonymous requests get `account_required` and insufficient credit gets
+   `insufficient_credits` before dispatch. Release the desktop update after these
+   checks pass.
+4. Monitor Expert provider errors, wallet rejections, budget headroom, and
+   billing-envelope overages. For recovery, use a higher policy revision and a
+   compatible binary, base settings, and overlay. Keep the operation and wallet
+   evidence. Existing desktop selections of Fast continue to use `ai-model`.
+
+### Historical AI Model rollout
+
 Policy revision **15** introduces the public `ai-model` (AI Model / AI 模型).
 Both `/api/v1/chat/models` and `/api/v2/chat/models` expose only this model;
 it is a general model (`translation: false`, `translation_mode: "default"`),
@@ -52,7 +86,8 @@ Deploy the backend first:
    nullable text to `usage_operations`, leaving historical scalar prices intact.
 2. Run `python3 scripts/Prepare-AiModelPolicy.py --settings
    runtime/appsettings.Production.json --output runtime/appsettings.ai-model.candidate.json
-   --active-revision <verified-revision>` (one command). It creates a new candidate
+   --active-revision <verified-revision> --overlay deployment/policy/policy-revision-17.json`
+   (one command). It creates a new candidate
    and explicitly removes retired owned keys before installing revision 17.
    Review locally; the file may contain credentials. It does not deploy or print them.
    If revision 17 or higher is already active, supply `--revision` higher than both
@@ -64,8 +99,8 @@ Deploy the backend first:
    credentials and unrelated deployment settings. The new base settings must be
    deployed with the candidate. Validate with `Verify-DeploymentConfiguration.ps1`;
    for a later revision, pass `-ExpectedPolicyRevision <revision>`. Admission is
-   compared with the selected `-PolicyReferencePath`, which defaults to the
-   revision-17 overlay. The retained settings are independently compared with
+   compared with the selected `-PolicyReferencePath`. Use the revision-17
+   overlay explicitly for this historical profile. The retained settings are independently compared with
    `-RestorePolicyReferencePath` (revision 15 by default). Select the matching
    reference explicitly when validating a historical profile or a new recovery
    configuration; a revision increase alone never changes its admission contract.
@@ -255,3 +290,27 @@ to resource `latex-extraction`. Check contention with table inference before
 raising concurrency. Keep one worker process and the API's global concurrency
 of one; tune CPU threads and affinity using the balanced benchmark sweep.
 Never include uploaded images or recognized formulas in incident logs.
+
+## Enable Fast Translation
+
+Merge the entries from [the Fast Translation policy example](../deployment/policy/fast-translation.example.json)
+into a copy of the effective deployment settings. Set the policy revision above
+both the active and configured revisions. Use the existing policy-changing
+maintenance procedure. Validate the candidate with
+`scripts/Verify-DeploymentConfiguration.ps1 -ApplicationSettingsPath <candidate> -ExpectedPolicyRevision <revision>`
+and the network-free `--describe-deployment` command. The existing ledger schema supports the new resource.
+
+Supply `Providers:YoudaoBatchTranslation:AppKey` and
+`Providers:YoudaoBatchTranslation:AppSecret` through the API secret mount.
+The feature defaults to disabled. Set `Providers:YoudaoBatchTranslation:Enabled`
+to `true` after validating the enabled configuration in staging. The backend
+uses one Youdao request per batch with a 15-second default provider timeout.
+
+In staging, check that the types endpoint lists type 1. Submit a small linked-account
+batch with explicit Chinese and English, then an auto-detected batch with mixed
+source languages. Verify result order, returned language directions, and the wallet
+debit against the source character count and the
+[Youdao batch tariff](https://ai.youdao.com/DOCSIRMA/html/trans/price/plwbfy/index.html).
+After enablement, monitor latency, provider failures, and settlement for
+`fast-translation`. Set `Enabled` to `false` to withdraw the capability while
+retaining the active policy and its accounting records.

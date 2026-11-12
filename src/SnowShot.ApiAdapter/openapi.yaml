@@ -33,8 +33,10 @@ paths:
     post:
       tags:
       - Chat
+      description: Fast Model (ai-model) is eligible for the daily free allowance.
+        Expert Model (expert-model) and legacy aliases require a Snow Shot account
+        and use wallet credits.
       operationId: ChatCompletions
-      description: Requests specifying ai-model are eligible for the daily free allowance. Legacy model aliases require a Snow Shot account and use wallet credits.
       parameters:
       - name: X-Request-ID
         in: header
@@ -134,8 +136,19 @@ paths:
     post:
       tags:
       - Translation
+      description: 'Requires a Snow Shot account. Translation charges use wallet credits.
+
+        Type 0 selects AI Translation and is the default.
+
+        Type 1 selects Fast Translation when available. It accepts 1–50 inputs totaling
+
+        at most 5,000 UTF-16 code units, with domain omitted or set to general.
+
+        Successful results follow input order. Fast Translation charges for source
+        characters
+
+        at Youdao''s batch pay-as-you-go rate for each language direction.'
       operationId: Translate
-      description: Requires a Snow Shot account. Translation charges use wallet credits.
       parameters:
       - name: X-Request-ID
         in: header
@@ -215,6 +228,8 @@ paths:
     get:
       tags:
       - Translation
+      description: Lists AI Translation (0) and, when configured, Fast Translation
+        (1).
       operationId: TranslationTypes
       responses:
         '200':
@@ -1020,7 +1035,11 @@ components:
         domain:
           type: string
     TranslationType:
+      enum:
+      - 0
+      - 1
       type: integer
+      default: 0
 tags:
 - name: Health
 - name: Chat

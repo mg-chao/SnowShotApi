@@ -87,7 +87,7 @@ public sealed class PublicContractTests
 
         Assert.Equal("en-US", Assert.Single(response.Content.Headers.ContentLanguage));
         Assert.Equal("Request success", document.RootElement.GetProperty("message").GetString());
-        Assert.Equal("AI Model", document.RootElement.GetProperty("data")[0].GetProperty("name").GetString());
+        Assert.Equal("Fast Model", document.RootElement.GetProperty("data")[0].GetProperty("name").GetString());
     }
 
     [Fact]
@@ -184,13 +184,13 @@ public sealed class PublicContractTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, document.RootElement.GetProperty("code").GetInt32());
         var models = document.RootElement.GetProperty("data");
-        Assert.Equal(["ai-model"],
+        Assert.Equal(["ai-model", "expert-model"],
             models.EnumerateArray().Select(value => value.GetProperty("model").GetString()!).ToArray());
-        Assert.Equal(["AI Model"],
+        Assert.Equal(["Fast Model", "Expert Model"],
             models.EnumerateArray().Select(value => value.GetProperty("name").GetString()!).ToArray());
-        Assert.Equal([false],
+        Assert.Equal([false, false],
             models.EnumerateArray().Select(value => value.GetProperty("translation").GetBoolean()).ToArray());
-        Assert.Equal([true],
+        Assert.Equal([true, true],
             models.EnumerateArray().Select(value => value.GetProperty("thinking").GetBoolean()).ToArray());
     }
 
@@ -205,28 +205,32 @@ public sealed class PublicContractTests
         var models = document.RootElement.GetProperty("data").EnumerateArray().ToArray();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(["ai-model"],
+        Assert.Equal(["ai-model", "expert-model"],
             models.Select(value => value.GetProperty("model").GetString()!).ToArray());
-        Assert.Equal([true],
+        Assert.Equal(["Fast Model", "Expert Model"],
+            models.Select(value => value.GetProperty("name").GetString()!).ToArray());
+        Assert.Equal([true, true],
             models.Select(value => value.GetProperty("supports_reasoning").GetBoolean()).ToArray());
-        Assert.Equal(["default"],
+        Assert.Equal(["default", "default"],
             models.Select(value => value.GetProperty("translation_mode").GetString()!).ToArray());
-        Assert.Equal([true],
+        Assert.Equal([true, true],
             models.Select(value => value.GetProperty("supports_vision").GetBoolean()).ToArray());
     }
 
-    [Fact]
-    public async Task ChineseModelNamesUseUnifiedPublicLocalization()
+    [Theory]
+    [InlineData("zh-CN", "专家模型")]
+    [InlineData("zh-TW", "專家模型")]
+    public async Task ChineseModelNamesUseUnifiedPublicLocalization(string locale, string expertName)
     {
         await using var factory = new ApiFactory();
         using var client = factory.CreateAnonymousClient();
-        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("zh-CN");
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(locale);
 
         using var response = await client.GetAsync("/api/v1/chat/models", TestContext.Current.CancellationToken);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(["AI 模型"],
+        Assert.Equal(["快速模型", expertName],
             document.RootElement.GetProperty("data").EnumerateArray()
                 .Select(value => value.GetProperty("name").GetString()!).ToArray());
     }

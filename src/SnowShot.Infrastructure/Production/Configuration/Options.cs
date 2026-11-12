@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SnowShot.Application;
 using SnowShot.Domain;
 
 namespace SnowShot.Infrastructure.Configuration;
@@ -48,6 +49,15 @@ public sealed class PolicyOptions
     {
         var defaults = ServicePolicy.Defaults();
         var additional = (additionalResources ?? []).ToHashSet(StringComparer.Ordinal);
+        var fastResource = SnowShot.Domain.Resources.FastTranslation;
+        if (Resources.TryGetValue(fastResource, out var fast) || Pricing.ContainsKey(fastResource))
+        {
+            if (fast is null || fast.OperatorMaximumNanoYuan != FastTranslationUseCase.MaximumBatchCostNanoYuan ||
+                !Pricing.TryGetValue(fastResource, out var price) || price is null ||
+                price.InputRateNanoYuan != FastTranslationUseCase.UpperRateNanoYuan || price.OutputRateNanoYuan != 0)
+                throw new PolicyValidationException("Fast Translation requires its batch cost cap and source-only tariff.");
+            additional.Add(fastResource);
+        }
         // Only published models need admission/public-price policies.
         var defaultResources = defaults.ResourcePolicies.Where(value => !publishedModelsOnly ||
             value.Resource is SnowShot.Domain.Resources.Translation or SnowShot.Domain.Resources.TableExtraction or
@@ -140,6 +150,16 @@ public sealed class ChatProviderOptions
     public const string SectionName = "Providers:Chat";
     [Range(1024, 1_048_576)] public int MaximumSseLineBytes { get; init; } = 262_144;
     [Range(1024, 1_048_576)] public int MaximumErrorBodyBytes { get; init; } = 65_536;
+}
+
+public sealed class YoudaoBatchTranslationOptions
+{
+    public const string SectionName = "Providers:YoudaoBatchTranslation";
+
+    public bool Enabled { get; init; }
+    public string AppKey { get; init; } = string.Empty;
+    public string AppSecret { get; init; } = string.Empty;
+    [Range(1, 60)] public int TimeoutSeconds { get; init; } = 15;
 }
 
 public sealed class TranslationProviderOptions

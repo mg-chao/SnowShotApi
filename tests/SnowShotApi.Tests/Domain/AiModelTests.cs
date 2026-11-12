@@ -30,19 +30,21 @@ public sealed class AiModelTests
     }
 
     [Fact]
-    public void ProductionCatalogPublishesOnlyAiModelAndRejectsDirectTextModel()
+    public void ProductionCatalogPublishesFastAndExpertAndRejectsDirectExecutionModels()
     {
         var (catalog, policy) = Configuration();
-        var model = Assert.Single(catalog.Models);
+        Assert.Equal([Resources.AiModel, Resources.ExpertModel], catalog.Models.Select(item => item.Model).ToArray());
+        var model = catalog.Models[0];
         Assert.Equal(Resources.AiModel, model.Model);
         Assert.True(model.SupportsVision);
         Assert.True(model.SupportsReasoning);
         Assert.False(model.Translation);
         Assert.Equal("default", model.TranslationMode);
         Assert.False(catalog.Contains(Resources.QwenTextFlash));
-        Assert.Equal([Resources.AiModel, Resources.LatexExtraction, Resources.TableExtraction, Resources.Translation],
+        Assert.False(catalog.Contains("qwen3.8-max"));
+        Assert.Equal([Resources.AiModel, Resources.ExpertModel, Resources.LatexExtraction, Resources.TableExtraction, Resources.Translation],
             policy.ResourcePolicies.Select(value => value.Resource).Order(StringComparer.Ordinal).ToArray());
-        Assert.Equal(17, policy.Revision);
+        Assert.Equal(19, policy.Revision);
         Assert.Equal(600, policy.Get(Resources.AiModel).Admission.RequestsPerMinute);
         Assert.Equal(8, policy.Get(Resources.AiModel).Admission.PerPrincipalConcurrency);
         Assert.Equal(8, policy.Get(Resources.AiModel).Admission.PerPrincipalQueueLength);
@@ -278,7 +280,7 @@ public sealed class AiModelTests
     public async Task VisionCircuitFailureDoesNotBlockTheTextPool()
     {
         var (catalog, _) = Configuration();
-        Assert.Equal([Resources.QwenTextFlash, Resources.QwenFlash],
+        Assert.Equal([Resources.QwenTextFlash, Resources.QwenFlash, "qwen3.8-max"],
             catalog.ChatExecutionModels.Order(StringComparer.Ordinal).ToArray());
         var circuits = new InMemoryProviderCircuitRegistry(new() { ConsecutiveFailuresToOpen = 2 }, TimeProvider.System);
         var vision = catalog.Selections(Resources.QwenFlash)[0];
@@ -354,6 +356,81 @@ public sealed class AiModelTests
         Assert.Equal((32_001 - 500) * 600L + 500 * 120 + 100 * 2400, terminal.Attempt.Cost.Value);
         Assert.Equal(CostBasis.Exact, terminal.Attempt.Basis);
         Assert.False(health.Snapshot()["chat_provider"].Healthy);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExpertForwardsTextAndImagesToQwenMaxAndPricesTerminalUsage(bool image)
+    {
+        const string model = "qwen3.8-max";
+        var (catalog, policy) = Configuration();
+        var messages = image
+            ? """[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/webp;base64,YQ=="}}]}]"""
+            : """[{"role":"user","content":"hello"}]""";
+        var command = Resolve(catalog, Resources.ExpertModel, messages);
+        Assert.Equal(model, command.ExecutionModel);
+        var payload = JsonNode.Parse(command.Utf8Json.Span)!.AsObject();
+        Assert.False(payload["enable_thinking"]!.GetValue<bool>());
+        payload["enable_thinking"] = true;
+        command = PaidChatAuthorizer.Authorize(command with { Utf8Json = JsonSerializer.SerializeToUtf8Bytes(payload) },
+            catalog, policy).Request;
+        using var handler = new ResponseHandler("""
+            data: {"model":"qwen3.8-max","choices":[{"delta":{"content":"hello"}}]}
+
+            data: {"model":"qwen3.8-max","choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":200,"total_tokens":1200,"prompt_tokens_details":{"cached_tokens":400},"completion_tokens_details":{"reasoning_tokens":80}}}
+
+            data: [DONE]
+
+            """);
+        using var registry = new Registry(handler);
+        var provider = new OpenAiChatClient(registry, new(), catalog, policy,
+            new DependencyHealth(TimeProvider.System), TimeProvider.System);
+        var events = new List<ChatProviderEvent>();
+        await foreach (var value in provider.StreamAsync(new(Handle(policy, model), command, Assert.Single(catalog.Selections(model)),
+            "request", "trace", 1, Guid.CreateVersion7(), DateTimeOffset.UtcNow), TestContext.Current.CancellationToken))
+            events.Add(value);
+        using var sent = JsonDocument.Parse(handler.Payload!);
+        using var original = JsonDocument.Parse(messages);
+        Assert.Equal(model, sent.RootElement.GetProperty("model").GetString());
+        Assert.True(sent.RootElement.GetProperty("enable_thinking").GetBoolean());
+        Assert.True(sent.RootElement.GetProperty("stream_options").GetProperty("include_usage").GetBoolean());
+        Assert.True(JsonElement.DeepEquals(original.RootElement, sent.RootElement.GetProperty("messages")));
+        Assert.All(events.OfType<ChatProviderEvent.Frame>(), frame =>
+        {
+            using var json = JsonDocument.Parse(frame.Utf8Json);
+            Assert.Equal(Resources.ExpertModel, json.RootElement.GetProperty("model").GetString());
+        });
+        var terminal = Assert.Single(events.OfType<ChatProviderEvent.Terminal>());
+        Assert.Contains(model, terminal.Attempt.Provider);
+        Assert.Equal(80, terminal.Usage!.ReasoningTokens);
+        Assert.Equal(400, terminal.Usage.CachedInputTokens);
+        Assert.Equal(15_000_000, terminal.Attempt.Cost.Value);
+        Assert.Equal(CostBasis.Exact, terminal.Attempt.Basis);
+    }
+
+    [Fact]
+    public void ExpertImageReservationUsesVisualTokensAndBoundsUnrecognizedSchemaOverhead()
+    {
+        var (catalog, policy) = Configuration();
+        PaidChatAuthorization Authorize(string base64, bool schema)
+        {
+            var messages = $$$"""[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"data:image/webp;base64,{{{base64}}}"}}]}]""";
+            var command = Resolve(catalog, Resources.ExpertModel, messages);
+            var body = JsonNode.Parse(command.Utf8Json.Span)!.AsObject();
+            body["max_tokens"] = 100;
+            if (schema)
+                body["response_format"] = JsonNode.Parse("""{"type":"json_schema","json_schema":{}}""");
+            return PaidChatAuthorizer.Authorize(command with { Utf8Json = JsonSerializer.SerializeToUtf8Bytes(body) }, catalog, policy);
+        }
+        var small = Authorize("YQ==", false);
+        var large = Authorize(new string('A', 120_000), false);
+        Assert.Equal(small.MaximumCharge, large.MaximumCharge);
+        using var forwarded = JsonDocument.Parse(large.Request.Utf8Json);
+        Assert.Equal(120_023, forwarded.RootElement.GetProperty("messages")[0].GetProperty("content")[1]
+            .GetProperty("image_url").GetProperty("url").GetString()!.Length);
+        Assert.InRange(small.MaximumCharge.Value, 16_386 * 12_000L, 17_000 * 12_000L + 110 * 36_000L);
+        Assert.Equal(991_808 * 12_000L + 110 * 36_000L, Authorize("YQ==", true).MaximumCharge.Value);
     }
 
     [Theory]

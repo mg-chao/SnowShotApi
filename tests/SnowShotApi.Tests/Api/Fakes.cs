@@ -212,6 +212,7 @@ internal sealed class FakeChatClient : IChatProviderClient
     public bool TruncateAfterFrames { get; set; }
     public bool FailFirstAttempt { get; set; }
     public Task? ContinueAfterFirstFrame { get; set; }
+    public ChatUsage? Usage { get; set; }
 
     public async IAsyncEnumerable<ChatProviderEvent> StreamAsync(ChatProviderCommand command,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
@@ -237,13 +238,18 @@ internal sealed class FakeChatClient : IChatProviderClient
             yield return new ChatProviderEvent.Failure("truncated_stream", false,
                 new(command.AttemptId, command.Operation.OperationId, command.AttemptNumber,
                     command.Access.AttemptProvider, command.Request.Model, "truncated_stream", null, 40, 8,
-                    NanoYuan.Zero, CostBasis.Estimated, AttemptDispatchState.Dispatched,
+                    Usage is null ? NanoYuan.Zero : command.Operation.Snapshot.ModelPricing!.Tariff.Calculate(40, 8),
+                    CostBasis.Estimated, AttemptDispatchState.Dispatched,
                     command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
             yield break;
         }
-        yield return new ChatProviderEvent.Terminal(new ChatUsage(100, 20, 120), true, CostBasis.Exact, "success",
-            new(command.AttemptId, command.Operation.OperationId, command.AttemptNumber, command.Access.AttemptProvider, command.Request.Model, "success", 200, 100, 20,
-                new(36_000), CostBasis.Exact, AttemptDispatchState.Dispatched, command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
+        var usage = Usage ?? new(100, 20, 120);
+        var cost = Usage is null ? new NanoYuan(36_000) : command.Operation.Snapshot.ModelPricing!.Tariff.Calculate(
+            usage.PromptTokens, usage.CompletionTokens, usage.CachedInputTokens);
+        yield return new ChatProviderEvent.Terminal(usage, true, CostBasis.Exact, "success",
+            new(command.AttemptId, command.Operation.OperationId, command.AttemptNumber, command.Access.AttemptProvider,
+                command.Request.Model, "success", 200, usage.PromptTokens, usage.CompletionTokens,
+                cost, CostBasis.Exact, AttemptDispatchState.Dispatched, command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10)));
     }
 }
 

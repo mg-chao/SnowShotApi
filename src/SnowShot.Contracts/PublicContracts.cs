@@ -115,12 +115,13 @@ public sealed record ChatUsage(
 public enum TranslationType
 {
     AI = 0,
+    Fast = 1,
 }
 
 public sealed class TranslationRequest
 {
     [JsonPropertyName("type")]
-    public TranslationType Type { get; init; }
+    public TranslationType Type { get; init; } = TranslationType.AI;
 
     [JsonPropertyName("content")]
     public List<string?> Content { get; init; } = [];

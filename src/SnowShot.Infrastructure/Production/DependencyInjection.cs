@@ -55,6 +55,11 @@ public static class DependencyInjection
         Configure<ProviderCircuitOptions>(services, configuration, ProviderCircuitOptions.SectionName,
             options => options.InitialBreakSeconds <= options.MaximumBreakSeconds,
             "Invalid provider circuit breaker configuration.");
+        Configure<YoudaoBatchTranslationOptions>(services, configuration, YoudaoBatchTranslationOptions.SectionName,
+            options => !options.Enabled || (!string.IsNullOrWhiteSpace(options.AppKey) &&
+                !string.IsNullOrWhiteSpace(options.AppSecret) &&
+                configuration.GetSection($"Policy:Resources:{Resources.FastTranslation}").Exists()),
+            "Fast Translation requires Youdao credentials and an opt-in resource policy.");
         Configure<TranslationProviderOptions>(services, configuration, TranslationProviderOptions.SectionName,
         options => options.InitialRetryDelayMilliseconds <= options.MaximumRetryDelayMilliseconds &&
             options.ConfiguredLogicalModels.Count > 0 &&
@@ -105,9 +110,9 @@ public static class DependencyInjection
             var catalog = sp.GetRequiredService<ProviderModelCatalog>();
             var policy = sp.GetRequiredService<PolicyOptions>().Build(
                 catalog.Models.Select(model => model.Model), catalog.RoutingIdentity, publishedModelsOnly: true);
-            if (catalog.Models.Any(model => model.Model == Resources.AiModel) &&
+            if (catalog.Models.Any(model => model.Model is Resources.AiModel or Resources.ExpertModel) &&
                 catalog.ChatExecutionModels.Any(model => !policy.ModelPricing.ContainsKey(model)))
-                throw new PolicyValidationException("AI Model requires a token tariff for every execution route.");
+                throw new PolicyValidationException("Public chat models require a token tariff for every execution route.");
             return policy;
         });
         services.AddSingleton(sp =>
@@ -167,12 +172,17 @@ public static class DependencyInjection
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).ConfigurePrimaryHttpMessageHandler(provider => CreateLatexHandler(provider.GetRequiredService<LatexWorkerOptions>()));
         services.AddSingleton<IChatProviderClient, OpenAiChatClient>();
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<YoudaoBatchTranslationOptions>>().Value);
+        services.AddHttpClient(YoudaoBatchTranslationClient.ClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+        services.AddSingleton<IFastTranslationProvider, YoudaoBatchTranslationClient>();
         services.AddSingleton<ITranslationProviderClient, OpenAiTranslationClient>();
         services.AddSingleton<ITableWorkerClient, TableWorkerClient>();
         services.AddSingleton<ILatexWorkerClient, LatexWorkerClient>();
         services.AddSingleton<OperationCoordinator>();
         services.AddSingleton<ChatUseCase>();
         services.AddSingleton<TranslationUseCase>();
+        services.AddSingleton<FastTranslationUseCase>();
         services.AddSingleton<TableUseCase>();
         services.AddSingleton<LatexUseCase>();
         services.AddSingleton<IReadinessService, ReadinessService>();

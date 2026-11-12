@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 OWNED_MODELS = (
-    "ai-model", "qwen3.7-flash", "qwen3.8-flash", "qwen-mt-flash",
+    "ai-model", "expert-model", "qwen3.7-flash", "qwen3.8-flash", "qwen3.8-max", "qwen-mt-flash",
     "qwen3-vl-flash", "qwen-flash", "qwen-plus", "deepseek-v4-flash",
 )
 
@@ -48,7 +48,7 @@ def main():
     parser.add_argument("--active-revision", type=int, required=True, help="Verified database active revision")
     parser.add_argument("--revision", type=int, help="Defaults to the selected overlay's revision")
     parser.add_argument("--overlay", type=Path, default=Path(__file__).resolve().parents[1] /
-                        "deployment/policy/policy-revision-17.json")
+                        "deployment/policy/policy-revision-19.json")
     args = parser.parse_args()
     settings = json.loads(args.settings.read_text(encoding="utf-8-sig"))
     overlay = json.loads(args.overlay.read_text(encoding="utf-8-sig"))
