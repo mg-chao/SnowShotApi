@@ -296,6 +296,7 @@ internal sealed class FakeTranslationClient : ITranslationProviderClient
 internal sealed class FakeTableClient : ITableWorkerClient
 {
     public TableExtractionStatus Status { get; set; } = TableExtractionStatus.Success;
+    public string Html { get; set; } = "<table><tr><td>ok</td></tr></table>";
     public int Invocations { get; private set; }
     public TableCommand? LastCommand { get; private set; }
     public Task<TableExtractionResult> ExtractAsync(TableProviderCommand command, CancellationToken cancellationToken)
@@ -304,7 +305,7 @@ internal sealed class FakeTableClient : ITableWorkerClient
         LastCommand = command.Request with { ImageData = command.Request.ImageData.ToArray() };
         var cost = Status == TableExtractionStatus.Success ? new NanoYuan(30_000_000) : NanoYuan.Zero;
         return Task.FromResult(new TableExtractionResult(Status,
-            Status == TableExtractionStatus.Success ? "<table><tr><td>ok</td></tr></table>" : null,
+            Status == TableExtractionStatus.Success ? Html : null,
             new(command.AttemptId, command.Operation.OperationId, 1, "table-worker", Resources.TableExtraction, Status.ToString(), 200,
                 Status == TableExtractionStatus.Success ? 1 : 0, 0, cost, CostBasis.Exact, AttemptDispatchState.Dispatched,
                 command.AttemptStartedAt, command.AttemptStartedAt.AddMilliseconds(10))));

@@ -19,11 +19,18 @@ internal sealed class PostgresAccountService(PostgresAccountStore store, IWechat
     {
         if (identity.AccountId is null) return new(false, null, null, "unlinked", "0", "0", "0", platform.PaymentsAvailable);
         await using var db = await store.OpenAsync(token);
-        var account = await db.Accounts.SingleOrDefaultAsync(x => x.Id == identity.AccountId && x.Active, token) ?? throw InvalidSession();
-        var wallet = await db.AccountWallets.SingleAsync(x => x.AccountId == account.Id, token);
-        var freeRecognition = MembershipRules.HasFreeRecognition(wallet.CumulativeRechargeNanoYuan);
-        return new(true, account.Id, account.Username, "active", Money(wallet.AvailableNanoYuan), Money(wallet.HeldNanoYuan), Money(wallet.OutstandingNanoYuan), platform.PaymentsAvailable,
-            Money(wallet.CumulativeRechargeNanoYuan), MembershipRules.TierFor(wallet.CumulativeRechargeNanoYuan), freeRecognition, freeRecognition, account.IsTemporary);
+        var summary = await (from account in db.Accounts
+                             join wallet in db.AccountWallets on account.Id equals wallet.AccountId
+                             where account.Id == identity.AccountId && account.Active
+                             select new
+                             {
+                                 account.Id, account.Username, account.IsTemporary, wallet.AvailableNanoYuan,
+                                 wallet.HeldNanoYuan, wallet.OutstandingNanoYuan, wallet.CumulativeRechargeNanoYuan
+                             }).SingleOrDefaultAsync(token) ?? throw InvalidSession();
+        var freeRecognition = MembershipRules.HasFreeRecognition(summary.CumulativeRechargeNanoYuan);
+        return new(true, summary.Id, summary.Username, "active", Money(summary.AvailableNanoYuan), Money(summary.HeldNanoYuan),
+            Money(summary.OutstandingNanoYuan), platform.PaymentsAvailable, Money(summary.CumulativeRechargeNanoYuan),
+            MembershipRules.TierFor(summary.CumulativeRechargeNanoYuan), freeRecognition, freeRecognition, summary.IsTemporary);
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1309:Use ordinal string comparison", Justification = "EF translates this comparison using the same PostgreSQL collation as ORDER BY; the StringComparison overload is not translatable.")]

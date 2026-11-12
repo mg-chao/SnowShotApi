@@ -233,7 +233,7 @@ class ApiAgent:
 
     def upstream(self, release):
         return (f"# Managed by SnowShot deployment. Release {release['id']}\n"
-                f"upstream snowshot_api {{ server 127.0.0.1:{release['port']}; }}\n"
+                f"upstream snowshot_api {{ server 127.0.0.1:{release['port']}; keepalive 32; }}\n"
                 f"map $host $snowshot_release {{ default {release['id']}; }}\n")
 
     def compose(self, release, *arguments, timeout=180):

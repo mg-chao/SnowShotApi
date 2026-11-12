@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -599,10 +600,12 @@ public sealed class PublicContractTests
             }),
         };
         var cancellation = TestContext.Current.CancellationToken;
+        client.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip");
         try
         {
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation)
                 .WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+            Assert.Empty(response.Content.Headers.ContentEncoding);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellation));
             var first = await reader.ReadLineAsync(cancellation).AsTask()
@@ -721,6 +724,44 @@ public sealed class PublicContractTests
         Assert.Equal("<table><tr><td>ok</td></tr></table>", json.RootElement.GetProperty("data").GetProperty("html").GetString());
         Assert.Equal(30_000_000, Assert.Single(factory.Ledger.Settlements).ReportedPublicCost.Value);
         AssertCompletedAttempt(factory.Ledger, "table-worker");
+    }
+
+    [Theory]
+    [InlineData(true, "gzip", "gzip")]
+    [InlineData(true, "br", "br")]
+    [InlineData(true, "gzip;q=0", null)]
+    [InlineData(true, null, null)]
+    [InlineData(false, "gzip", null)]
+    public async Task LargeJsonSuccessNegotiatesCompression(bool large, string? acceptEncoding, string? expectedEncoding)
+    {
+        await using var factory = new ApiFactory();
+        if (large) factory.Table.Html = "<table>" + string.Concat(Enumerable.Repeat("<tr><td>row</td></tr>", 200)) + "</table>";
+        using var client = factory.CreateAnonymousClient();
+        if (acceptEncoding is not null)
+            client.DefaultRequestHeaders.AcceptEncoding.ParseAdd(acceptEncoding);
+        using var form = new MultipartFormDataContent();
+        using var image = new ByteArrayContent("RIFF0000WEBP"u8.ToArray());
+        image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/webp");
+        form.Add(image, "image", "table.webp");
+        var token = TestContext.Current.CancellationToken;
+        using var response = await client.PostAsync("https://localhost/api/v1/table/extract", form, token);
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(expectedEncoding is null ? [] : [expectedEncoding], response.Content.Headers.ContentEncoding.ToArray());
+        Assert.Contains("Accept-Language", response.Headers.Vary);
+        Assert.Equal(large, response.Headers.Vary.Contains("Accept-Encoding"));
+
+        var wire = await response.Content.ReadAsByteArrayAsync(token);
+        using var body = new MemoryStream(wire);
+        using Stream jsonBody = expectedEncoding switch
+        {
+            "gzip" => new GZipStream(body, CompressionMode.Decompress),
+            "br" => new BrotliStream(body, CompressionMode.Decompress),
+            _ => body
+        };
+        using var json = await JsonDocument.ParseAsync(jsonBody, cancellationToken: token);
+        Assert.Equal(factory.Table.Html, json.RootElement.GetProperty("data").GetProperty("html").GetString());
+        if (expectedEncoding is not null)
+            Assert.True(wire.Length < factory.Table.Html.Length);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
@@ -53,6 +54,50 @@ public sealed class MembershipAccountIntegrationTests
         Assert.Equal(linked, data.GetProperty("free_latex_extraction").GetBoolean());
         Assert.Equal("0", data.GetProperty("available_credit_nano_yuan").GetString());
         Assert.Equal(linked ? "10" : "0", data.GetProperty("outstanding_balance_nano_yuan").GetString());
+    }
+
+    [Fact, Trait("Category", "Integration")]
+    public async Task LargeTransactionHistoryCompressesAndStaysPrivate()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("SNOWSHOT_RUN_INTEGRATION"), "true", StringComparison.OrdinalIgnoreCase))
+            Assert.Skip("Enable the isolated PostgreSQL integration fixture.");
+        var token = TestContext.Current.CancellationToken;
+        var connection = Environment.GetEnvironmentVariable("ConnectionStrings__SnowShot")!;
+        var id = Guid.CreateVersion7();
+        await using (var db = new SnowShotDbContext(DistributedIntegrationTests.DatabaseOptions(connection)))
+        {
+            db.Accounts.Add(new()
+            {
+                Id = id, Username = "member", NormalizedUsername = id.ToString("N"), PasswordHash = "test",
+                Active = true, CreatedAt = DateTimeOffset.UtcNow,
+            });
+            var now = DateTimeOffset.UtcNow;
+            db.AccountFinancialEntries.AddRange(Enumerable.Range(1, 21).Select(index => new AccountFinancialEntryEntity
+            {
+                Id = $"{id:N}-{index}", AccountId = id, Type = "usage", Status = "completed",
+                Description = "Model usage", AmountNanoYuan = -100, OccurredAt = now.AddMinutes(index),
+            }));
+            await db.SaveChangesAsync(token);
+        }
+        await using var original = new ApiFactory();
+        original.ExtraConfiguration["ConnectionStrings:SnowShot"] = connection;
+        await using var factory = original.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IAccountSessionResolver>();
+            services.AddSingleton<IAccountSessionResolver>(new Resolver(new(Guid.NewGuid(), id, "test-wechat")));
+        }));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-session");
+        client.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip");
+        using var response = await client.GetAsync("https://localhost/api/v2/account/transactions", token);
+        response.EnsureSuccessStatusCode();
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        Assert.Equal("gzip", Assert.Single(response.Content.Headers.ContentEncoding));
+        await using var gzip = new GZipStream(await response.Content.ReadAsStreamAsync(token), CompressionMode.Decompress);
+        using var json = await JsonDocument.ParseAsync(gzip, cancellationToken: token);
+        var data = json.RootElement.GetProperty("data");
+        Assert.Equal(20, data.GetProperty("items").GetArrayLength());
+        Assert.False(string.IsNullOrWhiteSpace(data.GetProperty("next_cursor").GetString()));
     }
 
     private sealed class Resolver(AccountSessionIdentity identity) : IAccountSessionResolver

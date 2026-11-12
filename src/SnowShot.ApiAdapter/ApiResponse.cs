@@ -14,6 +14,26 @@ internal static class ApiResponse
     public static IResult Success(object data, PublicMessages messages) =>
         Results.Json(AppEnvelope.Success(data, messages["Request success"]), JsonOptions);
 
+    public static IResult CompressibleSuccess(object data, PublicMessages messages) =>
+        CompressibleJson(AppEnvelope.Success(data, messages["Request success"]), JsonOptions);
+
+    public static IResult CompressibleJson(AppEnvelope value, JsonSerializerOptions options) =>
+        new CompressibleJsonResult(value, options);
+
+    private sealed class CompressibleJsonResult(AppEnvelope value, JsonSerializerOptions options) : IResult
+    {
+        public Task ExecuteAsync(HttpContext context)
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(value, options);
+            if (bytes.Length >= LargeJsonCompressionProvider.MinimumBytes)
+            {
+                context.Items[LargeJsonCompressionProvider.EligibleResponse] = true;
+                context.Response.Headers.AppendCommaSeparatedValues("Vary", "Accept-Encoding");
+            }
+            return Results.Bytes(bytes, "application/json; charset=utf-8").ExecuteAsync(context);
+        }
+    }
+
     public static IResult Problem(HttpContext context, int status, string code, string detail, TimeSpan? retryAfter = null)
     {
         int? retrySeconds = retryAfter is null ? null : Math.Max(1, (int)Math.Ceiling(retryAfter.Value.TotalSeconds));

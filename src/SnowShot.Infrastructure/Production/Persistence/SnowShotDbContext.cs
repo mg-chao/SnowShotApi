@@ -6,6 +6,8 @@ public sealed partial class SnowShotDbContext(DbContextOptions<SnowShotDbContext
 {
     public const string Schema = "snowshot";
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
+    internal const string UsageOperationPrimaryKey = "PK_usage_operations";
+    internal const string UsageOperationIdempotencyIndex = "uq_usage_operations_idempotency_hash";
 
     internal DbSet<PrincipalEntity> Principals => Set<PrincipalEntity>();
     internal DbSet<PrincipalFingerprintEntity> PrincipalFingerprints => Set<PrincipalFingerprintEntity>();
@@ -71,13 +73,13 @@ public sealed partial class SnowShotDbContext(DbContextOptions<SnowShotDbContext
                 table.HasCheckConstraint("ck_usage_operation_deadline", "\"CreatedAt\" < \"AbsoluteDeadline\" AND \"LeaseExpiresAt\" <= \"AbsoluteDeadline\"");
                 table.HasCheckConstraint("ck_usage_operation_terminal", "(\"State\" IN (0, 1) AND \"SettledAt\" IS NULL AND \"SettlementFingerprint\" IS NULL) OR (\"State\" IN (2, 3, 4, 5) AND \"SettledAt\" IS NOT NULL AND \"SettlementFingerprint\" IS NOT NULL)");
             });
-            entity.HasKey(value => value.Id);
+            entity.HasKey(value => value.Id).HasName(UsageOperationPrimaryKey);
             entity.Property(value => value.Resource).HasMaxLength(64);
             entity.Property(value => value.IdempotencyHash).HasColumnType("bytea").HasMaxLength(32);
             entity.Property(value => value.OwnerToken).HasColumnType("bytea").HasMaxLength(32);
             entity.Property(value => value.PolicyFingerprint).HasColumnType("bytea").HasMaxLength(32);
             entity.Property(value => value.SettlementFingerprint).HasColumnType("bytea").HasMaxLength(32);
-            entity.HasIndex(value => value.IdempotencyHash).IsUnique().HasDatabaseName("uq_usage_operations_idempotency_hash");
+            entity.HasIndex(value => value.IdempotencyHash).IsUnique().HasDatabaseName(UsageOperationIdempotencyIndex);
             entity.HasIndex(value => new { value.State, value.LeaseExpiresAt }).HasDatabaseName("ix_usage_operations_reconciliation");
             entity.HasIndex(value => new { value.State, value.SettledAt }).HasDatabaseName("ix_usage_operations_retention");
             entity.HasIndex(value => new { value.PrincipalId, value.AllowanceDate }).HasDatabaseName("ix_usage_operations_principal_period");

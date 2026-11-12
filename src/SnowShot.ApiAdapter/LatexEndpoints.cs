@@ -64,7 +64,7 @@ internal static class LatexEndpoints
                 var result = execution.Value!;
                 var response = result.Status switch
                 {
-                    LatexExtractionStatus.Success => ApiResponse.Success(new LatexExtractionData(result.Latex!), messages),
+                    LatexExtractionStatus.Success => ApiResponse.CompressibleSuccess(new LatexExtractionData(result.Latex!), messages),
                     LatexExtractionStatus.InvalidRequest => ApiResponse.Problem(context, StatusCodes.Status400BadRequest, "invalid_request", messages["Invalid latex image request"]),
                     LatexExtractionStatus.NoFormula => ApiResponse.Problem(context, StatusCodes.Status422UnprocessableEntity, "no_formula", messages["Latex extraction failed"]),
                     LatexExtractionStatus.InferenceFailed => ApiResponse.Problem(context, StatusCodes.Status502BadGateway, "inference_failed", messages["Latex extraction failed"]),

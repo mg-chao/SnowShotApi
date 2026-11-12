@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using SnowShot.Application;
 using SnowShot.Domain;
 using SnowShot.Infrastructure.Telemetry;
@@ -35,9 +36,28 @@ internal sealed class PostgresOperationLedger(
         var strategy = strategyContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
+            try
+            {
+                return await ReserveOnceAsync();
+            }
+            catch (DbUpdateException error) when (error.InnerException is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                SchemaName: SnowShotDbContext.Schema,
+                ConstraintName: SnowShotDbContext.UsageOperationPrimaryKey or SnowShotDbContext.UsageOperationIdempotencyIndex,
+            })
+            {
+                // Reservations on opposite sides of a month boundary can hold disjoint budget locks.
+                // The failed transaction has rolled back. Recheck the winner through the usual duplicate/recovery path.
+                return await ReserveOnceAsync();
+            }
+        });
+
+        async Task<OperationReservation> ReserveOnceAsync()
+        {
             await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
             return await ReserveCoreAsync(context, operation, cancellationToken);
-        });
+        }
     }
 
     private async Task<OperationReservation> ReserveCoreAsync(
@@ -47,7 +67,6 @@ internal sealed class PostgresOperationLedger(
     {
         using var activity = SnowShotTelemetry.Activities.StartActivity("operation.reserve");
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
-        var now = await DatabaseNowAsync(context, cancellationToken);
         // Global reservation lock order: active policy, allowance, daily budget, monthly budget.
         var activePolicy = await PolicyRegistryQueries.ReadActiveAsync(context, lockState: true, cancellationToken);
         var configuredFingerprint = Convert.FromHexString(policy.Fingerprint);
@@ -61,6 +80,7 @@ internal sealed class PostgresOperationLedger(
             await transaction.RollbackAsync(cancellationToken);
             return Rejected(ReservationRejectionReason.PolicyUnavailable);
         }
+        var now = await DatabaseNowAsync(context, cancellationToken);
         var allowanceDate = await DatabaseAllowanceDateAsync(context, cancellationToken);
         var dailyKey = allowanceDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         var monthlyKey = allowanceDate.ToString("yyyyMM", CultureInfo.InvariantCulture);
@@ -69,8 +89,7 @@ internal sealed class PostgresOperationLedger(
             VALUES ({operation.PrincipalId}, {allowanceDate}, {policy.PrincipalDailyAllowance.Value}, 0, 0, {policy.Revision}, {now})
             ON CONFLICT ("PrincipalId", "PeriodDate") DO NOTHING
             """, cancellationToken);
-        await EnsureBudgetAsync(context, BudgetPeriodKind.Daily, dailyKey, policy.DailyOperatorBudget.Value, now, cancellationToken);
-        await EnsureBudgetAsync(context, BudgetPeriodKind.Monthly, monthlyKey, policy.MonthlyOperatorBudget.Value, now, cancellationToken);
+        await EnsureBudgetsAsync(context, dailyKey, monthlyKey, now, cancellationToken);
 
         // Accounting locks are always allowance, daily budget, then monthly budget.
         var allowance = await context.AllowancePeriods.FromSqlInterpolated($"""
@@ -79,14 +98,17 @@ internal sealed class PostgresOperationLedger(
             FOR UPDATE
             """).SingleAsync(cancellationToken);
         var budgets = await LockBudgetsAsync(context, dailyKey, monthlyKey, cancellationToken);
-        allowance.LimitNanoYuan = policy.PrincipalDailyAllowance.Value;
-        allowance.AppliedPolicyRevision = policy.Revision;
-        allowance.UpdatedAt = now;
+        if (allowance.AppliedPolicyRevision != policy.Revision || allowance.LimitNanoYuan != policy.PrincipalDailyAllowance.Value)
+        {
+            allowance.LimitNanoYuan = policy.PrincipalDailyAllowance.Value;
+            allowance.AppliedPolicyRevision = policy.Revision;
+            allowance.UpdatedAt = now;
+        }
         foreach (var budget in budgets)
         {
-            budget.LimitNanoYuan = budget.Kind == BudgetPeriodKind.Daily
-                ? policy.DailyOperatorBudget.Value
-                : policy.MonthlyOperatorBudget.Value;
+            var limit = budget.Kind == BudgetPeriodKind.Daily ? policy.DailyOperatorBudget.Value : policy.MonthlyOperatorBudget.Value;
+            if (budget.AppliedPolicyRevision == policy.Revision && budget.LimitNanoYuan == limit) continue;
+            budget.LimitNanoYuan = limit;
             budget.AppliedPolicyRevision = policy.Revision;
             budget.UpdatedAt = now;
         }
@@ -737,10 +759,12 @@ internal sealed class PostgresOperationLedger(
             ORDER BY "Kind", "PeriodKey" FOR UPDATE
             """).ToListAsync(token);
 
-    private Task<int> EnsureBudgetAsync(SnowShotDbContext context, BudgetPeriodKind kind, string key, long limit, DateTimeOffset now, CancellationToken token) =>
+    private Task<int> EnsureBudgetsAsync(SnowShotDbContext context, string dailyKey, string monthlyKey, DateTimeOffset now, CancellationToken token) =>
         context.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO snowshot.operator_budget_periods ("Kind", "PeriodKey", "LimitNanoYuan", "CommittedNanoYuan", "ReservedNanoYuan", "AppliedPolicyRevision", "UpdatedAt")
-            VALUES ({(int)kind}, {key}, {limit}, 0, 0, {policy.Revision}, {now}) ON CONFLICT ("Kind", "PeriodKey") DO NOTHING
+            VALUES ({(int)BudgetPeriodKind.Daily}, {dailyKey}, {policy.DailyOperatorBudget.Value}, 0, 0, {policy.Revision}, {now}),
+                   ({(int)BudgetPeriodKind.Monthly}, {monthlyKey}, {policy.MonthlyOperatorBudget.Value}, 0, 0, {policy.Revision}, {now})
+            ON CONFLICT ("Kind", "PeriodKey") DO NOTHING
             """, token);
 
     private static Task<DateTimeOffset> DatabaseNowAsync(SnowShotDbContext context, CancellationToken token) =>

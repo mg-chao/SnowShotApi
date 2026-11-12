@@ -22,19 +22,43 @@ public sealed class ChatUseCase(
 {
     public IReadOnlyList<ValidationIssue> Validate(ChatCommand request) => CommandValidator.Validate(request, policy, modelCatalog);
 
+    public sealed class PreparedChat
+    {
+        internal PreparedChat(ChatCommand request, string requestedModel) =>
+            (Request, RequestedModel) = (request, requestedModel);
+
+        internal ChatCommand Request { get; }
+        internal string RequestedModel { get; }
+    }
+
+    public PreparedChat? Prepare(ChatCommand request, out IReadOnlyList<ValidationIssue> errors)
+    {
+        var resolved = CommandValidator.ResolveChat(request, policy, modelCatalog, out errors);
+        return resolved is null ? null : new(resolved, request.Model);
+    }
+
     public async IAsyncEnumerable<ChatApplicationEvent> ExecuteAsync(
         RequestContext context,
         ChatCommand request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var errors = Validate(request);
-        if (errors.Count > 0)
+        var prepared = Prepare(request, out _);
+        if (prepared is null)
         {
             yield return new ChatApplicationEvent.Failed(new(ApplicationErrorCode.InvalidRequest, "invalid_request"));
             yield break;
         }
-        var requestedModel = request.Model;
-        request = ChatRequestResolver.Resolve(request, modelCatalog);
+        await foreach (var result in ExecuteAsync(context, prepared, cancellationToken))
+            yield return result;
+    }
+
+    public async IAsyncEnumerable<ChatApplicationEvent> ExecuteAsync(
+        RequestContext context,
+        PreparedChat chat,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var request = chat.Request;
+        var requestedModel = chat.RequestedModel;
         var expert = request.Model == Resources.ExpertModel;
         if (expert && !context.AccountId.HasValue)
         {

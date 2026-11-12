@@ -7,19 +7,31 @@ public static class CommandValidator
 {
     public static IReadOnlyList<ValidationIssue> Validate(ChatCommand request, ServicePolicy policy, IChatModelCatalog modelCatalog)
     {
-        var errors = new List<ValidationIssue>();
+        _ = ResolveChat(request, policy, modelCatalog, out var errors);
+        return errors;
+    }
+
+    internal static ChatCommand? ResolveChat(ChatCommand request, ServicePolicy policy, IChatModelCatalog modelCatalog,
+        out IReadOnlyList<ValidationIssue> errors)
+    {
         if (!modelCatalog.Contains(request.Model) ||
             !policy.ResourcePolicies.Any(value => value.Resource == modelCatalog.CanonicalModel(request.Model)))
-            errors.Add(new(ValidationIssueCode.UnsupportedModel, request.Model));
-        if (errors.Count == 0)
         {
-            try { _ = ChatRequestResolver.Resolve(request, modelCatalog); }
-            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
-            {
-                errors.Add(new(ValidationIssueCode.InvalidChatContent));
-            }
+            errors = [new(ValidationIssueCode.UnsupportedModel, request.Model)];
+            return null;
         }
-        return errors;
+
+        try
+        {
+            var resolved = ChatRequestResolver.Resolve(request, modelCatalog);
+            errors = [];
+            return resolved;
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        {
+            errors = [new(ValidationIssueCode.InvalidChatContent)];
+            return null;
+        }
     }
 
     public static IReadOnlyList<ValidationIssue> Validate(TranslationCommand request)

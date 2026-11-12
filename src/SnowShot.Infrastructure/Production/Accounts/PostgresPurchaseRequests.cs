@@ -18,8 +18,9 @@ internal sealed class PostgresPurchaseRequests(PostgresAccountStore store, IWech
     }
     internal static async Task CheckProofInTransactionAsync(SnowShotDbContext db, Guid id, string proof, CancellationToken token)
     {
-        var request = await db.AccountPurchaseRequests.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.Purpose == "registration", token);
-        if (request?.ProofHash is null || !CryptographicOperations.FixedTimeEquals(request.ProofHash, AccountSecrets.Hash(proof)))
+        var proofHash = await db.AccountPurchaseRequests.Where(x => x.Id == id && x.Purpose == "registration")
+            .Select(x => x.ProofHash).SingleOrDefaultAsync(token);
+        if (proofHash is null || !CryptographicOperations.FixedTimeEquals(proofHash, AccountSecrets.Hash(proof)))
             throw new AccountException("invalid_registration_proof", "The registration proof is invalid.", 401);
     }
     internal async Task ExpireDueRequestsAsync(Guid? requestId, CancellationToken token)
@@ -64,6 +65,21 @@ internal sealed class PostgresPurchaseRequests(PostgresAccountStore store, IWech
             DELETE FROM snowshot.account_username_claims AS claim USING expired WHERE claim."RequestId"=expired."Id"
             """, token);
     }
+    internal static IQueryable<AccountPurchaseRequestEntity> StatusFields(SnowShotDbContext db) =>
+        db.AccountPurchaseRequests.AsNoTracking().Select(request => new AccountPurchaseRequestEntity
+        {
+            Id = request.Id,
+            AccountId = request.AccountId,
+            Purpose = request.Purpose,
+            State = request.State,
+            PayerOpenId = request.PayerOpenId,
+            CompletionKind = request.CompletionKind,
+            GeneratedAt = request.GeneratedAt,
+            ExpiresAt = request.ExpiresAt,
+            OrderId = request.OrderId,
+            FulfilledAt = request.FulfilledAt,
+        });
+
     internal AccountPurchaseRequest View(AccountPurchaseRequestEntity request, string username, DateTimeOffset now, bool image = false, string? proof = null) =>
         new(request.Id, VisibleUsername(request, username), request.Purpose, request.State, request.GeneratedAt, request.ExpiresAt, now,
             image && request.CodeImage is not null ? (request.CodeImage[0] == 255 ? "data:image/jpeg;base64," : "data:image/png;base64,") + Convert.ToBase64String(request.CodeImage) : null, request.OrderId, platform.PaymentsAvailable, proof, CompletionKind(request));

@@ -76,9 +76,8 @@ internal static class ChatEndpoints
                 messages["Validation failed"]).ExecuteAsync(context);
             return;
         }
-        var request = new ChatCommand(model, read.Value!);
-        var errors = useCase.Validate(request);
-        if (errors.Count > 0)
+        var request = useCase.Prepare(new ChatCommand(model, read.Value!), out var errors);
+        if (request is null)
         {
             var modelError = errors.Any(value => value.Code == ValidationIssueCode.UnsupportedModel);
             await ApiResponse.Problem(context, StatusCodes.Status400BadRequest,

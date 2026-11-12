@@ -82,7 +82,9 @@ internal static class AccountEndpoints
             .Produces<AppEnvelope>();
         group.MapPost("/purchases/orders/{id}/refresh", (string id, HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.RefreshOrderAsync(i, id, t))).Produces<AppEnvelope>();
         group.MapGet("/account", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.SummaryAsync(i, t))).Produces<AppEnvelope>();
-        group.MapGet("/account/transactions", (HttpContext c, IAccountService s, string? cursor, int? limit, CancellationToken t) => Auth(c, i => s.TransactionsAsync(i, cursor, limit ?? 20, t))).Produces<AppEnvelope>();
+        group.MapGet("/account/transactions", (HttpContext c, IAccountService s, string? cursor, int? limit, CancellationToken t) =>
+            Auth(c, i => s.TransactionsAsync(i, cursor, limit ?? 20, t),
+                transactions => ApiResponse.CompressibleJson(AppEnvelope.Success(transactions), SnakeJson))).Produces<AppEnvelope>();
         group.MapGet("/account/deletion", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.DeletionEligibilityAsync(i, t)))
             .WithDescription("Returns deletion eligibility and the opaque deletion_version snapshot. data.membership_tier is the linked account's advanced-card tier (cny-9-9, cny-29-9, cny-88-8, cny-188 or cny-999), calculated from cumulative net recharge under the same wallet lock; null means unlinked or below CNY 9.90. Existing exact nano-yuan balance fields remain available for settlement checks.")
             .Produces<AppEnvelope>();
@@ -112,10 +114,10 @@ internal static class AccountEndpoints
         });
         return routes;
     }
-    private static async Task<IResult> Auth<T>(HttpContext context, Func<AccountSessionIdentity, Task<T>> action)
+    private static async Task<IResult> Auth<T>(HttpContext context, Func<AccountSessionIdentity, Task<T>> action, Func<T, IResult>? respond = null)
     {
         var identity = await Identity(context);
-        return identity is null ? Invalid(context) : await Run(context, () => action(identity));
+        return identity is null ? Invalid(context) : await Run(context, () => action(identity), respond);
     }
     private static async Task<AccountSessionIdentity?> Identity(HttpContext context)
     {
@@ -131,9 +133,13 @@ internal static class AccountEndpoints
     private static bool AcceptsJpeg(HttpContext c) =>
         c.Request.Headers.TryGetValue("X-SnowShot-Accept-Jpeg", out var value) && value.Count == 1 && value[0] == "1";
     private static IResult Success<T>(T value) => Results.Json(AppEnvelope.Success(value!), SnakeJson);
-    private static async Task<IResult> Run<T>(HttpContext context, Func<Task<T>> action)
+    private static async Task<IResult> Run<T>(HttpContext context, Func<Task<T>> action, Func<T, IResult>? respond = null)
     {
-        try { return Success(await action()); }
+        try
+        {
+            var value = await action();
+            return respond is null ? Success(value) : respond(value);
+        }
         catch (AccountException error) { return ApiResponse.Problem(context, error.Status, error.Code, error.Message); }
         catch (Exception error) when (error is HttpRequestException or TaskCanceledException && !context.RequestAborted.IsCancellationRequested)
         { return ApiResponse.Problem(context, 503, "payments_unavailable", "The platform result is currently unavailable. Your order remains pending."); }

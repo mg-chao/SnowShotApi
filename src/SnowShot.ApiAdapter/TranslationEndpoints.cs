@@ -78,7 +78,7 @@ internal static class TranslationEndpoints
         if (result.IsSuccess)
         {
             var value = result.Value!;
-            await ApiResponse.Success(new TranslationResponseData(
+            await ApiResponse.CompressibleSuccess(new TranslationResponseData(
                 value.Results.Select(item => new TranslationContent(item)).ToArray(), value.From, value.To), messages).ExecuteAsync(context);
             return;
         }

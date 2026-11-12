@@ -89,9 +89,8 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
         return await store.ExecuteAsync(async (db, now) =>
         {
             await AccountSynchronization.ReadIdentityAsync(db, token);
-            var request = await db.AccountPurchaseRequests.SingleAsync(x => x.Id == requestId, token);
-            var account = await db.Accounts.SingleAsync(x => x.Id == request.AccountId, token);
-            var view = requests.View(request, account.Username, now);
+            var (request, username) = await ReadRequestStatusAsync(db, requestId, token);
+            var view = requests.View(request, username, now);
             if (!AccountPurchaseLifecycle.HasRetainedRegistrationOrder(request)) return view;
             var order = await db.AccountPaymentOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.OrderId, token);
             if (order is null) return view;
@@ -135,8 +134,7 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
         return await store.ExecuteAsync(async (db, now) =>
         {
             await AccountSynchronization.ReadIdentityAsync(db, token);
-            var request = await db.AccountPurchaseRequests.SingleAsync(x => x.Id == requestId, token);
-            var username = await db.Accounts.Where(x => x.Id == request.AccountId).Select(x => x.Username).SingleAsync(token);
+            var (request, username) = await ReadRequestStatusAsync(db, requestId, token);
             return requests.View(request, username, now);
         }, token);
     }
@@ -163,8 +161,7 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
         return await store.ExecuteAsync(async (db, now) =>
         {
             await AccountSynchronization.ReadIdentityAsync(db, token);
-            var request = await db.AccountPurchaseRequests.SingleOrDefaultAsync(x => x.Id == requestId, token) ?? throw NotFound();
-            var username = await db.Accounts.Where(x => x.Id == request.AccountId).Select(x => x.Username).SingleAsync(token);
+            var (request, username) = await ReadRequestStatusAsync(db, requestId, token);
             if (AccountPurchaseLifecycle.HasRetainedRegistrationOrder(request))
             {
                 var retainedOrder = identity?.OpenId is { } payer
@@ -181,6 +178,16 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
                 (request.PayerOpenId == identity.OpenId || await db.AccountPaymentOrders.AnyAsync(x => x.RequestId == requestId && x.OpenId == identity.OpenId, token)));
             return requests.PublicView(request, username, now, owns);
         }, token);
+    }
+
+    private static async Task<(AccountPurchaseRequestEntity Request, string Username)> ReadRequestStatusAsync(
+        SnowShotDbContext db, Guid requestId, CancellationToken token)
+    {
+        var result = await (from request in PostgresPurchaseRequests.StatusFields(db)
+                            join account in db.Accounts on request.AccountId equals account.Id
+                            where request.Id == requestId
+                            select new { Request = request, account.Username }).SingleOrDefaultAsync(token) ?? throw NotFound();
+        return (result.Request, result.Username);
     }
 
     private static string ReportedRegistrationState(AccountPurchaseRequestEntity request, string? orderState) =>

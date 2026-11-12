@@ -121,6 +121,34 @@ public sealed class DistributedIntegrationTests
     }
 
     [Fact, Trait("Category", "Integration")]
+    public async Task SharedPolicyReaderAllowsReservationAndBlocksActivationLock()
+    {
+        SkipUnlessEnabled();
+        var token = TestContext.Current.CancellationToken;
+        var options = DatabaseOptions(Environment.GetEnvironmentVariable("ConnectionStrings__SnowShot")!);
+        var policy = ServicePolicy.Defaults();
+        var ledger = new PostgresOperationLedger(new ContextFactory(options), policy);
+        var operation = Operation(await AddPrincipalAsync(options, token), policy);
+
+        await using var reader = new SnowShotDbContext(options);
+        await using var reading = await reader.Database.BeginTransactionAsync(token);
+        Assert.Equal(policy.Revision, (await PolicyRegistryQueries.ReadActiveAsync(reader, lockState: true, token))?.Revision);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(token);
+        bounded.CancelAfter(TimeSpan.FromSeconds(5));
+        var handle = await ReserveDispatchedAsync(ledger, operation, bounded.Token);
+
+        await using var writer = new SnowShotDbContext(options);
+        await using var writing = await writer.Database.BeginTransactionAsync(token);
+        await writer.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '250ms'", token);
+        var locked = await Assert.ThrowsAsync<InvalidOperationException>(() => PolicyRegistryQueries.LockStateAsync(writer, token));
+        Assert.Equal(PostgresErrorCodes.LockNotAvailable, Assert.IsType<PostgresException>(locked.InnerException).SqlState);
+        await writing.RollbackAsync(token);
+        await reading.CommitAsync(token);
+        Assert.True((await ledger.CompleteAsync(new(new(handle, NanoYuan.Zero, NanoYuan.Zero,
+            false, CostBasis.Exact, false, 0, 0, "test_cleanup")), token)).Accepted);
+    }
+
+    [Fact, Trait("Category", "Integration")]
     public async Task ReservationConvergesWhenCommitSucceedsButAcknowledgementIsLost()
     {
         SkipUnlessEnabled();
@@ -157,6 +185,60 @@ public sealed class DistributedIntegrationTests
             value => value.IdempotencyHash == operation.IdempotencyHash, token));
         Assert.Equal(policy.Revision, await verification.UsageOperations
             .Where(value => value.Id == operation.Id).Select(value => value.PolicyRevision).SingleAsync(token));
+    }
+
+    [Theory, InlineData(false), InlineData(true), Trait("Category", "Integration")]
+    public async Task ReservationsWithTheSameKeyConvergeAcrossMonthlyBudgets(bool sameOperation)
+    {
+        SkipUnlessEnabled();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        var token = timeout.Token;
+        var connection = Environment.GetEnvironmentVariable("ConnectionStrings__SnowShot")!;
+        var options = DatabaseOptions(connection);
+        var policy = ServicePolicy.Defaults();
+        var principalId = await AddPrincipalAsync(options, token);
+        var operation = Operation(principalId, policy);
+        var competing = sameOperation ? operation : Operation(principalId, policy) with { IdempotencyHash = operation.IdempotencyHash };
+        var firstDate = new DateOnly(2099, 1, 31);
+        var secondDate = firstDate.AddDays(1);
+        var pause = new PauseReservationInsert();
+        var firstLedger = new PostgresOperationLedger(new ContextFactory(
+            FaultOptions(connection, new FixedAllowanceDate(firstDate), pause)), policy);
+        var secondLedger = new PostgresOperationLedger(new ContextFactory(
+            FaultOptions(connection, new FixedAllowanceDate(secondDate))), policy);
+
+        var first = firstLedger.ReserveAsync(operation, token);
+        OperationHandle winner;
+        try
+        {
+            await pause.Reached.Task.WaitAsync(token);
+            var second = await secondLedger.ReserveAsync(competing, token);
+            winner = Assert.IsType<OperationHandle>(second.Handle);
+            Assert.True(second.Accepted);
+        }
+        finally
+        {
+            pause.Resume.TrySetResult();
+        }
+
+        var result = await first;
+        Assert.Equal(sameOperation, result.Accepted);
+        Assert.Equal(ReservationState.Reserved, result.State);
+        if (sameOperation)
+            Assert.Equal(winner.OperationId, Assert.IsType<OperationHandle>(result.Handle).OperationId);
+        else
+            Assert.Equal(ReservationRejectionReason.DuplicateRequest, result.RejectionReason);
+
+        await using var verification = new SnowShotDbContext(options);
+        var stored = await verification.UsageOperations.SingleAsync(value => value.IdempotencyHash == operation.IdempotencyHash, token);
+        Assert.Equal(secondDate, stored.AllowanceDate);
+        Assert.Equal(operation.Snapshot.PublicReservation.Value, await verification.AllowancePeriods
+            .Where(value => value.PrincipalId == principalId).SumAsync(value => value.ReservedNanoYuan, token));
+        Assert.Equal(OwnershipMutationResult.Applied,
+            await secondLedger.MarkDispatchedAsync(winner, operation.LeaseTtl, token));
+        Assert.True((await secondLedger.CompleteAsync(new(new(winner, NanoYuan.Zero, NanoYuan.Zero,
+            false, CostBasis.Exact, false, 0, 0, "test_cleanup")), token)).Accepted);
     }
 
     [Fact, Trait("Category", "Integration")]
@@ -912,12 +994,12 @@ public sealed class DistributedIntegrationTests
 
     private static DbContextOptions<SnowShotDbContext> FaultOptions(
         string connectionString,
-        CommitAcknowledgementLossInterceptor interceptor) =>
+        params IInterceptor[] interceptors) =>
         new DbContextOptionsBuilder<SnowShotDbContext>()
             .UseNpgsql(connectionString, npgsql => npgsql
                 .MigrationsHistoryTable(SnowShotDbContext.MigrationsHistoryTable, SnowShotDbContext.Schema)
                 .EnableRetryOnFailure(3))
-            .AddInterceptors(interceptor)
+            .AddInterceptors(interceptors)
             .Options;
 
     private static void SkipUnlessEnabled()
@@ -939,6 +1021,34 @@ public sealed class DistributedIntegrationTests
     internal sealed class ContextFactory(DbContextOptions<SnowShotDbContext> options) : IDbContextFactory<SnowShotDbContext>
     {
         public SnowShotDbContext CreateDbContext() => new(options);
+    }
+
+    private sealed class FixedAllowanceDate(DateOnly date) : DbCommandInterceptor
+    {
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("AT TIME ZONE 'Asia/Shanghai')::date", StringComparison.Ordinal))
+                command.CommandText = FormattableString.Invariant($"SELECT DATE '{date:yyyy-MM-dd}' AS \"Value\"");
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class PauseReservationInsert : SaveChangesInterceptor
+    {
+        public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context!.ChangeTracker.Entries<UsageOperationEntity>().Any(entry => entry.State == EntityState.Added))
+            {
+                Reached.TrySetResult();
+                await Resume.Task.WaitAsync(cancellationToken);
+            }
+            return result;
+        }
     }
 
     private sealed class CommitAcknowledgementLossInterceptor : DbTransactionInterceptor

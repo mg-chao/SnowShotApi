@@ -19,7 +19,9 @@ internal static class PolicyRegistryQueries
     public static async Task<ActivePolicy?> ReadActiveAsync(SnowShotDbContext context, bool lockState, CancellationToken token)
     {
         var state = lockState
-            ? await LockStateAsync(context, token)
+            ? await context.PolicyStates.FromSqlRaw("""
+                SELECT * FROM snowshot.policy_state WHERE "Id" = 1 FOR SHARE
+                """).AsNoTracking().SingleOrDefaultAsync(token)
             : await context.PolicyStates.AsNoTracking().SingleOrDefaultAsync(value => value.Id == 1, token);
         if (state?.ActiveRevision is null) return null;
         var revision = await context.PolicyRevisions.AsNoTracking()
