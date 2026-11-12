@@ -800,7 +800,7 @@ public sealed partial class AccountLifecycleIntegrationTests
         public Action? OrderQueried { get; set; }
         public ConcurrentDictionary<string, VerifiedVirtualOrder> Orders { get; } = new(StringComparer.Ordinal);
         public Task<WechatLoginIdentity> LoginAsync(string code, CancellationToken token) => Task.FromResult(new WechatLoginIdentity(code, "session-key"));
-        public Task<byte[]> CodeAsync(Guid id, CancellationToken token)
+        public Task<byte[]> CodeAsync(Guid id, CancellationToken token, bool acceptJpeg = false)
         {
             var png = CaptchaImage.Create().Png; CodeGenerated?.Invoke(); return Task.FromResult(png);
         }

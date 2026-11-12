@@ -31,6 +31,7 @@ public sealed class PublicMessages
         ["Request rate limit reached"] = ("Too many requests in a short time. Wait before retrying.", "短时间内请求过多，请稍后重试。"),
         ["Daily allowance exhausted"] = ("The daily usage allowance has been exhausted.", "今日使用额度已用尽。"),
         ["Insufficient available credit for this request"] = ("Insufficient available credit for this request.", "可用点数不足以预留本次请求所需额度。"),
+        ["Sign in with a Snow Shot account to use this service"] = ("Sign in with a Snow Shot account to use this service.", "请登录 Snow Shot 账号后使用此服务。"),
         ["Credits temporarily reserved by other requests"] = ("Credits are temporarily reserved by other requests. Retry after they complete.", "部分点数正由其他请求预留，请在其完成后重试。"),
         ["Paid calls are paused until the outstanding balance is repaid"] = ("Paid calls are paused until the outstanding balance is repaid. Free allowance is still available.", "未结清欠款前暂停付费调用，免费额度仍可使用。"),
         ["Request queue full"] = ("The request queue is full", "请求队列已满"),

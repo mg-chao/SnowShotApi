@@ -7,6 +7,7 @@ builder.Services.AddSingleton<ProviderState>();
 var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ready" }));
+app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
 app.MapGet("/metrics", (ProviderState state) => Results.Ok(state.Snapshot()));
 app.MapPost("/control/reset", (ProviderState state) =>
     state.TryReset() ? Results.Ok(state.Snapshot()) : Results.Conflict(new { error = "requests_active" }));
@@ -34,9 +35,9 @@ app.MapPost("/v1/chat/completions", async (HttpContext context, ProviderState st
             return;
         }
 
-        var user = document.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()
+        var user = document.RootElement.GetProperty("messages")[0].GetProperty("content").GetString()
             ?? throw new InvalidDataException("Translation content is missing.");
-        using var items = JsonDocument.Parse(user);
+        using var items = JsonDocument.Parse(user[(user.LastIndexOf('\n') + 1)..]);
         var indexedItems = items.RootElement.EnumerateArray().Select(item => new
         {
             index = item.GetProperty("index").GetInt32(),

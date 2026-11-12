@@ -34,6 +34,7 @@ paths:
       tags:
       - Chat
       operationId: ChatCompletions
+      description: Requests specifying ai-model are eligible for the daily free allowance. Legacy model aliases require a Snow Shot account and use wallet credits.
       parameters:
       - name: X-Request-ID
         in: header
@@ -134,6 +135,7 @@ paths:
       tags:
       - Translation
       operationId: Translate
+      description: Requires a Snow Shot account. Translation charges use wallet credits.
       parameters:
       - name: X-Request-ID
         in: header

@@ -13,7 +13,7 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
     AccountSecrets secrets, TimeProvider clock, WechatAccountOptions options, PasswordHasher<AccountEntity> passwords,
     PostgresPurchaseRequests requests, PostgresAccountPayments payments)
 {
-    public async Task<AccountPurchaseRequest> RegisterAsync(RegisterAccountCommand command, string clientKey, CancellationToken token)
+    public async Task<AccountPurchaseRequest> RegisterAsync(RegisterAccountCommand command, string clientKey, bool acceptJpeg, CancellationToken token)
     {
         requests.RequirePayments();
         await store.ThrottleAsync("register:" + clientKey, 10, token);
@@ -43,7 +43,7 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
         var requestId = Guid.CreateVersion7();
         var accountId = Guid.CreateVersion7();
         var proof = AccountSecrets.Token();
-        var code = await platform.CodeAsync(requestId, token);
+        var code = await platform.CodeAsync(requestId, token, acceptJpeg);
         // PasswordHasher does not use the user argument. Derive once, before
         // acquiring the identity gate and before execution-strategy retries.
         var passwordHash = passwords.HashPassword(null!, command.Password);
@@ -99,12 +99,12 @@ internal sealed partial class PostgresAccountPurchases(PostgresAccountStore stor
             return view with { State = ReportedRegistrationState(request, orderState), OrderState = orderState };
         }, token);
     }
-    public async Task<AccountPurchaseRequest> TopUpAsync(AccountSessionIdentity identity, CancellationToken token)
+    public async Task<AccountPurchaseRequest> TopUpAsync(AccountSessionIdentity identity, bool acceptJpeg, CancellationToken token)
     {
         requests.RequirePayments();
         if (identity.AccountId is null) throw new AccountException("account_inactive", "Create your Snow Shot account in the desktop app first.", 403);
         await store.ThrottleAsync("topup:" + identity.AccountId.Value.ToString("N"), 10, token);
-        var requestId = Guid.CreateVersion7(); var code = await platform.CodeAsync(requestId, token);
+        var requestId = Guid.CreateVersion7(); var code = await platform.CodeAsync(requestId, token, acceptJpeg);
         return await store.ExecuteAsync(async (db, now) =>
         {
             await AccountSynchronization.ReadIdentityAsync(db, token);

@@ -29,6 +29,8 @@ internal sealed class PostgresOperationLedger(
     public async Task<OperationReservation> ReserveAsync(ReserveOperation operation, CancellationToken cancellationToken)
     {
         Validate(operation);
+        if (operation.AccountId is null && !operation.UsesFreeAllowance)
+            return Rejected(ReservationRejectionReason.AccountRequired);
         await using var strategyContext = await contextFactory.CreateDbContextAsync(cancellationToken);
         var strategy = strategyContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -133,7 +135,8 @@ internal sealed class PostgresOperationLedger(
                     PublicReservation = freeRecognition ? NanoYuan.Zero : operation.Snapshot.PublicReservation,
                 },
             };
-            var allocation = AccountFunding.Reserve(operation.Snapshot.PublicReservation.Value, allowance.LimitNanoYuan,
+            var freeLimit = operation.UsesFreeAllowance ? allowance.LimitNanoYuan : 0;
+            var allocation = AccountFunding.Reserve(operation.Snapshot.PublicReservation.Value, freeLimit,
                 allowance.CommittedNanoYuan, allowance.ReservedNanoYuan, wallet.AvailableNanoYuan,
                 wallet.HeldNanoYuan, wallet.OutstandingNanoYuan);
             if (!allocation.Accepted)

@@ -33,6 +33,7 @@ public sealed class ChatUseCase(
             yield return new ChatApplicationEvent.Failed(new(ApplicationErrorCode.InvalidRequest, "invalid_request"));
             yield break;
         }
+        var requestedModel = request.Model;
         request = ChatRequestResolver.Resolve(request, modelCatalog);
         var resourcePolicy = policy.Get(request.Model);
         var maximumCharge = new NanoYuan(1);
@@ -54,7 +55,7 @@ public sealed class ChatUseCase(
             yield break;
         }
         var started = await operations.StartAsync(request.Model, UsageKind.Chat, context, maximumCharge,
-            resourcePolicy.OperatorMaximum, cancellationToken, policy.PricingFor(request.ExecutionModel));
+            resourcePolicy.OperatorMaximum, cancellationToken, policy.PricingFor(request.ExecutionModel), requestedModel);
         if (!started.IsSuccess) { yield return new ChatApplicationEvent.Failed(started.Error!); yield break; }
 
         await using var scope = started.Value!;

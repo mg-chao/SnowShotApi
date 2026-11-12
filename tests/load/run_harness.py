@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import secrets
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -33,11 +36,13 @@ def compose(*arguments: str, capture: bool = False, check: bool = True) -> str:
 
 
 def request(method: str, url: str, body: dict[str, Any] | None = None, request_id: str | None = None,
-            timeout: float = 15.0) -> tuple[int, bytes]:
+            timeout: float = 15.0, *, bearer: str | None = None) -> tuple[int, bytes]:
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json", "Accept-Language": "en-US"}
     if request_id is not None:
         headers["X-Request-ID"] = request_id
+    if bearer is not None:
+        headers["Authorization"] = f"Bearer {bearer}"
     outgoing = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(outgoing, timeout=timeout) as response:
@@ -81,7 +86,7 @@ def redis_queue_length() -> int:
     return int(response[1:].split(b"\r\n", 1)[0])
 
 
-def translation(index: int, request_id: str, delay: float) -> tuple[int, bytes]:
+def translation(bearer: str, index: int, request_id: str, delay: float) -> tuple[int, bytes]:
     body = {
         "type": 0,
         "content": [f"load-{index} delay={delay}"],
@@ -89,10 +94,10 @@ def translation(index: int, request_id: str, delay: float) -> tuple[int, bytes]:
         "to": "zh-CHS",
         "domain": "general",
     }
-    return request("POST", f"{API_URLS[index % 2]}/api/v2/translation/translate", body, request_id, 20)
+    return request("POST", f"{API_URLS[index % 2]}/api/v2/translation/translate", body, request_id, 20, bearer=bearer)
 
 
-def assert_translation_batch() -> None:
+def assert_translation_batch(bearer: str) -> None:
     reset_provider()
     items = [f"batch-{index} delay=0.2" for index in range(8)]
     items[3] += " fail-once"
@@ -103,7 +108,7 @@ def assert_translation_batch() -> None:
         "to": "zh-CHS",
         "domain": "general",
     }
-    status, response = request("POST", f"{API_URLS[0]}/api/v2/translation/translate", body, "batch-concurrency", 20)
+    status, response = request("POST", f"{API_URLS[0]}/api/v2/translation/translate", body, "batch-concurrency", 20, bearer=bearer)
     assert status == 200, f"translation batch failed: {status} {response[:512]!r}"
     translated = [item["content"] for item in json.loads(response)["data"]["results"]]
     assert translated == [f"translated:{item}" for item in items], f"translation results reordered: {translated}"
@@ -121,10 +126,28 @@ def sql(statement: str) -> str:
     )
 
 
-def assert_admission() -> None:
+def seed_translation_account() -> str:
+    account_id = uuid.uuid4()
+    username = f"fault_{account_id.hex[:12]}"
+    bearer = secrets.token_hex(32)
+    access_hash = hashlib.sha256(bearer.encode()).hexdigest()
+    sql(f"""
+        INSERT INTO snowshot.accounts ("Id", "Username", "NormalizedUsername", "PasswordHash", "Active", "CreatedAt")
+        VALUES ('{account_id}', '{username}', '{username.upper()}', 'unused', true, clock_timestamp());
+        INSERT INTO snowshot.account_wallets ("AccountId", "AvailableNanoYuan", "HeldNanoYuan", "OutstandingNanoYuan")
+        VALUES ('{account_id}', 10000000000, 0, 0);
+        INSERT INTO snowshot.account_sessions
+            ("Id", "AccountId", "AccessHash", "RefreshHash", "AccessExpiresAt", "RefreshExpiresAt", "CreatedAt")
+        VALUES ('{uuid.uuid4()}', '{account_id}', decode('{access_hash}', 'hex'), decode('{secrets.token_hex(32)}', 'hex'),
+            clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour', clock_timestamp());
+    """)
+    return bearer
+
+
+def assert_admission(bearer: str) -> None:
     reset_provider()
     with ThreadPoolExecutor(max_workers=20) as executor:
-        futures = [executor.submit(translation, index, f"load-{index}", 1.5) for index in range(20)]
+        futures = [executor.submit(translation, bearer, index, f"load-{index}", 1.5) for index in range(20)]
         time.sleep(0.5)
         queue_length = redis_queue_length()
         results = [future.result() for future in futures]
@@ -141,10 +164,10 @@ def assert_admission() -> None:
     assert metrics["requests"] == 4, f"rejected requests reached the provider: {metrics}"
 
 
-def assert_duplicate() -> None:
+def assert_duplicate(bearer: str) -> None:
     reset_provider()
     with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [executor.submit(translation, index, "same-request-id", 1.0) for index in range(2)]
+        futures = [executor.submit(translation, bearer, index, "same-request-id", 1.0) for index in range(2)]
         results = [future.result() for future in futures]
     statuses = sorted(status for status, _ in results)
     metrics = provider_metrics()
@@ -152,19 +175,19 @@ def assert_duplicate() -> None:
     assert metrics["requests"] == 1, f"duplicate reached provider more than once: {metrics}"
 
 
-def assert_queued_replica_death() -> None:
+def assert_queued_replica_death(bearer: str) -> None:
     reset_provider()
     with ThreadPoolExecutor(max_workers=3) as executor:
         active = [
-            executor.submit(translation, 1, "queued-death-active-1", 8.0),
-            executor.submit(translation, 3, "queued-death-active-2", 8.0),
+            executor.submit(translation, bearer, 1, "queued-death-active-1", 8.0),
+            executor.submit(translation, bearer, 3, "queued-death-active-2", 8.0),
         ]
         deadline = time.monotonic() + 10
         while provider_metrics()["active"] != 2:
             if time.monotonic() >= deadline:
                 raise AssertionError("queued-death setup did not occupy both admission slots")
             time.sleep(0.1)
-        queued = executor.submit(translation, 0, "queued-owner-dies", 0.1)
+        queued = executor.submit(translation, bearer, 0, "queued-owner-dies", 0.1)
         deadline = time.monotonic() + 5
         while redis_queue_length() != 1:
             if time.monotonic() >= deadline:
@@ -178,7 +201,7 @@ def assert_queued_replica_death() -> None:
         assert all(future.result()[0] == 200 for future in active)
 
     time.sleep(6)
-    status, body = translation(1, "queued-death-probe", 0.1)
+    status, body = translation(bearer, 1, "queued-death-probe", 0.1)
     assert status == 200, f"expired dead-replica ticket blocked future work: {status} {body[:512]!r}"
     assert redis_queue_length() == 0, "expired dead-replica ticket was not evicted"
     compose("up", "-d", "api1")
@@ -189,7 +212,8 @@ def assert_crash_reconciliation() -> None:
     reset_provider()
     unknown_before = int(sql('SELECT count(*) FROM snowshot.usage_operations WHERE "State" = 4;'))
     chat = {
-        "model": "qwen3.8-flash",
+        "model": "ai-model",
+        "stream": True,
         "messages": [{"role": "user", "content": "delay=120"}],
         "temperature": 0,
         "max_tokens": 512,
@@ -245,6 +269,8 @@ def assert_accounting() -> None:
     assert aggregate == events, f"aggregate contribution mismatch: aggregate={aggregate}, events={events}"
     assert sql('SELECT coalesce(sum("ReservedNanoYuan"), 0) FROM snowshot.allowance_periods;') == "0"
     assert sql('SELECT coalesce(sum("ReservedNanoYuan"), 0) FROM snowshot.operator_budget_periods;') == "0"
+    assert sql('SELECT count(*) FROM snowshot.usage_operations WHERE "Resource" = \'translation\' AND "ReservedFreeNanoYuan" <> 0;') == "0"
+    assert sql('SELECT coalesce(sum("HeldNanoYuan"), 0) FROM snowshot.account_wallets;') == "0"
 
 
 def main() -> int:
@@ -256,10 +282,11 @@ def main() -> int:
         compose("up", "-d", "api1", "api2")
         for url in API_URLS:
             wait_ready(url)
-        assert_translation_batch()
-        assert_admission()
-        assert_queued_replica_death()
-        assert_duplicate()
+        bearer = seed_translation_account()
+        assert_translation_batch(bearer)
+        assert_admission(bearer)
+        assert_queued_replica_death(bearer)
+        assert_duplicate(bearer)
         assert_crash_reconciliation()
         assert_accounting()
         print("Two-replica fault/load harness passed.")

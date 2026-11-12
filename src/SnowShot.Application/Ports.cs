@@ -136,6 +136,12 @@ public sealed record ReserveOperation(
     TimeSpan LeaseTtl)
 {
     public Guid? AccountId { get; init; }
+    public string? RequestedResource { get; init; }
+
+    public bool UsesFreeAllowance => (RequestedResource ?? Snapshot.Resource) == Snapshot.Resource &&
+        (Kind, Snapshot.Resource) is (UsageKind.Chat, Resources.AiModel) or
+            (UsageKind.TableExtraction, Resources.TableExtraction) or
+            (UsageKind.LatexExtraction, Resources.LatexExtraction);
 }
 
 public enum ReservationRejectionReason
@@ -148,6 +154,7 @@ public enum ReservationRejectionReason
     InsufficientCredits,
     FundsTemporarilyReserved,
     OutstandingBalance,
+    AccountRequired,
 }
 
 public sealed record OperationReservation(

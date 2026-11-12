@@ -39,7 +39,7 @@ internal sealed partial class WechatAccountPlatform(IHttpClientFactory clients, 
         return new(openId, session);
     }
 
-    public async Task<byte[]> CodeAsync(Guid requestId, CancellationToken token)
+    public async Task<byte[]> CodeAsync(Guid requestId, CancellationToken token, bool acceptJpeg = false)
     {
         RequirePayments();
         var access = await AccessTokenAsync(token);
@@ -66,22 +66,23 @@ internal sealed partial class WechatAccountPlatform(IHttpClientFactory clients, 
         }
         if (bytes.AsSpan().StartsWith(PngImage.Signature)) return bytes;
 
-        // Installed desktop builds support PNG without Qt's optional JPEG plugin.
-        if (bytes.AsSpan().StartsWith(JpegSignature) &&
-            ConvertCodeToPng(bytes) is { Length: <= MaxCodeBytes } png)
-            return png;
+        if (bytes.AsSpan().StartsWith(JpegSignature))
+        {
+            using var stream = new MemoryStream(bytes, writable: false);
+            if (ImageInfo.FromStream(stream) is
+                { Width: > 0 and <= MaxCodeDimension, Height: > 0 and <= MaxCodeDimension })
+            {
+                if (acceptJpeg) return bytes;
+                if (ConvertCodeToPng(stream) is { Length: <= MaxCodeBytes } png) return png;
+            }
+        }
 
         ReportInvalidResponse(response, "code_image");
         throw Unavailable();
     }
 
-    private static byte[]? ConvertCodeToPng(byte[] bytes)
+    private static byte[]? ConvertCodeToPng(Stream stream)
     {
-        using var stream = new MemoryStream(bytes, writable: false);
-        if (ImageInfo.FromStream(stream) is not
-            { Width: > 0 and <= MaxCodeDimension, Height: > 0 and <= MaxCodeDimension })
-            return null;
-
         ImageResult image;
         try { image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlue); }
         catch (InvalidOperationException) { return null; }

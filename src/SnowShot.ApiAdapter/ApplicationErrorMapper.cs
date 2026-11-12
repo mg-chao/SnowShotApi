@@ -16,6 +16,7 @@ internal static class ApplicationErrorMapper
         ApplicationErrorCode.OperatorBudgetExhausted => new(StatusCodes.Status503ServiceUnavailable, "operator_budget_exhausted", "Operator budget exhausted", true),
         ApplicationErrorCode.DependencyUnavailable => new(StatusCodes.Status503ServiceUnavailable, "dependency_unavailable", "Service unavailable", true),
         ApplicationErrorCode.PolicyUnavailable => new(StatusCodes.Status503ServiceUnavailable, "policy_unavailable", "Service unavailable", false),
+        ApplicationErrorCode.AccountRequired => new(StatusCodes.Status401Unauthorized, "account_required", "Sign in with a Snow Shot account to use this service", false),
         ApplicationErrorCode.InsufficientCredits => new(StatusCodes.Status402PaymentRequired, "insufficient_credits", "Insufficient available credit for this request", false),
         ApplicationErrorCode.FundsTemporarilyReserved => new(StatusCodes.Status429TooManyRequests, "funds_temporarily_reserved", "Credits temporarily reserved by other requests", true),
         ApplicationErrorCode.OutstandingBalance => new(StatusCodes.Status402PaymentRequired, "outstanding_balance", "Paid calls are paused until the outstanding balance is repaid", false),

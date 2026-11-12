@@ -20,7 +20,8 @@ public sealed class OperationCoordinator(
         NanoYuan publicReservation,
         NanoYuan operatorMaximum,
         CancellationToken cancellationToken,
-        ModelPricingSnapshot? modelPricing = null)
+        ModelPricingSnapshot? modelPricing = null,
+        string? requestedResource = null)
     {
         var principal = await identity.ResolveAsync(context.ClientAddress, cancellationToken);
         if (principal is null)
@@ -46,7 +47,7 @@ public sealed class OperationCoordinator(
             Guid.CreateVersion7(now), principal.Id, kind, snapshot,
             HashIdempotency(resource, context.AccountId ?? principal.Id, context.ClientRequestId), ownerToken,
             resourcePolicy.ExecutionDeadline, policy.ActiveLeaseTtl)
-        { AccountId = context.AccountId };
+        { AccountId = context.AccountId, RequestedResource = requestedResource };
         OperationReservation reservation;
         try
         {
@@ -94,6 +95,7 @@ public sealed class OperationCoordinator(
         ReservationRejectionReason.DuplicateRequest => new(ApplicationErrorCode.DuplicateRequest, "duplicate_request"),
         ReservationRejectionReason.OperatorBudgetExhausted => new(ApplicationErrorCode.OperatorBudgetExhausted, "operator_budget_exhausted", retryAfter),
         ReservationRejectionReason.PolicyUnavailable => new(ApplicationErrorCode.PolicyUnavailable, "policy_unavailable"),
+        ReservationRejectionReason.AccountRequired => new(ApplicationErrorCode.AccountRequired, "account_required"),
         ReservationRejectionReason.InsufficientCredits => new(ApplicationErrorCode.InsufficientCredits, "insufficient_credits"),
         ReservationRejectionReason.FundsTemporarilyReserved => new(ApplicationErrorCode.FundsTemporarilyReserved, "funds_temporarily_reserved", retryAfter),
         ReservationRejectionReason.OutstandingBalance => new(ApplicationErrorCode.OutstandingBalance, "outstanding_balance"),

@@ -90,6 +90,7 @@ public enum ApplicationErrorCode
     InsufficientCredits,
     FundsTemporarilyReserved,
     OutstandingBalance,
+    AccountRequired,
 }
 
 public sealed record ApplicationError(ApplicationErrorCode Code, string Detail, TimeSpan? RetryAfter = null);

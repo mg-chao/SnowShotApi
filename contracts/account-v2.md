@@ -34,6 +34,8 @@ Private purchase request:
 {"request_id":"uuid","username":"Example","purpose":"registration","state":"awaiting_payment","generated_at":"2026-11-02T00:00:00Z","expires_at":"2026-11-02T00:10:00Z","server_time":"2026-11-02T00:00:00Z","mini_program_code_data_url":"data:image/png;base64,...","order_id":null,"payments_available":true}
 ```
 
+`POST /registration/requests` and `POST /purchases/requests` accept the optional `X-SnowShot-Accept-Jpeg: 1` header. With this header, `mini_program_code_data_url` can contain `data:image/jpeg;base64,...` when WeChat supplies a JPEG. Without it, the response supplies PNG.
+
 States include `awaiting_payment`, `payment_pending`, `fulfilled`, `expired`, `failed` and `reconciliation_required`. An unfulfilled desktop registration expires after ten minutes and releases its username and temporary payer reservation. An issued order keeps its original payer and remains eligible for settlement. A verified late payment activates the original account if its username and credentials are available. If either is unavailable and the payer can still be linked, the original account becomes a temporary WeChat account and the desktop request stays `expired`. A newer payer reservation or a permanent link to a different account sends the old payment to reconciliation. `order_id` is an opaque merchant order string or null. A fresh form, CAPTCHA and request are required to register again. The code image may be null in status responses.
 
 Private and public purchase responses also include `completion_kind`: null before completion, `payment` for verified payment, or `account_link` for desktop adoption of an existing temporary account. Existing fulfilled paid requests are reported as `payment` without requiring a data backfill.

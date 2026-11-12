@@ -882,7 +882,7 @@ public sealed class DistributedIntegrationTests
     {
         var resourcePolicy = policy.Get(Resources.QwenFlash);
         return new(Guid.CreateVersion7(), principalId, UsageKind.Chat,
-            new(policy.Revision, policy.Fingerprint, Resources.QwenFlash, resourcePolicy.Price, policy.PrincipalDailyAllowance, new(100), new(100)),
+            new(policy.Revision, policy.Fingerprint, Resources.AiModel, resourcePolicy.Price, policy.PrincipalDailyAllowance, new(100), new(100)),
             System.Security.Cryptography.RandomNumberGenerator.GetBytes(32),
             System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30));
     }

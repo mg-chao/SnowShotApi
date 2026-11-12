@@ -105,6 +105,33 @@ public sealed class AccountWalletIntegrationTests
     }
 
     [Theory, Trait("Category", "Integration")]
+    [InlineData(UsageKind.Translation, null)]
+    [InlineData(UsageKind.Chat, Resources.QwenFlash)]
+    [InlineData(UsageKind.Chat, Resources.QwenMtFlash)]
+    public async Task WalletOnlyUsageLeavesFreeAllowanceUntouched(UsageKind kind, string? requestedModel)
+    {
+        var f = await SeedAsync(99, freeRemaining: 500);
+        var unfunded = Operation(f, 100, kind) with { RequestedResource = requestedModel };
+        Assert.Equal(ReservationRejectionReason.InsufficientCredits, (await f.Ledger.ReserveAsync(unfunded, Token)).RejectionReason);
+
+        var funded = Operation(f, 90, kind) with { RequestedResource = requestedModel };
+        var handle = Assert.IsType<OperationHandle>((await f.Ledger.ReserveAsync(funded, Token)).Handle);
+        var completion = await CompletionAsync(f, handle, 60);
+        Assert.True((await f.Ledger.CompleteAsync(completion, Token)).Accepted);
+
+        await using var db = new SnowShotDbContext(f.Options);
+        var operation = await db.UsageOperations.SingleAsync(x => x.Id == handle.OperationId, Token);
+        Assert.Equal(0, operation.ReservedFreeNanoYuan);
+        Assert.Equal(90, operation.ReservedWalletNanoYuan);
+        var allowance = await db.AllowancePeriods.SingleAsync(x => x.PrincipalId == f.Principal, Token);
+        Assert.Equal(f.Policy.PrincipalDailyAllowance.Value - 500, allowance.CommittedNanoYuan);
+        Assert.Equal(0, allowance.ReservedNanoYuan);
+        var wallet = await db.AccountWallets.SingleAsync(x => x.AccountId == f.Account, Token);
+        Assert.Equal(39, wallet.AvailableNanoYuan);
+        Assert.Equal(0, wallet.HeldNanoYuan);
+    }
+
+    [Theory, Trait("Category", "Integration")]
     [InlineData(UsageKind.TableExtraction)]
     [InlineData(UsageKind.LatexExtraction)]
     public async Task AnonymousRecognitionStillRequiresFreeAllowance(UsageKind kind)
@@ -360,7 +387,7 @@ public sealed class AccountWalletIntegrationTests
             _ => Resources.QwenFlash,
         });
         return new(Guid.CreateVersion7(), fixture.Principal, kind,
-            new(fixture.Policy.Revision, fixture.Policy.Fingerprint, resource.Resource, resource.Price,
+            new(fixture.Policy.Revision, fixture.Policy.Fingerprint, kind == UsageKind.Chat ? Resources.AiModel : resource.Resource, resource.Price,
                 fixture.Policy.PrincipalDailyAllowance, new(charge), new(100), StrictPublicReservation: true),
             RandomNumberGenerator.GetBytes(32), RandomNumberGenerator.GetBytes(32), TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30))
         { AccountId = fixture.Account };

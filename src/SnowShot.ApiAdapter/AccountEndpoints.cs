@@ -56,14 +56,14 @@ internal static class AccountEndpoints
         {
             var body = await ApiResponse.ReadJsonAsync<AccountRegistrationRequest>(c, 16384, m["Validation failed"], t);
             return body.Error ?? await Run(c, () => s.RegisterAsync(new(body.Value!.Username ?? "", body.Value.Password ?? "",
-                body.Value.PasswordConfirmation ?? "", body.Value.CaptchaId, body.Value.CaptchaAnswer ?? ""), ClientKey(c), t));
+                body.Value.PasswordConfirmation ?? "", body.Value.CaptchaId, body.Value.CaptchaAnswer ?? ""), ClientKey(c), t, AcceptsJpeg(c)));
         }).Accepts<AccountRegistrationRequest>("application/json").Produces<AppEnvelope>();
         group.MapGet("/registration/requests/{id:guid}", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Run(c, () => s.RegistrationAsync(id, Proof(c), false, t))).Produces<AppEnvelope>();
         group.MapPost("/registration/requests/{id:guid}/refresh", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Run(c, () => s.RegistrationAsync(id, Proof(c), true, t))).Produces<AppEnvelope>();
         group.MapPost("/registration/requests/{id:guid}/claim", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Run(c, () => s.ClaimAsync(id, Proof(c), t))).Produces<AppEnvelope>();
         group.MapPost("/registration/requests/{id:guid}/link", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.LinkRegistrationAsync(i, id, t))).Produces<AppEnvelope>();
         group.MapGet("/purchases/packages", (HttpContext c, IAccountService s) => Success(s.Packages())).Produces<AppEnvelope>();
-        group.MapPost("/purchases/requests", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.TopUpAsync(i, t))).Produces<AppEnvelope>();
+        group.MapPost("/purchases/requests", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.TopUpAsync(i, t, AcceptsJpeg(c)))).Produces<AppEnvelope>();
         group.MapPost("/purchases/mini-program/requests", (HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.MiniProgramPurchaseAsync(i, t))).Produces<AppEnvelope>();
         group.MapPost("/purchases/requests/{id:guid}/refresh", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.RefreshTopUpAsync(i, id, t))).Produces<AppEnvelope>();
         group.MapPost("/purchases/requests/{id:guid}/cancel", (Guid id, HttpContext c, IAccountService s, CancellationToken t) => Auth(c, i => s.CancelTopUpAsync(i, id, t))).Produces<AppEnvelope>();
@@ -128,6 +128,8 @@ internal static class AccountEndpoints
     private static IResult Invalid(HttpContext c) => ApiResponse.Problem(c, 401, "invalid_session", "Sign in again to continue.");
     private static string ClientKey(HttpContext c) => c.Connection.RemoteIpAddress?.ToString() ?? "unavailable";
     private static string Proof(HttpContext c) => c.Request.Headers["X-Registration-Proof"].Count == 1 ? c.Request.Headers["X-Registration-Proof"].ToString() : "";
+    private static bool AcceptsJpeg(HttpContext c) =>
+        c.Request.Headers.TryGetValue("X-SnowShot-Accept-Jpeg", out var value) && value.Count == 1 && value[0] == "1";
     private static IResult Success<T>(T value) => Results.Json(AppEnvelope.Success(value!), SnakeJson);
     private static async Task<IResult> Run<T>(HttpContext context, Func<Task<T>> action)
     {

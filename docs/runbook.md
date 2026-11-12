@@ -37,9 +37,12 @@ The policy-15 overlay is retained unchanged as a historical recovery reference.
 Revision 14 is reserved by the historical CPU recovery script: never reuse it.
 The deployed policy-17 AI Model uses 600 RPM, eight concurrent and eight queued
 requests per principal, 64 globally, a 128-request queue, and the existing 30-second queue / 300-second execution
-timeouts. Table and formula concurrency remains 1/1. Daily user allowance
-remains ¥3, daily/monthly operator budgets ¥50/¥1,000, and each operation's
-operator reservation maximum ¥0.03.
+timeouts. Table and formula concurrency remains 1/1. The ¥3 daily allowance
+is shared by requests that specify `ai-model`, table extraction, and LaTeX
+formula extraction. Dedicated translation and legacy chat aliases require a
+Snow Shot account and use wallet credits for any charges. Daily/monthly
+operator budgets are ¥50/¥1,000, and each operation's operator reservation
+maximum is ¥0.03.
 
 Deploy the backend first:
 

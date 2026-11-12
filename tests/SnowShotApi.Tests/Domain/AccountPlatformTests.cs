@@ -104,8 +104,10 @@ public sealed class AccountPlatformTests
         Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, await platform.CodeAsync(Guid.NewGuid(), token));
     }
 
-    [Fact]
-    public async Task JpegMiniProgramCodeIsReturnedAsPngWithoutResizing()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task JpegMiniProgramCodeHonorsClientSupport(bool acceptJpeg)
     {
         // 16×16 grayscale JPEG, black on the left and white on the right.
         using var handler = new StubHandler
@@ -115,24 +117,31 @@ public sealed class AccountPlatformTests
                 "wAALCAAQABABAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAC//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AP/P8ABz/AA//2Q==")
         };
         using var platform = new WechatAccountPlatform(new Clients(handler), Options(), TimeProvider.System);
-        var png = await platform.CodeAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+        var code = await platform.CodeAsync(Guid.NewGuid(), TestContext.Current.CancellationToken, acceptJpeg);
+        if (acceptJpeg)
+        {
+            Assert.Equal(handler.CodeImage, code);
+            return;
+        }
 
-        Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, png[..8]);
-        var image = ImageResult.FromMemory(png, ColorComponents.Grey);
+        Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, code[..8]);
+        var image = ImageResult.FromMemory(code, ColorComponents.Grey);
         Assert.Equal(16, image.Width);
         Assert.Equal(16, image.Height);
         Assert.Equal(0, image.Data[0]);
         Assert.Equal(255, image.Data[15]);
     }
 
-    [Fact]
-    public async Task MalformedJpegMiniProgramCodeIsRejected()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MalformedJpegMiniProgramCodeIsRejected(bool acceptJpeg)
     {
         using var handler = new StubHandler { CodeImage = [0xff, 0xd8, 0xff, 0xe0, 0, 2, 0xff, 0xd9] };
         using var platform = new WechatAccountPlatform(new Clients(handler), Options(), TimeProvider.System);
 
         var error = await Assert.ThrowsAsync<AccountException>(() =>
-            platform.CodeAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
+            platform.CodeAsync(Guid.NewGuid(), TestContext.Current.CancellationToken, acceptJpeg));
         Assert.Equal("payments_unavailable", error.Code);
     }
 

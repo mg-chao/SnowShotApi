@@ -49,7 +49,7 @@ public interface IAccountService
     Task<AccountSessionTokens> WechatLoginAsync(string code, string clientKey, CancellationToken token);
     Task<AccountSessionTokens> RefreshSessionAsync(string refreshToken, CancellationToken token);
     Task LogoutAsync(string refreshToken, CancellationToken token);
-    Task<AccountPurchaseRequest> RegisterAsync(RegisterAccountCommand command, string clientKey, CancellationToken token);
+    Task<AccountPurchaseRequest> RegisterAsync(RegisterAccountCommand command, string clientKey, CancellationToken token, bool acceptJpeg = false);
     Task<AccountPurchaseRequest> RegistrationAsync(Guid requestId, string proof, bool refresh, CancellationToken token);
     Task<AccountSessionTokens> ClaimAsync(Guid requestId, string proof, CancellationToken token);
     Task<AccountSummary> SummaryAsync(AccountSessionIdentity identity, CancellationToken token);
@@ -57,7 +57,7 @@ public interface IAccountService
     Task<AccountDeletionEligibility> DeletionEligibilityAsync(AccountSessionIdentity identity, CancellationToken token);
     Task<AccountDeletionResult> DeleteAsync(AccountSessionIdentity identity, DeleteAccountCommand command, CancellationToken token);
     MembershipPackages Packages();
-    Task<AccountPurchaseRequest> TopUpAsync(AccountSessionIdentity identity, CancellationToken token);
+    Task<AccountPurchaseRequest> TopUpAsync(AccountSessionIdentity identity, CancellationToken token, bool acceptJpeg = false);
     Task<AccountPurchaseRequest> MiniProgramPurchaseAsync(AccountSessionIdentity identity, CancellationToken token);
     Task<PublicPurchaseRequest> LinkRegistrationAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token);
     Task<AccountPurchaseRequest> RefreshTopUpAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token);
@@ -80,7 +80,7 @@ public interface IWechatAccountPlatform
     bool PaymentsAvailable { get; }
     bool ReconciliationAvailable { get; }
     Task<WechatLoginIdentity> LoginAsync(string code, CancellationToken token);
-    Task<byte[]> CodeAsync(Guid requestId, CancellationToken token);
+    Task<byte[]> CodeAsync(Guid requestId, CancellationToken token, bool acceptJpeg = false);
     VirtualPaymentParameters Payment(string orderId, string openId, string sessionKey, string packageId, int priceFen);
     VirtualPaymentParameters RefreshPaymentAuthorization(VirtualPaymentParameters parameters, string sessionKey);
     Task<VerifiedVirtualOrder?> QueryAsync(string orderId, string openId, CancellationToken token);

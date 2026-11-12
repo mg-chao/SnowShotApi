@@ -58,9 +58,9 @@ internal sealed class PostgresAccountService(PostgresAccountStore store, IWechat
     public Task<AccountSessionTokens> RefreshSessionAsync(string refreshToken, CancellationToken token) => sessions.RefreshSessionAsync(refreshToken, token);
     public Task LogoutAsync(string refreshToken, CancellationToken token) => sessions.LogoutAsync(refreshToken, token);
     public Task<AccountSessionTokens> ClaimAsync(Guid requestId, string proof, CancellationToken token) => sessions.ClaimAsync(requestId, proof, token);
-    public Task<AccountPurchaseRequest> RegisterAsync(RegisterAccountCommand command, string clientKey, CancellationToken token) => purchases.RegisterAsync(command, clientKey, token);
+    public Task<AccountPurchaseRequest> RegisterAsync(RegisterAccountCommand command, string clientKey, CancellationToken token, bool acceptJpeg = false) => purchases.RegisterAsync(command, clientKey, acceptJpeg, token);
     public Task<AccountPurchaseRequest> RegistrationAsync(Guid requestId, string proof, bool refresh, CancellationToken token) => purchases.RegistrationAsync(requestId, proof, refresh, token);
-    public Task<AccountPurchaseRequest> TopUpAsync(AccountSessionIdentity identity, CancellationToken token) => purchases.TopUpAsync(identity, token);
+    public Task<AccountPurchaseRequest> TopUpAsync(AccountSessionIdentity identity, CancellationToken token, bool acceptJpeg = false) => purchases.TopUpAsync(identity, acceptJpeg, token);
     public Task<AccountPurchaseRequest> MiniProgramPurchaseAsync(AccountSessionIdentity identity, CancellationToken token) => purchases.MiniProgramPurchaseAsync(identity, token);
     public Task<PublicPurchaseRequest> LinkRegistrationAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token) => purchases.LinkRegistrationAsync(identity, requestId, token);
     public Task<AccountPurchaseRequest> RefreshTopUpAsync(AccountSessionIdentity identity, Guid requestId, CancellationToken token) => purchases.RefreshTopUpAsync(identity, requestId, token);
